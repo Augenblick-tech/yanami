@@ -6,7 +6,7 @@ use axum::{
     http::{Request, StatusCode},
     middleware::{self, Next},
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, post},
     Extension, RequestPartsExt, Router,
 };
 use axum_extra::TypedHeader;
@@ -15,7 +15,8 @@ use jsonwebtoken::{decode, Validation};
 
 use crate::{
     common::auth::{Claims, KEYS},
-    provider::provider::Provider,
+    hander::user::{login, register_code},
+    provider::db::db_provider::Provider,
 };
 
 #[derive(Clone)]
@@ -31,20 +32,18 @@ impl ServiceRegister {
 
 pub fn route(service_register: ServiceRegister) -> Router {
     let v1_auth = Router::new()
-        // .route("/login", post(login))
-        // .route("/info", get(info))
-        .route("/hello", get(|| async { "hello axum" }))
-        .layer(Extension(service_register))
+        .route("/register/code", get(register_code))
+        .layer(Extension(service_register.clone()))
         .route_layer(middleware::from_fn(auth));
 
-    // let v1 = Router::new()
-    //     .route("/login", post(login))
-    //     .nest("/", v1_auth)
-    //     .layer(Extension(service_register.user_service.clone()));
+    let v1 = Router::new()
+        .route("/login", post(login))
+        .route("/ping", get(|| async { "pong" }))
+        .nest("/", v1_auth)
+        .layer(Extension(service_register.clone()));
 
     Router::new()
-        .nest("/api/v1", v1_auth)
-        // .nest("/api/v2", v2)
+        .nest("/v1", v1)
         .route_layer(middleware::from_fn(log))
         .fallback(handler_404)
 }

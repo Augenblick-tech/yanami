@@ -7,7 +7,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use yanami::{
     common::auth,
     config::Config,
-    provider::redb::ReDB,
+    provider::db::redb::ReDB,
     route::{route, ServiceRegister},
 };
 
