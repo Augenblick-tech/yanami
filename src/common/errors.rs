@@ -2,11 +2,12 @@ use std::{borrow::Cow, collections::HashMap};
 
 use axum::{
     http::StatusCode,
-    response::{IntoResponse, Response}, Json,
+    response::{IntoResponse, Response},
+    Json,
 };
 use serde_json::json;
 use thiserror::Error;
-use validator::{ValidationErrorsKind, ValidationErrors};
+use validator::{ValidationErrors, ValidationErrorsKind};
 
 use super::result::JsonResult;
 
@@ -19,7 +20,7 @@ pub enum Error {
     #[error("Invalid token")]
     InvalidToken,
     #[error("Invalid request")]
-    InvalidRequest, 
+    InvalidRequest,
     #[error(transparent)]
     AnyhowError(#[from] anyhow::Error),
     #[error(transparent)]
@@ -61,21 +62,23 @@ impl Error {
 
 impl IntoResponse for Error {
     fn into_response(self) -> Response {
-
         if let Self::ValidationError(e) = self {
             return Self::unprocessable_entity(e);
         }
 
         let (status, error_message) = match self {
-            Error::InvalidToken => (StatusCode::INTERNAL_SERVER_ERROR, "invalid token".to_string()),
-            Error::InvalidRequest => (StatusCode::BAD_REQUEST, "invalid request".to_string()),
-            _ =>  (
+            Error::InvalidToken => (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                String::from("INTERNAL_SERVER_ERROR")
+                "invalid token".to_string(),
+            ),
+            Error::InvalidRequest => (StatusCode::BAD_REQUEST, "invalid request".to_string()),
+            _ => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                String::from("INTERNAL_SERVER_ERROR"),
             ),
         };
 
-        let body = JsonResult::json(error_message.to_owned());
+        let body = JsonResult::<String>::json_err(error_message).unwrap();
         (status, body).into_response()
     }
 }

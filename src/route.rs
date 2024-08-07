@@ -14,7 +14,10 @@ use headers::{authorization::Bearer, Authorization};
 use jsonwebtoken::{decode, Validation};
 
 use crate::{
-    common::auth::{Claims, KEYS},
+    common::{
+        auth::{Claims, KEYS},
+        result::JsonResult,
+    },
     hander::user::{login, register_code},
     provider::db::db_provider::Provider,
 };
@@ -38,7 +41,7 @@ pub fn route(service_register: ServiceRegister) -> Router {
 
     let v1 = Router::new()
         .route("/login", post(login))
-        .route("/ping", get(|| async { "pong" }))
+        .route("/ping", get(|| async { JsonResult::json("pong") }))
         .nest("/", v1_auth)
         .layer(Extension(service_register.clone()));
 

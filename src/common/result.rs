@@ -11,11 +11,7 @@ pub struct JsonResult<T> {
 
 impl<T> JsonResult<T> {
     fn new(code: i32, data: Option<T>, msg: String) -> Self {
-        JsonResult {
-            code: code,
-            data: data,
-            msg: msg,
-        }
+        JsonResult { code, data, msg }
     }
 
     fn ok(data: T) -> Self {
@@ -27,7 +23,11 @@ impl<T> JsonResult<T> {
     }
 
     pub fn json(data: T) -> Json<JsonResult<T>> {
-        Json(JsonResult { code: 200, data: Some(data), msg: "".to_string() })
+        Json(JsonResult {
+            code: 200,
+            data: Some(data),
+            msg: "".to_string(),
+        })
     }
 
     pub fn json_err(msg: String) -> Result<Json<JsonResult<T>>, Error> {
