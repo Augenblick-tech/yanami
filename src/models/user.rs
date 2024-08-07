@@ -1,4 +1,7 @@
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+
+use crate::common::auth::UserCharacter;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct User {
@@ -35,4 +38,22 @@ pub struct UserEntity {
     pub id: i64,
     pub username: String,
     pub password: String,
+    pub chatacter: UserCharacter,
+}
+
+impl UserEntity {
+    pub fn from_slice(bytes: &[u8]) -> Result<Self, anyhow::Error> {
+        Ok(serde_json::from_slice::<UserEntity>(bytes)?)
+    }
+
+    pub fn to_vec(&self) -> Result<Vec<u8>, anyhow::Error> {
+        Ok(serde_json::to_vec(self)?)
+    }
+
+    pub fn into_sha256_pwd(password: String) -> String {
+        format!(
+            "{:x}",
+            Sha256::digest(format!("yanami66{}", password).into_bytes())
+        )
+    }
 }

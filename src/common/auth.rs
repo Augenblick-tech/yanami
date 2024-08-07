@@ -43,6 +43,34 @@ impl Keys {
 pub struct Claims {
     pub user_id: i64,
     pub exp: usize,
+    pub character: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub enum UserCharacter {
+    Admin,
+    User,
+    None,
+}
+
+impl From<&str> for UserCharacter {
+    fn from(value: &str) -> Self {
+        match value {
+            "admin" => UserCharacter::Admin,
+            "user" => UserCharacter::User,
+            _ => UserCharacter::None,
+        }
+    }
+}
+
+impl Into<String> for UserCharacter {
+    fn into(self) -> String {
+        match self {
+            UserCharacter::Admin => String::from("admin"),
+            UserCharacter::User => String::from("user"),
+            UserCharacter::None => String::from(""),
+        }
+    }
 }
 
 #[async_trait]
