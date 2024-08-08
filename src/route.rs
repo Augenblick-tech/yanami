@@ -18,7 +18,7 @@ use crate::{
         auth::{Claims, KEYS},
         result::JsonResult,
     },
-    hander::user::{login, register_code},
+    hander::user::{login, register, register_code},
     provider::db::db_provider::Provider,
 };
 
@@ -36,6 +36,7 @@ impl ServiceRegister {
 pub fn route(service_register: ServiceRegister) -> Router {
     let v1_auth = Router::new()
         .route("/register/code", get(register_code))
+        .route("/register", post(register))
         .layer(Extension(service_register.clone()))
         .route_layer(middleware::from_fn(auth));
 

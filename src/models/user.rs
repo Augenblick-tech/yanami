@@ -59,20 +59,27 @@ impl UserEntity {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct RegisterReq {
+pub struct RegisterCodeReq {
     pub timers: usize,
     pub expire: i64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct RegisterRsp {
+pub struct RegisterCodeRsp {
     pub code: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Register {
+pub struct RegisterCode {
     pub timers: usize,
     pub expire: i64,
     pub now: i64,
     pub code: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RegisterReq {
+    pub code: String,
+    pub username: String,
+    pub password: String,
 }

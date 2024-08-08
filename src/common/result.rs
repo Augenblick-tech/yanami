@@ -14,8 +14,8 @@ impl<T> JsonResult<T> {
         JsonResult { code, data, msg }
     }
 
-    fn ok(data: T) -> Self {
-        Self::new(200, Some(data), "".to_string())
+    fn ok(data: Option<T>) -> Self {
+        Self::new(200, data, "".to_string())
     }
 
     fn err(msg: String) -> Self {
@@ -34,7 +34,7 @@ impl<T> JsonResult<T> {
         Ok(Json(JsonResult::<T>::err(msg)))
     }
 
-    pub fn json_ok(data: T) -> Result<Json<JsonResult<T>>, Error> {
+    pub fn json_ok(data: Option<T>) -> Result<Json<JsonResult<T>>, Error> {
         Ok(Json(JsonResult::ok(data)))
     }
 }
