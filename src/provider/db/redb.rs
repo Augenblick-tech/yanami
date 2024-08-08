@@ -55,6 +55,9 @@ impl<'a> ReDB<'a> {
 }
 
 impl<'a> Provider for ReDB<'a> {
+    fn is_empty(&self) -> Result<bool, Error> {
+        Ok(self.client.begin_read()?.list_tables()?.count() <= 0)
+    }
     fn update_user(&self, user: UserEntity) -> Result<(), anyhow::Error> {
         let tx = self.client.begin_write()?;
         {
@@ -128,14 +131,18 @@ impl<'a> Provider for ReDB<'a> {
 
     fn create_user(&self, mut user: UserEntity) -> Result<UserEntity, Error> {
         if user.id <= 0 {
-            let tx = self.client.begin_read()?;
-            let table = tx.open_table(self.user.table)?;
-            let r = table.get(self.user.to_uid_key())?;
-            user.id = if let Some(r) = r {
-                i64::from_le_bytes(r.value().try_into().unwrap())
+            if !self.is_empty()? {
+                let tx = self.client.begin_read()?;
+                let table = tx.open_table(self.user.table)?;
+                let r = table.get(self.user.to_uid_key())?;
+                user.id = if let Some(r) = r {
+                    i64::from_le_bytes(r.value().try_into().unwrap())
+                } else {
+                    10000
+                };
             } else {
-                10000
-            };
+                user.id = 10000;
+            }
         }
         let tx = self.client.begin_write()?;
         {

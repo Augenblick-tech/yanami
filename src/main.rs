@@ -5,8 +5,9 @@ use clap::Parser;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use yanami::{
-    common::auth,
+    common::auth::{self, UserCharacter},
     config::Config,
+    models::user::UserEntity,
     provider::db::redb::ReDB,
     route::{route, ServiceRegister},
 };
@@ -31,6 +32,19 @@ async fn main() {
         Ok(db) => db,
         Err(err) => panic!("init db failed, {}", err),
     }));
+
+    if service.provider.is_empty().expect("check table") {
+        service
+            .provider
+            .create_user(UserEntity {
+                id: 0,
+                username: String::from("moexco"),
+                password: UserEntity::into_sha256_pwd("123456".to_string()),
+                chatacter: UserCharacter::Admin,
+            })
+            .expect("create admin user failed");
+    }
+
     let app = route(service);
     let listenter = tokio::net::TcpListener::bind(config.addr.to_string())
         .await

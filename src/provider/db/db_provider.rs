@@ -3,6 +3,7 @@ use anyhow::Error;
 use crate::models::user::{RegisterCode, UserEntity};
 
 pub trait Provider {
+    fn is_empty(&self) -> Result<bool, Error>;
     fn update_user(&self, user: UserEntity) -> Result<(), Error>;
     fn create_user(&self, user: UserEntity) -> Result<UserEntity, Error>;
     fn get_user(&self, id: i64) -> Result<Option<UserEntity>, Error>;
