@@ -12,6 +12,7 @@ use super::db_provider::Provider;
 struct UserTable<'a> {
     table: TableDefinition<'a, String, Vec<u8>>,
     pwd: TableDefinition<'a, String, String>,
+    id: TableDefinition<'a, String, i64>,
 }
 
 impl<'a> UserTable<'a> {
@@ -59,6 +60,7 @@ impl<'a> ReDB<'a> {
         let user = UserTable {
             table: TableDefinition::new("user_table"),
             pwd: TableDefinition::new("user_pwd_table"),
+            id: TableDefinition::new("user_id_table"),
         };
         let client = Database::create(path)?;
         Ok(ReDB {
@@ -91,12 +93,12 @@ impl<'a> Provider for ReDB<'a> {
     fn create_user(&self, mut user: UserEntity) -> Result<UserEntity, Error> {
         if user.id <= 0 {
             let tx = self.client.begin_read()?;
-            let table = tx.open_table(self.user.table);
+            let table = tx.open_table(self.user.id);
             user.id = match table {
                 Ok(table) => {
                     let r = table.get(self.user.to_uid_key())?;
                     if let Some(r) = r {
-                        i64::from_le_bytes(r.value().try_into().unwrap())
+                        r.value()
                     } else {
                         10000
                     }
@@ -109,12 +111,13 @@ impl<'a> Provider for ReDB<'a> {
         {
             let mut table = tx.open_table(self.user.table)?;
             let mut pwd = tx.open_table(self.user.pwd)?;
+            let mut id = tx.open_table(self.user.id)?;
             table.insert(self.user.to_id_key(user.id), user.to_vec()?)?;
             pwd.insert(
                 self.user.to_username_key(user.username.as_str()),
                 self.user.to_id_key(user.id),
             )?;
-            table.insert(self.user.to_uid_key(), (user.id + 1).to_le_bytes().to_vec())?;
+            id.insert(self.user.to_uid_key(), user.id + 1)?;
         }
         tx.commit()?;
         Ok(user)
