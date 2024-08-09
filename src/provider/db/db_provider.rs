@@ -1,7 +1,7 @@
 use anyhow::Error;
 
 use crate::models::{
-    rss::RSS,
+    rss::{RSSReq, RSS},
     user::{RegisterCode, UserEntity},
 };
 
@@ -16,7 +16,8 @@ pub trait Provider {
     fn set_register_code(&self, registry: RegisterCode) -> Result<(), Error>;
     fn get_register_code(&self, code: String) -> Result<Option<RegisterCode>, Error>;
 
-    fn set_rss(&self, rss: RSS) -> Result<(), Error>;
+    fn set_rss(&self, rss: RSSReq) -> Result<RSS, Error>;
+    fn del_rss(&self, id: String) -> Result<(), Error>;
     fn get_rss(&self, id: String) -> Result<Option<RSS>, Error>;
     fn get_all_rss(&self) -> Result<Option<Vec<RSS>>, Error>;
 }

@@ -3,7 +3,7 @@ use chrono::Local;
 use redb::{Database, ReadableTable, TableDefinition, TableError};
 
 use crate::models::{
-    rss::RSS,
+    rss::{RSSReq, RSS},
     user::{RegisterCode, UserEntity},
 };
 
@@ -232,18 +232,21 @@ impl<'a> Provider for ReDB<'a> {
         }
     }
 
-    fn set_rss(&self, rss: RSS) -> Result<(), Error> {
+    fn set_rss(&self, req: RSSReq) -> Result<RSS, Error> {
         let tx = self.client.begin_write()?;
+        let key = format!("{:x}", md5::compute(req.url.to_string()));
+        let rss = RSS {
+            id: key.to_string(),
+            url: req.url,
+            title: req.title,
+        };
         {
             let mut table = tx.open_table(self.rss.table)?;
-            table.insert(
-                self.rss
-                    .to_key(format!("{:x}", md5::compute(rss.url.to_string()))),
-                serde_json::to_vec(&rss)?,
-            )?;
+            tracing::debug!("set rss id:{}, url:{}", &key, &rss.url);
+            table.insert(self.rss.to_key(key), serde_json::to_vec(&rss)?)?;
         }
         tx.commit()?;
-        Ok(())
+        Ok(rss)
     }
 
     fn get_rss(&self, id: String) -> Result<Option<RSS>, Error> {
@@ -273,8 +276,10 @@ impl<'a> Provider for ReDB<'a> {
         match table {
             Ok(table) => {
                 for data in table.iter()? {
-                    let rss = serde_json::from_slice(&data?.1.value());
+                    let data = data?;
+                    let rss = serde_json::from_slice(&data.1.value());
                     if rss.is_ok() {
+                        tracing::debug!("get all rss {}", &data.0.value());
                         rss_list.push(rss.unwrap());
                     }
                 }
@@ -283,5 +288,16 @@ impl<'a> Provider for ReDB<'a> {
             Err(TableError::TableDoesNotExist(_)) => Ok(None),
             Err(e) => Err(Error::msg(e.to_string())),
         }
+    }
+
+    fn del_rss(&self, id: String) -> Result<(), Error> {
+        let tx = self.client.begin_write()?;
+        {
+            tracing::debug!("delete rss {}", id);
+            let mut table = tx.open_table(self.rss.table)?;
+            table.remove(self.rss.to_key(id))?;
+        }
+        tx.commit()?;
+        Ok(())
     }
 }

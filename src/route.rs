@@ -6,7 +6,7 @@ use axum::{
     http::{Request, StatusCode},
     middleware::{self, Next},
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::{delete, get, post},
     Extension, RequestPartsExt, Router,
 };
 use axum_extra::TypedHeader;
@@ -19,7 +19,7 @@ use crate::{
         result::JsonResult,
     },
     hander::{
-        rss::rss_list,
+        rss::{del_rss, rss_list, set_rss},
         user::{login, register, register_code, users},
     },
     provider::db::db_provider::Provider,
@@ -41,6 +41,8 @@ pub fn route(service_register: ServiceRegister) -> Router {
         .route("/register/code", get(register_code))
         .route("/users", get(users))
         .route("/rss", get(rss_list))
+        .route("/rss", post(set_rss))
+        .route("/rss", delete(del_rss))
         .layer(Extension(service_register.clone()))
         .route_layer(middleware::from_fn(auth));
 
