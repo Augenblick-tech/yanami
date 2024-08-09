@@ -20,8 +20,6 @@ pub async fn login(
     Extension(user_service): Extension<ServiceRegister>,
     Json(req): Json<LoginReq>,
 ) -> ErrorResult<Json<JsonResult<AuthBody>>> {
-    tracing::debug!("login request {:?}", &req);
-
     let user = user_service
         .provider
         .get_user_from_username(req.username.as_str())?;

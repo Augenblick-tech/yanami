@@ -1,4 +1,4 @@
-use anyhow::{Error, Ok};
+use anyhow::Error;
 use chrono::Local;
 use redb::{Database, ReadableTable, TableDefinition, TableError};
 
@@ -90,17 +90,19 @@ impl<'a> Provider for ReDB<'a> {
 
     fn create_user(&self, mut user: UserEntity) -> Result<UserEntity, Error> {
         if user.id <= 0 {
-            if !self.is_empty()? {
-                let tx = self.client.begin_read()?;
-                let table = tx.open_table(self.user.table)?;
-                let r = table.get(self.user.to_uid_key())?;
-                user.id = if let Some(r) = r {
-                    i64::from_le_bytes(r.value().try_into().unwrap())
-                } else {
-                    10000
-                };
-            } else {
-                user.id = 10000;
+            let tx = self.client.begin_read()?;
+            let table = tx.open_table(self.user.table);
+            user.id = match table {
+                Ok(table) => {
+                    let r = table.get(self.user.to_uid_key())?;
+                    if let Some(r) = r {
+                        i64::from_le_bytes(r.value().try_into().unwrap())
+                    } else {
+                        10000
+                    }
+                }
+                Err(TableError::TableDoesNotExist(_)) => 10000,
+                Err(e) => return Err(Error::msg(e.to_string())),
             }
         }
         let tx = self.client.begin_write()?;
@@ -120,30 +122,47 @@ impl<'a> Provider for ReDB<'a> {
 
     fn get_user(&self, id: i64) -> Result<Option<UserEntity>, anyhow::Error> {
         let tx = self.client.begin_read()?;
-        let table = tx.open_table(self.user.table)?;
-        let r = table.get(self.user.to_id_key(id))?;
-        if let Some(r) = r {
-            Ok(Some(UserEntity::from_slice(&r.value())?))
-        } else {
-            Ok(None)
+        let table = tx.open_table(self.user.table);
+        match table {
+            Ok(table) => {
+                let r = table.get(self.user.to_id_key(id))?;
+                if let Some(r) = r {
+                    Ok(Some(UserEntity::from_slice(&r.value())?))
+                } else {
+                    Ok(None)
+                }
+            }
+            Err(TableError::TableDoesNotExist(_)) => Ok(None),
+            Err(e) => Err(Error::msg(e.to_string())),
         }
     }
 
     fn get_user_from_username(&self, username: &str) -> Result<Option<UserEntity>, Error> {
         let tx = self.client.begin_read()?;
-        let pwd = tx.open_table(self.user.pwd)?;
-        let r = pwd.get(self.user.to_username_key(username))?;
-        if r.is_none() {
-            Ok(None)
-        } else {
-            let table = tx.open_table(self.user.table)?;
-            let key = r.unwrap().value();
-            let r = table.get(key)?;
-            if r.is_none() {
-                Ok(None)
-            } else {
-                Ok(Some(UserEntity::from_slice(&r.unwrap().value())?))
+        let pwd = tx.open_table(self.user.pwd);
+        match pwd {
+            Ok(pwd) => {
+                let r = pwd.get(self.user.to_username_key(username))?;
+                if r.is_none() {
+                    return Ok(None);
+                }
+                let table = tx.open_table(self.user.table);
+                match table {
+                    Ok(table) => {
+                        let key = r.unwrap().value();
+                        let r = table.get(key)?;
+                        if r.is_none() {
+                            Ok(None)
+                        } else {
+                            Ok(Some(UserEntity::from_slice(&r.unwrap().value())?))
+                        }
+                    }
+                    Err(TableError::TableDoesNotExist(_)) => Ok(None),
+                    Err(e) => Err(Error::msg(e.to_string())),
+                }
             }
+            Err(TableError::TableDoesNotExist(_)) => Ok(None),
+            Err(e) => Err(Error::msg(e.to_string())),
         }
     }
 
@@ -152,20 +171,26 @@ impl<'a> Provider for ReDB<'a> {
             return Ok(None);
         }
         let tx = self.client.begin_read()?;
-        let table = tx.open_table(self.user.table)?;
-        let mut users = Vec::<UserEntity>::new();
-        for data in table.iter()? {
-            let user = UserEntity::from_slice(&data?.1.value());
-            if user.is_ok() {
-                let mut user = user.unwrap();
-                user.password.clear();
-                users.push(user);
-            } else {
-                tracing::debug!("get users failed, err: {:?}", user.unwrap_err())
-            }
-        }
+        let table = tx.open_table(self.user.table);
+        match table {
+            Ok(table) => {
+                let mut users = Vec::<UserEntity>::new();
+                for data in table.iter()? {
+                    let user = UserEntity::from_slice(&data?.1.value());
+                    if user.is_ok() {
+                        let mut user = user.unwrap();
+                        user.password.clear();
+                        users.push(user);
+                    } else {
+                        tracing::debug!("get users failed, err: {:?}", user.unwrap_err())
+                    }
+                }
 
-        Ok(Some(users))
+                Ok(Some(users))
+            }
+            Err(TableError::TableDoesNotExist(_)) => Ok(None),
+            Err(e) => Err(Error::msg(e.to_string())),
+        }
     }
 
     fn set_register_code(&self, registry: RegisterCode) -> Result<(), Error> {
@@ -181,24 +206,30 @@ impl<'a> Provider for ReDB<'a> {
 
     fn get_register_code(&self, code: String) -> Result<Option<RegisterCode>, Error> {
         let tx = self.client.begin_read()?;
-        let table = tx.open_table(self.register.table)?;
-        let r = table.get(self.register.to_key(code))?;
-        if r.is_none() {
-            return Ok(None);
-        }
-        let a: RegisterCode = serde_json::from_slice(&r.unwrap().value().to_vec())?;
-        let now = Local::now().to_utc().timestamp();
-        if a.now + a.expire <= now || a.timers <= 0 {
-            let tx = self.client.begin_write()?;
-            {
-                let mut table = tx.open_table(self.register.table)?;
-                table.remove(self.register.to_key(a.code))?;
-            }
-            tx.commit()?;
-            return Ok(None);
-        }
+        let table = tx.open_table(self.register.table);
+        match table {
+            Ok(table) => {
+                let r = table.get(self.register.to_key(code))?;
+                if r.is_none() {
+                    return Ok(None);
+                }
+                let a: RegisterCode = serde_json::from_slice(&r.unwrap().value().to_vec())?;
+                let now = Local::now().to_utc().timestamp();
+                if a.now + a.expire <= now || a.timers <= 0 {
+                    let tx = self.client.begin_write()?;
+                    {
+                        let mut table = tx.open_table(self.register.table)?;
+                        table.remove(self.register.to_key(a.code))?;
+                    }
+                    tx.commit()?;
+                    return Ok(None);
+                }
 
-        return Ok(Some(a));
+                Ok(Some(a))
+            }
+            Err(TableError::TableDoesNotExist(_)) => Ok(None),
+            Err(e) => Err(Error::msg(e.to_string())),
+        }
     }
 
     fn set_rss(&self, rss: RSS) -> Result<(), Error> {
@@ -217,12 +248,18 @@ impl<'a> Provider for ReDB<'a> {
 
     fn get_rss(&self, id: String) -> Result<Option<RSS>, Error> {
         let tx = self.client.begin_read()?;
-        let table = tx.open_table(self.rss.table)?;
-        let r = table.get(self.rss.to_key(id))?;
-        if let Some(r) = r {
-            Ok(Some(serde_json::from_slice(&r.value())?))
-        } else {
-            Ok(None)
+        let table = tx.open_table(self.rss.table);
+        match table {
+            Ok(table) => {
+                let r = table.get(self.rss.to_key(id))?;
+                if let Some(r) = r {
+                    Ok(Some(serde_json::from_slice(&r.value())?))
+                } else {
+                    Ok(None)
+                }
+            }
+            Err(TableError::TableDoesNotExist(_)) => Ok(None),
+            Err(e) => Err(Error::msg(e.to_string())),
         }
     }
 
@@ -233,21 +270,18 @@ impl<'a> Provider for ReDB<'a> {
         let tx = self.client.begin_read()?;
         let table = tx.open_table(self.rss.table);
         let mut rss_list = Vec::<RSS>::new();
-        if table.is_ok() {
-            let table = table.unwrap();
-            for data in table.iter()? {
-                let rss = serde_json::from_slice(&data?.1.value());
-                if rss.is_ok() {
-                    rss_list.push(rss.unwrap());
+        match table {
+            Ok(table) => {
+                for data in table.iter()? {
+                    let rss = serde_json::from_slice(&data?.1.value());
+                    if rss.is_ok() {
+                        rss_list.push(rss.unwrap());
+                    }
                 }
+                Ok(Some(rss_list))
             }
-        } else {
-            match table.unwrap_err() {
-                TableError::TableDoesNotExist(_) => return Ok(None),
-                e => return Err(Error::msg(e.to_string())),
-            }
+            Err(TableError::TableDoesNotExist(_)) => Ok(None),
+            Err(e) => Err(Error::msg(e.to_string())),
         }
-
-        Ok(Some(rss_list))
     }
 }
