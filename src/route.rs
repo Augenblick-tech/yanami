@@ -18,7 +18,10 @@ use crate::{
         auth::{Claims, KEYS},
         result::JsonResult,
     },
-    hander::user::{login, register, register_code, users},
+    hander::{
+        rss::rss_list,
+        user::{login, register, register_code, users},
+    },
     provider::db::db_provider::Provider,
 };
 
@@ -37,6 +40,7 @@ pub fn route(service_register: ServiceRegister) -> Router {
     let v1_auth = Router::new()
         .route("/register/code", get(register_code))
         .route("/users", get(users))
+        .route("/rss", get(rss_list))
         .layer(Extension(service_register.clone()))
         .route_layer(middleware::from_fn(auth));
 

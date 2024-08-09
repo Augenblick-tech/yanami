@@ -1,8 +1,11 @@
 use anyhow::{Error, Ok};
 use chrono::Local;
-use redb::{Database, ReadableTable, TableDefinition};
+use redb::{Database, ReadableTable, TableDefinition, TableError};
 
-use crate::models::user::{RegisterCode, UserEntity};
+use crate::models::{
+    rss::RSS,
+    user::{RegisterCode, UserEntity},
+};
 
 use super::db_provider::Provider;
 
@@ -33,10 +36,22 @@ impl<'a> UserRegisterTable<'a> {
         format!("/user/register/{}", code)
     }
 }
+
+struct RSSTable<'a> {
+    table: TableDefinition<'a, String, Vec<u8>>,
+}
+
+impl<'a> RSSTable<'a> {
+    pub fn to_key(&self, id: String) -> String {
+        format!("/rss/id/{}", id)
+    }
+}
+
 pub struct ReDB<'a> {
     client: redb::Database,
     user: UserTable<'a>,
     register: UserRegisterTable<'a>,
+    rss: RSSTable<'a>,
 }
 
 impl<'a> ReDB<'a> {
@@ -51,6 +66,9 @@ impl<'a> ReDB<'a> {
             client,
             register: UserRegisterTable {
                 table: TableDefinition::new("user_register_table"),
+            },
+            rss: RSSTable {
+                table: TableDefinition::new("rss_table"),
             },
         })
     }
@@ -181,5 +199,55 @@ impl<'a> Provider for ReDB<'a> {
         }
 
         return Ok(Some(a));
+    }
+
+    fn set_rss(&self, rss: RSS) -> Result<(), Error> {
+        let tx = self.client.begin_write()?;
+        {
+            let mut table = tx.open_table(self.rss.table)?;
+            table.insert(
+                self.rss
+                    .to_key(format!("{:x}", md5::compute(rss.url.to_string()))),
+                serde_json::to_vec(&rss)?,
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    fn get_rss(&self, id: String) -> Result<Option<RSS>, Error> {
+        let tx = self.client.begin_read()?;
+        let table = tx.open_table(self.rss.table)?;
+        let r = table.get(self.rss.to_key(id))?;
+        if let Some(r) = r {
+            Ok(Some(serde_json::from_slice(&r.value())?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn get_all_rss(&self) -> Result<Option<Vec<RSS>>, Error> {
+        if self.is_empty()? {
+            return Ok(None);
+        }
+        let tx = self.client.begin_read()?;
+        let table = tx.open_table(self.rss.table);
+        let mut rss_list = Vec::<RSS>::new();
+        if table.is_ok() {
+            let table = table.unwrap();
+            for data in table.iter()? {
+                let rss = serde_json::from_slice(&data?.1.value());
+                if rss.is_ok() {
+                    rss_list.push(rss.unwrap());
+                }
+            }
+        } else {
+            match table.unwrap_err() {
+                TableError::TableDoesNotExist(_) => return Ok(None),
+                e => return Err(Error::msg(e.to_string())),
+            }
+        }
+
+        Ok(Some(rss_list))
     }
 }
