@@ -104,3 +104,18 @@ pub async fn register(
 
     JsonResult::json_ok(None)
 }
+
+#[axum_macros::debug_handler]
+pub async fn users(
+    Extension(c): Extension<Claims>,
+    Extension(user_service): Extension<ServiceRegister>,
+) -> ErrorResult<Json<JsonResult<Vec<UserEntity>>>> {
+    if !match UserCharacter::from(c.character.as_str()) {
+        UserCharacter::Admin => true,
+        _ => false,
+    } {
+        return Err(Error::InvalidRequest);
+    }
+
+    JsonResult::json_ok(user_service.provider.get_users()?)
+}

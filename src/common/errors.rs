@@ -67,14 +67,12 @@ impl IntoResponse for Error {
         }
 
         let (status, error_message) = match self {
-            Error::InvalidToken => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "invalid token".to_string(),
-            ),
+            Error::InvalidToken => (StatusCode::OK, "invalid token".to_string()),
             Error::InvalidRequest => (StatusCode::BAD_REQUEST, "invalid request".to_string()),
             _ => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                String::from("INTERNAL_SERVER_ERROR"),
+                StatusCode::OK,
+                self.to_string(),
+                // String::from("INTERNAL_SERVER_ERROR"),
             ),
         };
 

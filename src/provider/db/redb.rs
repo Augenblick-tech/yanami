@@ -1,6 +1,6 @@
 use anyhow::{Error, Ok};
 use chrono::Local;
-use redb::{Database, TableDefinition};
+use redb::{Database, ReadableTable, TableDefinition};
 
 use crate::models::user::{RegisterCode, UserEntity};
 
@@ -8,6 +8,7 @@ use super::db_provider::Provider;
 
 struct UserTable<'a> {
     table: TableDefinition<'a, String, Vec<u8>>,
+    pwd: TableDefinition<'a, String, String>,
 }
 
 impl<'a> UserTable<'a> {
@@ -42,6 +43,7 @@ impl<'a> ReDB<'a> {
     pub fn new(path: String) -> Result<Self, anyhow::Error> {
         let user = UserTable {
             table: TableDefinition::new("user_table"),
+            pwd: TableDefinition::new("user_pwd_table"),
         };
         let client = Database::create(path)?;
         Ok(ReDB {
@@ -68,6 +70,36 @@ impl<'a> Provider for ReDB<'a> {
         Ok(())
     }
 
+    fn create_user(&self, mut user: UserEntity) -> Result<UserEntity, Error> {
+        if user.id <= 0 {
+            if !self.is_empty()? {
+                let tx = self.client.begin_read()?;
+                let table = tx.open_table(self.user.table)?;
+                let r = table.get(self.user.to_uid_key())?;
+                user.id = if let Some(r) = r {
+                    i64::from_le_bytes(r.value().try_into().unwrap())
+                } else {
+                    10000
+                };
+            } else {
+                user.id = 10000;
+            }
+        }
+        let tx = self.client.begin_write()?;
+        {
+            let mut table = tx.open_table(self.user.table)?;
+            let mut pwd = tx.open_table(self.user.pwd)?;
+            table.insert(self.user.to_id_key(user.id), user.to_vec()?)?;
+            pwd.insert(
+                self.user.to_username_key(user.username.as_str()),
+                self.user.to_id_key(user.id),
+            )?;
+            table.insert(self.user.to_uid_key(), (user.id + 1).to_le_bytes().to_vec())?;
+        }
+        tx.commit()?;
+        Ok(user)
+    }
+
     fn get_user(&self, id: i64) -> Result<Option<UserEntity>, anyhow::Error> {
         let tx = self.client.begin_read()?;
         let table = tx.open_table(self.user.table)?;
@@ -81,12 +113,13 @@ impl<'a> Provider for ReDB<'a> {
 
     fn get_user_from_username(&self, username: &str) -> Result<Option<UserEntity>, Error> {
         let tx = self.client.begin_read()?;
-        let table = tx.open_table(self.user.table)?;
-        let r = table.get(self.user.to_username_key(username))?;
+        let pwd = tx.open_table(self.user.pwd)?;
+        let r = pwd.get(self.user.to_username_key(username))?;
         if r.is_none() {
             Ok(None)
         } else {
-            let key = String::from_utf8(r.unwrap().value())?;
+            let table = tx.open_table(self.user.table)?;
+            let key = r.unwrap().value();
             let r = table.get(key)?;
             if r.is_none() {
                 Ok(None)
@@ -94,6 +127,27 @@ impl<'a> Provider for ReDB<'a> {
                 Ok(Some(UserEntity::from_slice(&r.unwrap().value())?))
             }
         }
+    }
+
+    fn get_users(&self) -> Result<Option<Vec<UserEntity>>, Error> {
+        if self.is_empty()? {
+            return Ok(None);
+        }
+        let tx = self.client.begin_read()?;
+        let table = tx.open_table(self.user.table)?;
+        let mut users = Vec::<UserEntity>::new();
+        for data in table.iter()? {
+            let user = UserEntity::from_slice(&data?.1.value());
+            if user.is_ok() {
+                let mut user = user.unwrap();
+                user.password.clear();
+                users.push(user);
+            } else {
+                tracing::debug!("get users failed, err: {:?}", user.unwrap_err())
+            }
+        }
+
+        Ok(Some(users))
     }
 
     fn set_register_code(&self, registry: RegisterCode) -> Result<(), Error> {
@@ -127,34 +181,5 @@ impl<'a> Provider for ReDB<'a> {
         }
 
         return Ok(Some(a));
-    }
-
-    fn create_user(&self, mut user: UserEntity) -> Result<UserEntity, Error> {
-        if user.id <= 0 {
-            if !self.is_empty()? {
-                let tx = self.client.begin_read()?;
-                let table = tx.open_table(self.user.table)?;
-                let r = table.get(self.user.to_uid_key())?;
-                user.id = if let Some(r) = r {
-                    i64::from_le_bytes(r.value().try_into().unwrap())
-                } else {
-                    10000
-                };
-            } else {
-                user.id = 10000;
-            }
-        }
-        let tx = self.client.begin_write()?;
-        {
-            let mut table = tx.open_table(self.user.table)?;
-            table.insert(self.user.to_id_key(user.id), user.to_vec()?)?;
-            table.insert(
-                self.user.to_username_key(user.username.as_str()),
-                self.user.to_id_key(user.id).into_bytes(),
-            )?;
-            table.insert(self.user.to_uid_key(), (user.id + 1).to_le_bytes().to_vec())?;
-        }
-        tx.commit()?;
-        Ok(user)
     }
 }
