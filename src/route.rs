@@ -12,6 +12,8 @@ use axum::{
 use axum_extra::TypedHeader;
 use headers::{authorization::Bearer, Authorization};
 use jsonwebtoken::{decode, Validation};
+use utoipa::OpenApi;
+use utoipa_redoc::{Redoc, Servable};
 
 use crate::{
     common::{
@@ -22,6 +24,7 @@ use crate::{
         rss::{del_rss, rss_list, set_rss},
         user::{login, register, register_code, users},
     },
+    openapi::ApiDoc,
     provider::db::db_provider::Provider,
 };
 
@@ -54,6 +57,7 @@ pub fn route(service_register: ServiceRegister) -> Router {
         .layer(Extension(service_register.clone()));
 
     Router::new()
+        .merge(Redoc::with_url("/redoc", ApiDoc::openapi()))
         .nest("/v1", v1)
         .route_layer(middleware::from_fn(log))
         .fallback(handler_404)

@@ -1,8 +1,20 @@
-use crate::common::errors::Error;
+use crate::{
+    common::errors::Error,
+    models::{rss::RSS, user::{AuthBody, RegisterCodeRsp, UserEntity}},
+};
 use axum::Json;
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[aliases(
+    JsonResultAuthBody = JsonResult<AuthBody>, 
+    JsonResultVecUserEntity = JsonResult<Vec<UserEntity>>, 
+    JsonResulti32 = JsonResult<i32>, 
+    JsonResultRegisterCodeRsp = JsonResult<RegisterCodeRsp>,
+    JsonResultVecRSS = JsonResult<Vec<RSS>>,
+    JsonResultRSS = JsonResult<RSS>,
+)]
 pub struct JsonResult<T> {
     code: i32,
     data: Option<T>,

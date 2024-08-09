@@ -15,6 +15,20 @@ use crate::{
     route::ServiceRegister,
 };
 
+// #[derive(OpenApi)]
+// #[openapi(
+//     paths(login, register_code, register, users),
+//     components(schemas(UserEntity, Error, JsonResult<AuthBody>))
+// )]
+// pub struct UserApi;
+
+#[utoipa::path(
+        post,
+        path = "/login",
+        responses(
+            (status = 200, description = "用户登录", body = JsonResultAuthBody)
+        )
+    )]
 #[axum_macros::debug_handler]
 pub async fn login(
     Extension(user_service): Extension<ServiceRegister>,
@@ -44,6 +58,13 @@ pub async fn login(
     JsonResult::json_ok(Some(AuthBody::new(token, time as usize)))
 }
 
+#[utoipa::path(
+        get,
+        path = "/register/code",
+        responses(
+            (status = 200, description = "管理员获取注册码", body = JsonResultRegisterCodeRsp)
+        )
+    )]
 #[axum_macros::debug_handler]
 pub async fn register_code(
     Extension(c): Extension<Claims>,
@@ -70,11 +91,18 @@ pub async fn register_code(
     }))
 }
 
+#[utoipa::path(
+        post,
+        path = "/register",
+        responses(
+            (status = 200, description = "注册用户", body = JsonResulti32)
+        )
+    )]
 #[axum_macros::debug_handler]
 pub async fn register(
     Extension(user_service): Extension<ServiceRegister>,
     Json(req): Json<RegisterReq>,
-) -> ErrorResult<Json<JsonResult<()>>> {
+) -> ErrorResult<Json<JsonResult<i32>>> {
     let user = user_service
         .provider
         .get_user_from_username(req.username.as_str())?;
@@ -103,6 +131,13 @@ pub async fn register(
     JsonResult::json_ok(None)
 }
 
+#[utoipa::path(
+        get,
+        path = "/users",
+        responses(
+            (status = 200, description = "获取所有用户", body = JsonResultVecUserEntity)
+        )
+    )]
 #[axum_macros::debug_handler]
 pub async fn users(
     Extension(c): Extension<Claims>,

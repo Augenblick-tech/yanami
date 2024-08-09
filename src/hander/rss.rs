@@ -9,6 +9,13 @@ use crate::{
     route::ServiceRegister,
 };
 
+#[utoipa::path(
+        get,
+        path = "/rss",
+        responses(
+            (status = 200, description = "获取所有RSS订阅", body = JsonResultVecRSS)
+        )
+    )]
 #[axum_macros::debug_handler]
 pub async fn rss_list(
     Extension(user_service): Extension<ServiceRegister>,
@@ -21,6 +28,13 @@ pub async fn rss_list(
     )
 }
 
+#[utoipa::path(
+        post,
+        path = "/rss",
+        responses(
+            (status = 200, description = "添加RSS订阅", body = JsonResultRSS)
+        )
+    )]
 #[axum_macros::debug_handler]
 pub async fn set_rss(
     Extension(user_service): Extension<ServiceRegister>,
@@ -34,11 +48,18 @@ pub async fn set_rss(
     ))
 }
 
+#[utoipa::path(
+        delete,
+        path = "/rss",
+        responses(
+            (status = 200, description = "删除RSS订阅", body = JsonResulti32)
+        )
+    )]
 #[axum_macros::debug_handler]
 pub async fn del_rss(
     Extension(user_service): Extension<ServiceRegister>,
     Query(params): Query<DelRSS>,
-) -> ErrorResult<Json<JsonResult<()>>> {
+) -> ErrorResult<Json<JsonResult<i32>>> {
     if params.id == "" {
         return Err(Error::InvalidRequest);
     }

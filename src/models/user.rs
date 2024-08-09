@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use utoipa::ToSchema;
 
 use crate::common::auth::UserCharacter;
 
@@ -10,13 +11,13 @@ pub struct User {
     password: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct LoginReq {
     pub username: String,
     pub password: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct AuthBody {
     access_token: String,
     token_type: String,
@@ -33,7 +34,7 @@ impl AuthBody {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct UserEntity {
     pub id: i64,
     pub username: String,
@@ -58,13 +59,13 @@ impl UserEntity {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct RegisterCodeReq {
     pub timers: usize,
     pub expire: i64,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct RegisterCodeRsp {
     pub code: String,
 }
@@ -77,7 +78,7 @@ pub struct RegisterCode {
     pub code: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct RegisterReq {
     pub code: String,
     pub username: String,

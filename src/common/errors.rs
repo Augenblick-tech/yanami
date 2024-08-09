@@ -7,6 +7,7 @@ use axum::{
 };
 use serde_json::json;
 use thiserror::Error;
+use utoipa::ToSchema;
 use validator::{ValidationErrors, ValidationErrorsKind};
 
 use super::result::JsonResult;
@@ -15,7 +16,7 @@ pub type ErrorResult<T> = Result<T, Error>;
 
 pub type ConduitErrorMap = HashMap<Cow<'static, str>, Vec<Cow<'static, str>>>;
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, ToSchema)]
 pub enum Error {
     #[error("Invalid token")]
     InvalidToken,

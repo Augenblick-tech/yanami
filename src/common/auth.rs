@@ -7,6 +7,7 @@ use headers::{authorization::Bearer, Authorization};
 use jsonwebtoken::{decode, DecodingKey, EncodingKey, Validation};
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 use super::errors::Error;
 // use crate::CONFIG;
@@ -39,14 +40,14 @@ impl Keys {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub struct Claims {
     pub user_id: i64,
     pub exp: usize,
     pub character: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub enum UserCharacter {
     Admin,
     User,
