@@ -9,7 +9,7 @@ use yanami::{
     config::Config,
     models::user::UserEntity,
     provider::db::redb::ReDB,
-    route::{route, ServiceRegister},
+    route::{route, Service},
 };
 
 #[tokio::main]
@@ -28,14 +28,15 @@ async fn main() {
     auth::init(config.key.to_owned());
     tracing::debug!("listening on {}", &config.addr);
 
-    let service = ServiceRegister::new(Arc::new(match ReDB::new(config.db_path.to_string()) {
+    let redb = Arc::new(match ReDB::new(config.db_path.to_string()) {
         Ok(db) => db,
         Err(err) => panic!("init db failed, {}", err),
-    }));
+    });
+    let service = Service::new(redb.clone(), redb.clone(), redb);
 
-    if service.provider.is_empty().expect("check table") {
+    if service.db.is_empty().expect("check table") {
         service
-            .provider
+            .user
             .create_user(UserEntity {
                 id: 0,
                 username: String::from("moexco"),

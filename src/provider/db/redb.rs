@@ -7,7 +7,7 @@ use crate::models::{
     user::{RegisterCode, UserEntity},
 };
 
-use super::db_provider::Provider;
+use super::db_provider::{Db, Rss, User};
 
 struct UserTable<'a> {
     table: TableDefinition<'a, String, Vec<u8>>,
@@ -76,10 +76,12 @@ impl<'a> ReDB<'a> {
     }
 }
 
-impl<'a> Provider for ReDB<'a> {
+impl<'a> Db for ReDB<'a> {
     fn is_empty(&self) -> Result<bool, Error> {
         Ok(self.client.begin_read()?.list_tables()?.count() <= 0)
     }
+}
+impl<'a> User for ReDB<'a> {
     fn update_user(&self, user: UserEntity) -> Result<(), anyhow::Error> {
         let tx = self.client.begin_write()?;
         {
@@ -234,7 +236,9 @@ impl<'a> Provider for ReDB<'a> {
             Err(e) => Err(Error::msg(e.to_string())),
         }
     }
+}
 
+impl<'a> Rss for ReDB<'a> {
     fn set_rss(&self, req: RSSReq) -> Result<RSS, Error> {
         let tx = self.client.begin_write()?;
         let key = format!("{:x}", md5::compute(req.url.to_string()));

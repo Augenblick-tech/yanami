@@ -12,15 +12,8 @@ use crate::{
     models::user::{
         AuthBody, LoginReq, RegisterCode, RegisterCodeReq, RegisterCodeRsp, RegisterReq, UserEntity,
     },
-    route::ServiceRegister,
+    route::Service,
 };
-
-// #[derive(OpenApi)]
-// #[openapi(
-//     paths(login, register_code, register, users),
-//     components(schemas(UserEntity, Error, JsonResult<AuthBody>))
-// )]
-// pub struct UserApi;
 
 #[utoipa::path(
         post,
@@ -31,12 +24,10 @@ use crate::{
     )]
 #[axum_macros::debug_handler]
 pub async fn login(
-    Extension(user_service): Extension<ServiceRegister>,
+    Extension(service): Extension<Service>,
     Json(req): Json<LoginReq>,
 ) -> ErrorResult<Json<JsonResult<AuthBody>>> {
-    let user = user_service
-        .provider
-        .get_user_from_username(req.username.as_str())?;
+    let user = service.user.get_user_from_username(req.username.as_str())?;
     if user.is_none() {
         return Err(Error::InvalidRequest);
     }
@@ -69,7 +60,7 @@ pub async fn login(
 #[axum_macros::debug_handler]
 pub async fn register_code(
     Extension(c): Extension<Claims>,
-    Extension(user_service): Extension<ServiceRegister>,
+    Extension(service): Extension<Service>,
     Query(params): Query<RegisterCodeReq>,
 ) -> ErrorResult<Json<JsonResult<RegisterCodeRsp>>> {
     if !match UserCharacter::from(c.character.as_str()) {
@@ -80,7 +71,7 @@ pub async fn register_code(
     }
     let code = Uuid::new_v4();
 
-    user_service.provider.set_register_code(RegisterCode {
+    service.user.set_register_code(RegisterCode {
         now: Local::now().timestamp(),
         expire: params.expire,
         code: code.to_string(),
@@ -101,19 +92,15 @@ pub async fn register_code(
     )]
 #[axum_macros::debug_handler]
 pub async fn register(
-    Extension(user_service): Extension<ServiceRegister>,
+    Extension(service): Extension<Service>,
     Json(req): Json<RegisterReq>,
 ) -> ErrorResult<Json<JsonResult<i32>>> {
-    let user = user_service
-        .provider
-        .get_user_from_username(req.username.as_str())?;
+    let user = service.user.get_user_from_username(req.username.as_str())?;
     if user.is_some() {
         return Err(Error::InvalidRequest);
     }
 
-    let register_code = user_service
-        .provider
-        .get_register_code(req.code.to_string())?;
+    let register_code = service.user.get_register_code(req.code.to_string())?;
     if register_code.is_none() {
         return Err(Error::InvalidRequest);
     }
@@ -124,10 +111,10 @@ pub async fn register(
         password: UserEntity::into_sha256_pwd(req.password),
         chatacter: UserCharacter::User,
     };
-    user_service.provider.create_user(user)?;
+    service.user.create_user(user)?;
     let mut register_code = register_code.unwrap();
     register_code.timers -= 1;
-    user_service.provider.set_register_code(register_code)?;
+    service.user.set_register_code(register_code)?;
 
     JsonResult::json_ok(None)
 }
@@ -143,7 +130,7 @@ pub async fn register(
 #[axum_macros::debug_handler]
 pub async fn users(
     Extension(c): Extension<Claims>,
-    Extension(user_service): Extension<ServiceRegister>,
+    Extension(service): Extension<Service>,
 ) -> ErrorResult<Json<JsonResult<Vec<UserEntity>>>> {
     if !match UserCharacter::from(c.character.as_str()) {
         UserCharacter::Admin => true,
@@ -152,5 +139,5 @@ pub async fn users(
         return Err(Error::InvalidRequest);
     }
 
-    JsonResult::json_ok(user_service.provider.get_users()?)
+    JsonResult::json_ok(service.user.get_users()?)
 }

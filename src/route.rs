@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use axum::{
     body::Body,
     extract::MatchedPath,
@@ -26,28 +24,30 @@ use crate::{
         user::{login, register, register_code, users},
     },
     openapi::ApiDoc,
-    provider::db::db_provider::Provider,
+    provider::db::db_provider::{DbProvider, RssProvider, UserProvider},
 };
 
 #[derive(Clone)]
-pub struct ServiceRegister {
-    pub provider: Arc<dyn Provider + Send + Sync>,
+pub struct Service {
+    pub user: UserProvider,
+    pub db: DbProvider,
+    pub rss: RssProvider,
 }
 
-impl ServiceRegister {
-    pub fn new(provider: Arc<dyn Provider + Send + Sync>) -> Self {
-        ServiceRegister { provider }
+impl Service {
+    pub fn new(user: UserProvider, db: DbProvider, rss: RssProvider) -> Self {
+        Service { user, db, rss }
     }
 }
 
-pub fn route(service_register: ServiceRegister) -> Router {
+pub fn route(service: Service) -> Router {
     let v1_auth = Router::new()
         .route("/register/code", get(register_code))
         .route("/users", get(users))
         .route("/rss", get(rss_list))
         .route("/rss", post(set_rss))
         .route("/rss", delete(del_rss))
-        .layer(Extension(service_register.clone()))
+        .layer(Extension(service.clone()))
         .route_layer(middleware::from_fn(auth));
 
     let v1 = Router::new()
@@ -55,7 +55,7 @@ pub fn route(service_register: ServiceRegister) -> Router {
         .route("/ping", get(|| async { JsonResult::json("pong") }))
         .route("/register", post(register))
         .nest("/", v1_auth)
-        .layer(Extension(service_register.clone()));
+        .layer(Extension(service.clone()));
 
     Router::new()
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
