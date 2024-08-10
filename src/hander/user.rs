@@ -24,7 +24,7 @@ use crate::{
 
 #[utoipa::path(
         post,
-        path = "/login",
+        path = "/v1/login",
         responses(
             (status = 200, description = "用户登录", body = JsonResultAuthBody)
         )
@@ -60,7 +60,8 @@ pub async fn login(
 
 #[utoipa::path(
         get,
-        path = "/register/code",
+        path = "/v1/register/code",
+        security(("api_key" = ["Authorization"])),
         responses(
             (status = 200, description = "管理员获取注册码", body = JsonResultRegisterCodeRsp)
         )
@@ -93,7 +94,7 @@ pub async fn register_code(
 
 #[utoipa::path(
         post,
-        path = "/register",
+        path = "/v1/register",
         responses(
             (status = 200, description = "注册用户", body = JsonResulti32)
         )
@@ -133,7 +134,8 @@ pub async fn register(
 
 #[utoipa::path(
         get,
-        path = "/users",
+        path = "/v1/users",
+        security(("api_key" = ["Authorization"])),
         responses(
             (status = 200, description = "获取所有用户", body = JsonResultVecUserEntity)
         )

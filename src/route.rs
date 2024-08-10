@@ -14,6 +14,7 @@ use headers::{authorization::Bearer, Authorization};
 use jsonwebtoken::{decode, Validation};
 use utoipa::OpenApi;
 use utoipa_redoc::{Redoc, Servable};
+use utoipa_swagger_ui::SwaggerUi;
 
 use crate::{
     common::{
@@ -57,6 +58,7 @@ pub fn route(service_register: ServiceRegister) -> Router {
         .layer(Extension(service_register.clone()));
 
     Router::new()
+        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
         .merge(Redoc::with_url("/redoc", ApiDoc::openapi()))
         .nest("/v1", v1)
         .route_layer(middleware::from_fn(log))

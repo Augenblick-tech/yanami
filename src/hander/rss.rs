@@ -11,7 +11,8 @@ use crate::{
 
 #[utoipa::path(
         get,
-        path = "/rss",
+        path = "/v1/rss",
+        security(("api_key" = ["Authorization"])),
         responses(
             (status = 200, description = "获取所有RSS订阅", body = JsonResultVecRSS)
         )
@@ -30,7 +31,8 @@ pub async fn rss_list(
 
 #[utoipa::path(
         post,
-        path = "/rss",
+        path = "/v1/rss",
+        security(("api_key" = ["Authorization"])),
         responses(
             (status = 200, description = "添加RSS订阅", body = JsonResultRSS)
         )
@@ -50,7 +52,11 @@ pub async fn set_rss(
 
 #[utoipa::path(
         delete,
-        path = "/rss",
+        path = "/v1/rss",
+        params(
+            DelRSS,
+        ),
+        security(("api_key" = ["Authorization"])),
         responses(
             (status = 200, description = "删除RSS订阅", body = JsonResulti32)
         )
