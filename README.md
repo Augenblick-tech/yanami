@@ -16,4 +16,5 @@
 `cargo run -- --addr 127.0.0.1:1234 --mode debug --key yanami --db-path ./yanami.redb`
 
 ### 接口
-OpenApi: `http://127.0.0.1:1234/redoc`
+OpenApi: `http://127.0.0.1:1234/redoc`  
+SwaggerUI: `http://127.0.0.1:1234/swagger-ui`
