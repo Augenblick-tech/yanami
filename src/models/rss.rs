@@ -5,6 +5,7 @@ use utoipa::{IntoParams, ToSchema};
 pub struct RSSReq {
     pub url: String,
     pub title: String,
+    pub search_url: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]

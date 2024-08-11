@@ -35,11 +35,21 @@ pub async fn rss_list(
 #[axum_macros::debug_handler]
 pub async fn set_rss(
     Extension(service): Extension<Service>,
-    Json(req): Json<RSSReq>,
+    Json(mut req): Json<RSSReq>,
 ) -> ErrorResult<Json<JsonResult<RSS>>> {
     if req.url == "" {
         return Err(Error::InvalidRequest);
     }
+
+    if req.title == "" {
+        let chan = service
+            .rss_http_client
+            .get_channel(&req.url)
+            .await
+            .expect("get rss channel failed");
+        req.title = chan.title;
+    }
+
     JsonResult::json_ok(Some(service.rss.set_rss(req).expect("set rss failed")))
 }
 

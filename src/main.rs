@@ -1,6 +1,7 @@
 use core::panic;
 use std::sync::Arc;
 
+use anna::rss::rss::RssHttpClient;
 use clap::Parser;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -32,7 +33,12 @@ async fn main() {
         Ok(db) => db,
         Err(err) => panic!("init db failed, {}", err),
     });
-    let service = Service::new(redb.clone(), redb.clone(), redb);
+    let service = Service::new(
+        redb.clone(),
+        redb.clone(),
+        redb,
+        Arc::new(RssHttpClient::new()),
+    );
 
     if service.db.is_empty().expect("check table") {
         service

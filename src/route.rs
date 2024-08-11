@@ -1,3 +1,6 @@
+use std::sync::Arc;
+
+use anna::rss::rss::RssHttpClient;
 use axum::{
     body::Body,
     extract::MatchedPath,
@@ -32,11 +35,22 @@ pub struct Service {
     pub user: UserProvider,
     pub db: DbProvider,
     pub rss: RssProvider,
+    pub rss_http_client: Arc<RssHttpClient>,
 }
 
 impl Service {
-    pub fn new(user: UserProvider, db: DbProvider, rss: RssProvider) -> Self {
-        Service { user, db, rss }
+    pub fn new(
+        user: UserProvider,
+        db: DbProvider,
+        rss: RssProvider,
+        rss_http_client: Arc<RssHttpClient>,
+    ) -> Self {
+        Service {
+            user,
+            db,
+            rss,
+            rss_http_client,
+        }
     }
 }
 

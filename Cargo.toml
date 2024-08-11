@@ -1,9 +1,20 @@
+[workspace]
+members = [
+  ".",
+  "anna",
+]
+
 [package]
 name = "yanami"
 version = "0.1.0"
 edition = "2021"
 
+[workspace.dependencies]
+anna = { path = "./anna" }
+
 [dependencies]
+anna = { workspace = true }
+
 anyhow = "1.0.86"
 async-trait = "0.1.81"
 axum = "0.7.5"
