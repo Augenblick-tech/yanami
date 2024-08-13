@@ -23,11 +23,13 @@ axum-macros = "0.4.1"
 chrono = "0.4.38"
 clap = { version = "4.5.13", features = ["derive", "env"] }
 dotenv = "0.15.0"
+formatx = "0.2.2"
 headers = "0.4.0"
 jsonwebtoken = "9.3.0"
 md5 = "0.7.0"
 once_cell = "1.19.0"
 redb = "2.1.1"
+regex = "1.10.6"
 reqwest = { version = "0.12.5", features = ["cookies", "json", "multipart"] }
 serde = { version = "1.0.204", features = ["derive"] }
 serde_json = "1.0.122"
@@ -38,6 +40,6 @@ tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 utoipa = { version = "4.2.3", features = ["axum_extras"] }
 utoipa-redoc = { version = "4.0.0", features = ["axum"] }
-utoipa-swagger-ui = { version = "7.1.0", features = ["axum"] }
+utoipa-swagger-ui = { version = "7.1.0", features = ["axum", "reqwest"] }
 uuid = { version = "1.10.0", features = ["v4"] }
 validator = "0.18.1"

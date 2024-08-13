@@ -7,7 +7,7 @@ use crate::models::{
     user::{RegisterCode, UserEntity},
 };
 
-use super::db_provider::{Db, Rss, User};
+use super::db_provider::{Anime, Db, Rss, Rules, User};
 
 struct UserTable<'a> {
     table: TableDefinition<'a, String, Vec<u8>>,
@@ -246,6 +246,7 @@ impl<'a> Rss for ReDB<'a> {
             id: key.to_string(),
             url: req.url,
             title: req.title,
+            search_url: req.search_url,
         };
         {
             let mut table = tx.open_table(self.rss.table)?;
@@ -254,6 +255,17 @@ impl<'a> Rss for ReDB<'a> {
         }
         tx.commit()?;
         Ok(rss)
+    }
+
+    fn del_rss(&self, id: String) -> Result<(), Error> {
+        let tx = self.client.begin_write()?;
+        {
+            tracing::debug!("delete rss {}", id);
+            let mut table = tx.open_table(self.rss.table)?;
+            table.remove(self.rss.to_key(id))?;
+        }
+        tx.commit()?;
+        Ok(())
     }
 
     fn get_rss(&self, id: String) -> Result<Option<RSS>, Error> {
@@ -296,15 +308,47 @@ impl<'a> Rss for ReDB<'a> {
             Err(e) => Err(Error::msg(e.to_string())),
         }
     }
+}
 
-    fn del_rss(&self, id: String) -> Result<(), Error> {
-        let tx = self.client.begin_write()?;
-        {
-            tracing::debug!("delete rss {}", id);
-            let mut table = tx.open_table(self.rss.table)?;
-            table.remove(self.rss.to_key(id))?;
-        }
-        tx.commit()?;
-        Ok(())
+impl<'a> Anime for ReDB<'a> {
+    fn set_calender(&self, calender: Vec<anna::anime::anime::AnimeInfo>) -> Result<(), Error> {
+        todo!()
+    }
+
+    fn get_calender(&self) -> Result<Option<Vec<anna::anime::anime::AnimeInfo>>, Error> {
+        todo!()
+    }
+
+    fn set_anime_rss(
+        &self,
+        anime_name: String,
+        anime_rss_record: crate::models::rss::AnimeRssRecord,
+    ) -> Result<(), Error> {
+        todo!()
+    }
+
+    fn get_anime_rss(
+        &self,
+        anime_name: String,
+    ) -> Result<Option<Vec<crate::models::rss::AnimeRssRecord>>, Error> {
+        todo!()
+    }
+}
+
+impl<'a> Rules for ReDB<'a> {
+    fn set_rule(&self, rule: crate::models::rule::GroupRule) -> Result<(), Error> {
+        todo!()
+    }
+
+    fn del_rule(&self, name: String) -> Result<(), Error> {
+        todo!()
+    }
+
+    fn get_rule(&self, name: String) -> Result<Option<crate::models::rule::GroupRule>, Error> {
+        todo!()
+    }
+
+    fn get_all_rules(&self) -> Result<Option<Vec<crate::models::rule::GroupRule>>, Error> {
+        todo!()
     }
 }

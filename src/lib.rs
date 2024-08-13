@@ -5,3 +5,4 @@ pub mod models;
 pub mod openapi;
 pub mod provider;
 pub mod route;
+pub mod task;

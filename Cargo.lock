@@ -655,6 +655,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "formatx"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "db0f0c49aba98a3b2578315766960bd242885ff672fd62610c5557cd6c6efe03"
+
+[[package]]
 name = "futures-channel"
 version = "0.3.30"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2775,11 +2781,13 @@ dependencies = [
  "chrono",
  "clap",
  "dotenv",
+ "formatx",
  "headers",
  "jsonwebtoken",
  "md5",
  "once_cell",
  "redb",
+ "regex",
  "reqwest",
  "serde",
  "serde_json",
