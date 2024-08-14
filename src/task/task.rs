@@ -34,7 +34,7 @@ struct AnimeTask {
 
 #[derive(Clone)]
 pub struct Tasker {
-    rss: RssProvider,
+    rss_db: RssProvider,
     rss_http_client: Arc<RssHttpClient>,
     anime_db: AnimeProvider,
     anime: Arc<AnimeTracker>,
@@ -59,7 +59,7 @@ impl Tasker {
         let (ab, _) = broadcast::channel::<AnimeTask>(10);
         let (arb, _) = broadcast::channel::<RssItem>(10);
         Tasker {
-            rss,
+            rss_db: rss,
             rss_http_client,
             anime_db,
             anime,
@@ -95,7 +95,7 @@ impl Tasker {
 
     async fn check_update(&self) -> Result<(), Error> {
         let rss_list = self
-            .rss
+            .rss_db
             .get_all_rss()
             .expect("check_update get_all_rules failed")
             .ok_or(Error::msg("rss list is empty"))?;
@@ -218,6 +218,12 @@ impl Tasker {
                         // 检查磁力链接是否是相同的，注意去掉tracker
                         // 发送磁力链接到qbit下载
                         // 记录下载的内容到数据库
+                        tracing::debug!(
+                            "anime: {}\nbt: {}\nrule: {}",
+                            &anime.name,
+                            &msg.title,
+                            &i.re
+                        );
                         return;
                     }
                 }
