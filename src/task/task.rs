@@ -8,6 +8,7 @@ use anna::{
     anime::anime::{AnimeInfo, AnimeTracker},
     rss::rss::RssHttpClient,
 };
+use anyhow::Error;
 use formatx::formatx;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -76,39 +77,33 @@ impl Tasker {
             select! {
                 _ = sync_calender_ticker.tick() => {
                     tokio::spawn( async move {
-                        s.sync_calender().await;
+                        if let Err(err) = s.sync_calender().await {
+                            tracing::error!("{}", err);
+                        }
                     });
                 }
                 _ = check_update_ticker.tick() => {
                     tokio::spawn( async move {
-                        s.check_update().await;
+                        if let Err(err) = s.check_update().await {
+                            tracing::error!("{}", err);
+                        }
                     });
                 }
             }
         }
     }
 
-    async fn check_update(&self) {
-        let r = self.rss.get_all_rss();
-        if r.is_err() {
-            tracing::error!("check_update get_all_rss failed, {}", r.unwrap_err());
-            return;
-        }
-        let rss_list = r.unwrap();
-        if rss_list.is_none() {
-            return;
-        }
-        let rss_list = rss_list.unwrap();
-        let r = self.anime_db.get_calender();
-        if r.is_err() {
-            tracing::error!("check_update get_calender failed, {}", r.unwrap_err());
-            return;
-        }
-        let r = r.unwrap();
-        if r.is_none() {
-            return;
-        }
-        let anime_list = r.unwrap();
+    async fn check_update(&self) -> Result<(), Error> {
+        let rss_list = self
+            .rss
+            .get_all_rss()
+            .expect("check_update get_all_rules failed")
+            .ok_or(Error::msg("rss list is empty"))?;
+        let anime_list = self
+            .anime_db
+            .get_calender()
+            .expect("check_update get_calender failed")
+            .ok_or(Error::msg("anime list is empty"))?;
         for item in rss_list.iter() {
             let r = self.rss_http_client.get_channel(&item.url).await;
             if r.is_err() {
@@ -169,14 +164,15 @@ impl Tasker {
                 })
             }
         }
+        Ok(())
     }
 
-    async fn sync_calender(&self) {
-        let rsp = self.anime.get_calender().await;
-        if rsp.is_err() {
-            return;
-        }
-        let anime = rsp.unwrap();
+    async fn sync_calender(&self) -> Result<(), Error> {
+        let anime = self
+            .anime
+            .get_calender()
+            .await
+            .expect("sync_calender get_calender failed");
         for i in anime.iter() {
             let mut rx = self.anime_broadcast.subscribe();
             let anime = i.clone();
@@ -207,11 +203,10 @@ impl Tasker {
                 }
             });
         }
-        let r = self.anime_db.set_calender(anime);
-        if r.is_err() {
-            tracing::error!("sync_calender set failed, {}", r.unwrap_err());
-            return;
-        }
+        Ok(self
+            .anime_db
+            .set_calender(anime)
+            .expect("sync_calender set failed"))
     }
 
     fn check_anime_rules(&self, msg: RssItem, anime: &AnimeInfo) {
