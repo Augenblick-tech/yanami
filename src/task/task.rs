@@ -125,12 +125,22 @@ impl Tasker {
             // 全站RSS则获取后给所有番剧发送广播
             for i in rsp.items.iter() {
                 tracing::debug!("check_update rss: {:?}", i);
-                if i.title.is_none() || i.enclosure.is_none() {
+                if i.title.is_none() {
                     continue;
                 }
+                if i.enclosure().is_none() & i.link().is_none() {
+                    continue;
+                }
+
+                let url = if let Some(e) = i.enclosure() {
+                    e.url()
+                } else {
+                    i.link().unwrap()
+                };
+
                 let ri = RssItem {
                     title: i.title.clone().unwrap(),
-                    magnet: i.enclosure.clone().unwrap().url,
+                    magnet: url.to_string(),
                 };
                 if let Err(err) = self.anime_rss_broadcast.send(ri) {
                     tracing::error!("broadcast rss item to chan failed, {}", err);
