@@ -1,14 +1,14 @@
+use anna::anime::anime::AnimeInfo;
 use utoipa::{openapi::security::{ApiKey, ApiKeyValue, SecurityScheme}, Modify, OpenApi};
 
 use crate::{
     common::{
         auth::UserCharacter,
         errors::Error,
-        result::{JsonResultAuthBody, JsonResultRSS, JsonResultVecRSS, JsonResultVecUserEntity, JsonResulti32},
+        result::{JsonResultAuthBody, JsonResultDownloadPath, JsonResultRSS, JsonResultVecAnimeInfo, JsonResultVecAnimeRssRecord, JsonResultVecGroupRule, JsonResultVecRSS, JsonResultVecUserEntity, JsonResulti32},
     },
     models::{
-        rss::{DelRSS, RSSReq, RSS},
-        user::{AuthBody, LoginReq, RegisterCodeReq, RegisterCodeRsp, RegisterReq, UserEntity},
+        anime::AnimeRecordReq, path::DownloadPath, rss::{AnimeRssRecord, DelRSS, RSSReq, RSS}, rule::{DelRule, GroupRule, Rule}, user::{AuthBody, LoginReq, RegisterCodeReq, RegisterCodeRsp, RegisterReq, UserEntity}
     },
 };
 
@@ -24,6 +24,13 @@ use crate::{
             crate::hander::rss::rss_list,
             crate::hander::rss::set_rss,
             crate::hander::rss::del_rss,
+            crate::hander::rule::set_rule,
+            crate::hander::rule::del_rule,
+            crate::hander::rule::rules,
+            crate::hander::path::set_path,
+            crate::hander::path::get_path,
+            crate::hander::anime::animes,
+            crate::hander::anime::anime_records,
         ),
         components(
             schemas(
@@ -43,11 +50,19 @@ use crate::{
                 RegisterReq,
                 JsonResulti32,
                 LoginReq,
+                JsonResultVecGroupRule,
+                GroupRule,
+                Rule,
+                DelRule,
+                JsonResultDownloadPath,
+                DownloadPath,
+                JsonResultVecAnimeInfo,
+                AnimeInfo,
+                AnimeRecordReq,
+                AnimeRssRecord,
+                JsonResultVecAnimeRssRecord,
             )
         ),
-        tags(
-            (name = "yanami", description = "yanami management API")
-        )
     )]
     pub struct ApiDoc;
 

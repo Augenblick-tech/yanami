@@ -27,7 +27,9 @@ pub async fn login(
     Extension(service): Extension<Service>,
     Json(req): Json<LoginReq>,
 ) -> ErrorResult<Json<JsonResult<AuthBody>>> {
-    let user = service.user.get_user_from_username(req.username.as_str())?;
+    let user = service
+        .user_db
+        .get_user_from_username(req.username.as_str())?;
     if user.is_none() {
         return Err(Error::InvalidRequest);
     }
@@ -71,7 +73,7 @@ pub async fn register_code(
     }
     let code = Uuid::new_v4();
 
-    service.user.set_register_code(RegisterCode {
+    service.user_db.set_register_code(RegisterCode {
         now: Local::now().timestamp(),
         expire: params.expire,
         code: code.to_string(),
@@ -95,12 +97,14 @@ pub async fn register(
     Extension(service): Extension<Service>,
     Json(req): Json<RegisterReq>,
 ) -> ErrorResult<Json<JsonResult<i32>>> {
-    let user = service.user.get_user_from_username(req.username.as_str())?;
+    let user = service
+        .user_db
+        .get_user_from_username(req.username.as_str())?;
     if user.is_some() {
         return Err(Error::InvalidRequest);
     }
 
-    let register_code = service.user.get_register_code(req.code.to_string())?;
+    let register_code = service.user_db.get_register_code(req.code.to_string())?;
     if register_code.is_none() {
         return Err(Error::InvalidRequest);
     }
@@ -111,10 +115,10 @@ pub async fn register(
         password: UserEntity::into_sha256_pwd(req.password),
         chatacter: UserCharacter::User,
     };
-    service.user.create_user(user)?;
+    service.user_db.create_user(user)?;
     let mut register_code = register_code.unwrap();
     register_code.timers -= 1;
-    service.user.set_register_code(register_code)?;
+    service.user_db.set_register_code(register_code)?;
 
     JsonResult::json_ok(None)
 }
@@ -139,5 +143,5 @@ pub async fn users(
         return Err(Error::InvalidRequest);
     }
 
-    JsonResult::json_ok(service.user.get_users()?)
+    JsonResult::json_ok(service.user_db.get_users()?)
 }

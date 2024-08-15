@@ -23,33 +23,47 @@ use crate::{
         result::JsonResult,
     },
     hander::{
+        anime::{anime_records, animes},
+        path::{get_path, set_path},
         rss::{del_rss, rss_list, set_rss},
+        rule::{del_rule, rules, set_rule},
         user::{login, register, register_code, users},
     },
     openapi::ApiDoc,
-    provider::db::db_provider::{DbProvider, RssProvider, UserProvider},
+    provider::db::db_provider::{
+        AnimeProvider, DbProvider, DownloadPathProvider, RssProvider, RuleProvider, UserProvider,
+    },
 };
 
 #[derive(Clone)]
 pub struct Service {
-    pub user: UserProvider,
+    pub user_db: UserProvider,
     pub db: DbProvider,
-    pub rss: RssProvider,
+    pub rss_db: RssProvider,
+    pub rule_db: RuleProvider,
+    pub anime_db: AnimeProvider,
     pub rss_http_client: Arc<RssHttpClient>,
+    pub path: DownloadPathProvider,
 }
 
 impl Service {
     pub fn new(
-        user: UserProvider,
+        user_db: UserProvider,
         db: DbProvider,
-        rss: RssProvider,
+        rss_db: RssProvider,
+        rule_db: RuleProvider,
+        anime_db: AnimeProvider,
         rss_http_client: Arc<RssHttpClient>,
+        path: DownloadPathProvider,
     ) -> Self {
         Service {
-            user,
+            user_db,
             db,
-            rss,
+            rss_db,
+            rule_db,
+            anime_db,
             rss_http_client,
+            path,
         }
     }
 }
@@ -61,6 +75,13 @@ pub fn route(service: Service) -> Router {
         .route("/rss", get(rss_list))
         .route("/rss", post(set_rss))
         .route("/rss", delete(del_rss))
+        .route("/rule", post(set_rule))
+        .route("/rules", get(rules))
+        .route("/rule", delete(del_rule))
+        .route("/path", post(set_path))
+        .route("/path", get(get_path))
+        .route("/animes", get(animes))
+        .route("/anime/records", get(anime_records))
         .layer(Extension(service.clone()))
         .route_layer(middleware::from_fn(auth));
 

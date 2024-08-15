@@ -46,6 +46,9 @@ pub struct Tasker {
     anime_rss_broadcast: broadcast::Sender<RssItem>,
     // 用于发送特定番剧的搜索结果
     rss_send_map: Arc<Mutex<HashMap<i64, mpsc::Sender<RssItem>>>>,
+
+    hander_anime_broadcast: Arc<broadcast::Receiver<AnimeTask>>,
+    hander_anime_rss_broadcast: Arc<broadcast::Receiver<RssItem>>,
 }
 
 impl Tasker {
@@ -56,8 +59,8 @@ impl Tasker {
         anime: Arc<AnimeTracker>,
         rule_db: RuleProvider,
     ) -> Self {
-        let (ab, _) = broadcast::channel::<AnimeTask>(10);
-        let (arb, _) = broadcast::channel::<RssItem>(10);
+        let (ab, abr) = broadcast::channel::<AnimeTask>(10);
+        let (arb, arbr) = broadcast::channel::<RssItem>(10);
         Tasker {
             rss_db: rss,
             rss_http_client,
@@ -67,6 +70,8 @@ impl Tasker {
             anime_broadcast: ab,
             anime_rss_broadcast: arb,
             rss_send_map: Arc::new(Mutex::new(HashMap::new())),
+            hander_anime_broadcast: Arc::new(abr),
+            hander_anime_rss_broadcast: Arc::new(arbr),
         }
     }
     pub async fn run(&self) {
@@ -83,11 +88,13 @@ impl Tasker {
                     });
                 }
                 _ = check_update_ticker.tick() => {
-                    tokio::spawn( async move {
-                        if let Err(err) = s.check_update().await {
-                            tracing::error!("{}", err);
-                        }
-                    });
+                    if s.rss_send_map.lock().unwrap().len() > 0 {
+                        tokio::spawn( async move {
+                            if let Err(err) = s.check_update().await {
+                                tracing::error!("{}", err);
+                            }
+                        });
+                    }
                 }
             }
         }
@@ -117,6 +124,7 @@ impl Tasker {
             let rsp = r.unwrap();
             // 全站RSS则获取后给所有番剧发送广播
             for i in rsp.items.iter() {
+                tracing::debug!("check_update rss: {:?}", i);
                 if i.title.is_none() || i.enclosure.is_none() {
                     continue;
                 }
@@ -186,6 +194,7 @@ impl Tasker {
             send_map.insert(i.id, tx);
             let s = self.clone();
             spawn(async move {
+                tracing::debug!("sync_calender spawn anime: {:?}", &anime);
                 loop {
                     select! {
                         Ok(msg) = rx.recv() => {

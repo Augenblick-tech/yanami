@@ -6,8 +6,9 @@ use crate::{
     bgm::bgm::BGM,
     tmdb::tmdb::{SearchEnum, TMDB},
 };
+use utoipa::ToSchema;
 
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct AnimeInfo {
     pub id: i64,
     pub name: String,

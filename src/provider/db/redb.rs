@@ -9,7 +9,7 @@ use crate::models::{
     user::{RegisterCode, UserEntity},
 };
 
-use super::db_provider::{Anime, Db, Rss, Rules, User};
+use super::db_provider::{Anime, Db, DownloadPath, Rss, Rules, User};
 
 struct UserTable<'a> {
     table: TableDefinition<'a, String, Vec<u8>>,
@@ -38,6 +38,10 @@ impl<'a> UserRegisterTable<'a> {
     pub fn to_key(&self, code: &str) -> String {
         format!("/user/register/{}", code)
     }
+}
+
+struct KvTable<'a> {
+    table: TableDefinition<'a, String, String>,
 }
 
 struct RSSTable<'a> {
@@ -77,6 +81,7 @@ pub struct ReDB<'a> {
     rss: RSSTable<'a>,
     anime_calender: CalenderTable<'a>,
     rule: RuleTable<'a>,
+    kv: KvTable<'a>,
 }
 
 impl<'a> ReDB<'a> {
@@ -101,6 +106,9 @@ impl<'a> ReDB<'a> {
             },
             rule: RuleTable {
                 table: TableDefinition::new("rule_table"),
+            },
+            kv: KvTable {
+                table: TableDefinition::new("kv_table"),
             },
         })
     }
@@ -479,6 +487,35 @@ impl<'a> Rules for ReDB<'a> {
                     }
                 }
                 Ok(Some(group_rules))
+            }
+            Err(TableError::TableDoesNotExist(_)) => Ok(None),
+            Err(e) => Err(Error::msg(e.to_string())),
+        }
+    }
+}
+
+impl<'a> DownloadPath for ReDB<'a> {
+    fn set_path(&self, path: &str) -> Result<(), Error> {
+        let tx = self.client.begin_write()?;
+        {
+            let mut table = tx.open_table(self.kv.table)?;
+            table.insert("path".to_string(), path.to_string())?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    fn get_path(&self) -> Result<Option<String>, Error> {
+        let tx = self.client.begin_read()?;
+        let table = tx.open_table(self.kv.table);
+        match table {
+            Ok(table) => {
+                let r = table.get("path".to_string())?;
+                if let Some(r) = r {
+                    Ok(Some(r.value().to_string()))
+                } else {
+                    Ok(None)
+                }
             }
             Err(TableError::TableDoesNotExist(_)) => Ok(None),
             Err(e) => Err(Error::msg(e.to_string())),

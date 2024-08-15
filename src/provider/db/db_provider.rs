@@ -14,6 +14,7 @@ pub type DbProvider = Arc<dyn Db + Send + Sync>;
 pub type RssProvider = Arc<dyn Rss + Send + Sync>;
 pub type RuleProvider = Arc<dyn Rules + Send + Sync>;
 pub type AnimeProvider = Arc<dyn Anime + Send + Sync>;
+pub type DownloadPathProvider = Arc<dyn DownloadPath + Send + Sync>;
 
 pub trait Db {
     fn is_empty(&self) -> Result<bool, Error>;
@@ -54,4 +55,9 @@ pub trait Rules {
     fn del_rule(&self, name: String) -> Result<(), Error>;
     fn get_rule(&self, name: String) -> Result<Option<GroupRule>, Error>;
     fn get_all_rules(&self) -> Result<Option<Vec<GroupRule>>, Error>;
+}
+
+pub trait DownloadPath {
+    fn set_path(&self, path: &str) -> Result<(), Error>;
+    fn get_path(&self) -> Result<Option<String>, Error>;
 }

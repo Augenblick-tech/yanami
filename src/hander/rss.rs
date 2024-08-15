@@ -21,7 +21,7 @@ use crate::{
 pub async fn rss_list(
     Extension(service): Extension<Service>,
 ) -> ErrorResult<Json<JsonResult<Vec<RSS>>>> {
-    JsonResult::json_ok(service.rss.get_all_rss().expect("get all rss failed"))
+    JsonResult::json_ok(service.rss_db.get_all_rss().expect("get all rss failed"))
 }
 
 #[utoipa::path(
@@ -50,7 +50,7 @@ pub async fn set_rss(
         req.title = chan.title;
     }
 
-    JsonResult::json_ok(Some(service.rss.set_rss(req).expect("set rss failed")))
+    JsonResult::json_ok(Some(service.rss_db.set_rss(req).expect("set rss failed")))
 }
 
 #[utoipa::path(
@@ -72,6 +72,6 @@ pub async fn del_rss(
     if params.id == "" {
         return Err(Error::InvalidRequest);
     }
-    service.rss.del_rss(params.id).expect("del rss failed");
+    service.rss_db.del_rss(params.id).expect("del rss failed");
     JsonResult::json_ok(None)
 }
