@@ -20,6 +20,16 @@ pub struct AnimeInfo {
     pub season: i64,
 }
 
+impl AnimeInfo {
+    pub fn names(&self) -> Vec<String> {
+        [&self.name, &self.name_tw, &self.name_cn]
+            .into_iter()
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+            .collect()
+    }
+}
+
 pub struct AnimeTracker {
     tmdb: TMDB,
     bgm: BGM,

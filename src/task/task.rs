@@ -46,9 +46,6 @@ pub struct Tasker {
     anime_rss_broadcast: broadcast::Sender<RssItem>,
     // 用于发送特定番剧的搜索结果
     rss_send_map: Arc<Mutex<HashMap<i64, mpsc::Sender<RssItem>>>>,
-
-    hander_anime_broadcast: Arc<broadcast::Receiver<AnimeTask>>,
-    hander_anime_rss_broadcast: Arc<broadcast::Receiver<RssItem>>,
 }
 
 impl Tasker {
@@ -59,8 +56,8 @@ impl Tasker {
         anime: Arc<AnimeTracker>,
         rule_db: RuleProvider,
     ) -> Self {
-        let (ab, abr) = broadcast::channel::<AnimeTask>(10);
-        let (arb, arbr) = broadcast::channel::<RssItem>(10);
+        let (ab, _) = broadcast::channel::<AnimeTask>(10);
+        let (arb, _) = broadcast::channel::<RssItem>(10);
         Tasker {
             rss_db: rss,
             rss_http_client,
@@ -70,8 +67,6 @@ impl Tasker {
             anime_broadcast: ab,
             anime_rss_broadcast: arb,
             rss_send_map: Arc::new(Mutex::new(HashMap::new())),
-            hander_anime_broadcast: Arc::new(abr),
-            hander_anime_rss_broadcast: Arc::new(arbr),
         }
     }
     pub async fn run(&self) {
@@ -112,6 +107,7 @@ impl Tasker {
             .expect("check_update get_calender failed")
             .ok_or(Error::msg("anime list is empty"))?;
         for item in rss_list.iter() {
+            tracing::debug!("check_update get rss: {:?}", item);
             let r = self.rss_http_client.get_channel(&item.url).await;
             if r.is_err() {
                 tracing::error!(
@@ -124,11 +120,11 @@ impl Tasker {
             let rsp = r.unwrap();
             // 全站RSS则获取后给所有番剧发送广播
             for i in rsp.items.iter() {
-                tracing::debug!("check_update rss: {:?}", i);
+                // tracing::debug!("check_update rss: {:?}", i);
                 if i.title.is_none() {
                     continue;
                 }
-                if i.enclosure().is_none() & i.link().is_none() {
+                if i.enclosure().is_none() && i.link().is_none() {
                     continue;
                 }
 
@@ -142,43 +138,44 @@ impl Tasker {
                     title: i.title.clone().unwrap(),
                     magnet: url.to_string(),
                 };
-                if let Err(err) = self.anime_rss_broadcast.send(ri) {
+                if let Err(err) = self.anime_rss_broadcast.send(ri.clone()) {
                     tracing::error!("broadcast rss item to chan failed, {}", err);
                 }
+                tracing::debug!("send {:?} to anime_rss_broadcast success", ri);
             }
             // 特定番剧的搜索RSS则只给该番发送
             if let Some(search_url) = item.search_url.clone() {
                 anime_list.iter().for_each(|anime| {
-                    let urls = [
-                        formatx!(&search_url, &anime.name_tw),
-                        formatx!(&search_url, &anime.name_cn),
-                        formatx!(&search_url, &anime.name),
-                    ];
-                    urls.into_iter().filter(|url| url.is_ok()).for_each(|url| {
-                        let url = url.unwrap();
-                        if let Some(chan) = self.rss_send_map.lock().unwrap().get(&anime.id) {
-                            let chan = chan.clone();
-                            let rss_http_client = self.rss_http_client.clone();
-                            spawn(async move {
-                                if let Ok(rsp) = rss_http_client.get_channel(&url).await {
-                                    for item in rsp.items.iter() {
-                                        if let Err(err) = chan
-                                            .send(RssItem {
-                                                title: item.title.clone().unwrap(),
-                                                magnet: item.enclosure.clone().unwrap().url,
-                                            })
-                                            .await
-                                        {
-                                            tracing::error!(
-                                                "send rss item to chan failed, {}",
-                                                err
-                                            );
+                    anime
+                        .names()
+                        .iter()
+                        .map(|name| formatx!(&search_url, &name))
+                        .filter(|url| url.is_ok())
+                        .map(|url| url.unwrap())
+                        .for_each(|url| {
+                            if let Some(chan) = self.rss_send_map.lock().unwrap().get(&anime.id) {
+                                let chan = chan.clone();
+                                let rss_http_client = self.rss_http_client.clone();
+                                spawn(async move {
+                                    if let Ok(rsp) = rss_http_client.get_channel(&url).await {
+                                        for item in rsp.items.iter() {
+                                            if let Err(err) = chan
+                                                .send(RssItem {
+                                                    title: item.title.clone().unwrap(),
+                                                    magnet: item.enclosure.clone().unwrap().url,
+                                                })
+                                                .await
+                                            {
+                                                tracing::error!(
+                                                    "send rss item to chan failed, {}",
+                                                    err
+                                                );
+                                            }
                                         }
                                     }
-                                }
-                            });
-                        }
-                    })
+                                });
+                            }
+                        })
                 })
             }
         }
@@ -229,21 +226,29 @@ impl Tasker {
     }
 
     fn check_anime_rules(&self, msg: RssItem, anime: &AnimeInfo) {
+        // tracing::debug!("check_anime_rules rss: {:?}", msg);
         if let Ok(Some(rules)) = self.rule_db.get_all_rules() {
             for rule in rules.iter() {
                 for i in rule.rules.iter() {
-                    if Regex::new(&i.re).unwrap().is_match(&msg.title) {
-                        // TODO:
-                        // 检查磁力链接是否是相同的，注意去掉tracker
-                        // 发送磁力链接到qbit下载
-                        // 记录下载的内容到数据库
-                        tracing::debug!(
-                            "anime: {}\nbt: {}\nrule: {}",
-                            &anime.name,
-                            &msg.title,
-                            &i.re
-                        );
-                        return;
+                    for name in anime.names().iter() {
+                        let name = formatx!(&i.re, name);
+                        if name.is_err() {
+                            continue;
+                        }
+                        let re = name.unwrap();
+                        if Regex::new(&re).unwrap().is_match(&msg.title) {
+                            // TODO:
+                            // 检查磁力链接是否是相同的，注意去掉tracker
+                            // 发送磁力链接到qbit下载
+                            // 记录下载的内容到数据库
+                            tracing::debug!(
+                                "anime: {}\nbt: {}\nrule: {}",
+                                &anime.name,
+                                &msg.title,
+                                &i.re
+                            );
+                            return;
+                        }
                     }
                 }
             }
