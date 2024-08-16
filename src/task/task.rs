@@ -149,9 +149,10 @@ impl Tasker {
                     anime
                         .names()
                         .iter()
-                        .map(|name| formatx!(&search_url, &name))
-                        .filter(|url| url.is_ok())
-                        .map(|url| url.unwrap())
+                        .filter_map(|name| match formatx!(&search_url, &name) {
+                            Ok(url) => Some(url),
+                            Err(_) => None,
+                        })
                         .for_each(|url| {
                             if let Some(chan) = self.rss_send_map.lock().unwrap().get(&anime.id) {
                                 let chan = chan.clone();
