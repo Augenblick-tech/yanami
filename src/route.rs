@@ -23,7 +23,7 @@ use crate::{
         result::JsonResult,
     },
     hander::{
-        anime::{anime_records, animes},
+        anime::{anime_records, animes, set_anime},
         path::{get_path, set_path},
         rss::{del_rss, rss_list, set_rss},
         rule::{del_rule, rules, set_rule},
@@ -81,6 +81,7 @@ pub fn route(service: Service) -> Router {
         .route("/path", post(set_path))
         .route("/path", get(get_path))
         .route("/animes", get(animes))
+        .route("/anime", post(set_anime))
         .route("/anime/records", get(anime_records))
         .layer(Extension(service.clone()))
         .route_layer(middleware::from_fn(auth));

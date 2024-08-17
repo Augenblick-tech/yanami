@@ -5,10 +5,10 @@ use crate::{
     common::{
         auth::UserCharacter,
         errors::Error,
-        result::{JsonResultAuthBody, JsonResultDownloadPath, JsonResultRSS, JsonResultVecAnimeInfo, JsonResultVecAnimeRssRecord, JsonResultVecGroupRule, JsonResultVecRSS, JsonResultVecUserEntity, JsonResulti32},
+        result::{JsonResultAuthBody, JsonResultDownloadPath, JsonResultRSS, JsonResultVecAnimeInfo, JsonResultVecAnimeRssRecord, JsonResultVecAnimeStatus, JsonResultVecGroupRule, JsonResultVecRSS, JsonResultVecUserEntity, JsonResulti32},
     },
     models::{
-        anime::AnimeRecordReq, path::DownloadPath, rss::{AnimeRssRecord, DelRSS, RSSReq, RSS}, rule::{DelRule, GroupRule, Rule}, user::{AuthBody, LoginReq, RegisterCodeReq, RegisterCodeRsp, RegisterReq, UserEntity}
+        anime::{AnimeRecordReq, AnimeStatus}, path::DownloadPath, rss::{AnimeRssRecord, DelRSS, RSSReq, RSS}, rule::{DelRule, GroupRule, Rule}, user::{AuthBody, LoginReq, RegisterCodeReq, RegisterCodeRsp, RegisterReq, UserEntity}
     },
 };
 
@@ -30,6 +30,7 @@ use crate::{
             crate::hander::path::set_path,
             crate::hander::path::get_path,
             crate::hander::anime::animes,
+            crate::hander::anime::set_anime,
             crate::hander::anime::anime_records,
         ),
         components(
@@ -57,7 +58,9 @@ use crate::{
                 JsonResultDownloadPath,
                 DownloadPath,
                 JsonResultVecAnimeInfo,
+                JsonResultVecAnimeStatus,
                 AnimeInfo,
+                AnimeStatus,
                 AnimeRecordReq,
                 AnimeRssRecord,
                 JsonResultVecAnimeRssRecord,

@@ -3,15 +3,16 @@ use utoipa::{IntoParams, ToSchema};
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct RSSReq {
-    pub url: String,
-    pub title: String,
+    pub id: Option<String>,
+    pub url: Option<String>,
+    pub title: Option<String>,
     pub search_url: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct RSS {
     pub id: String,
-    pub url: String,
+    pub url: Option<String>,
     pub title: String,
     pub search_url: Option<String>,
 }

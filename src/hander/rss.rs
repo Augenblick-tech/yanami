@@ -37,17 +37,21 @@ pub async fn set_rss(
     Extension(service): Extension<Service>,
     Json(mut req): Json<RSSReq>,
 ) -> ErrorResult<Json<JsonResult<RSS>>> {
-    if req.url == "" {
+    if req.url.is_none() && req.search_url.is_none() {
         return Err(Error::InvalidRequest);
     }
 
-    if req.title == "" {
+    if req.title.is_none() && req.url.is_some() {
         let chan = service
             .rss_http_client
-            .get_channel(&req.url)
+            .get_channel(&req.url.clone().unwrap())
             .await
             .expect("get rss channel failed");
-        req.title = chan.title;
+        req.title = Some(chan.title);
+    }
+
+    if req.title.is_none() {
+        return Err(Error::InvalidRequest);
     }
 
     JsonResult::json_ok(Some(service.rss_db.set_rss(req).expect("set rss failed")))

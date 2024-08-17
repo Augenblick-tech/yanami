@@ -2,8 +2,10 @@ use anna::anime::anime::AnimeInfo;
 use anyhow::Error;
 use chrono::Local;
 use redb::{Database, ReadableTable, TableDefinition, TableError};
+use uuid::Uuid;
 
 use crate::models::{
+    anime::AnimeStatus,
     rss::{AnimeRssRecord, RSSReq, RSS},
     rule::GroupRule,
     user::{RegisterCode, UserEntity},
@@ -279,17 +281,17 @@ impl<'a> User for ReDB<'a> {
 impl<'a> Rss for ReDB<'a> {
     fn set_rss(&self, req: RSSReq) -> Result<RSS, Error> {
         let tx = self.client.begin_write()?;
-        let key = format!("{:x}", md5::compute(req.url.to_string()));
+        let key = Uuid::new_v4();
         let rss = RSS {
             id: key.to_string(),
             url: req.url,
-            title: req.title,
+            title: req.title.unwrap(),
             search_url: req.search_url,
         };
         {
             let mut table = tx.open_table(self.rss.table)?;
-            tracing::debug!("set rss id:{}, url:{}", &key, &rss.url);
-            table.insert(self.rss.to_key(&key), serde_json::to_vec(&rss)?)?;
+            tracing::debug!("set rss id:{}, rss:{:?}", &key, &rss);
+            table.insert(self.rss.to_key(&key.to_string()), serde_json::to_vec(&rss)?)?;
         }
         tx.commit()?;
         Ok(rss)
@@ -349,25 +351,52 @@ impl<'a> Rss for ReDB<'a> {
 }
 
 impl<'a> Anime for ReDB<'a> {
-    fn set_calender(&self, calender: Vec<anna::anime::anime::AnimeInfo>) -> Result<(), Error> {
+    fn set_calenders(&self, calender: Vec<AnimeInfo>) -> Result<(), Error> {
+        if calender.is_empty() {
+            return Ok(());
+        }
+        let tx = self.client.begin_read()?;
+        let table = tx.open_table(self.anime_calender.table);
+        for anime in calender.iter() {
+            let status = match &table {
+                Ok(table) => {
+                    let r = table.get(self.anime_calender.to_key(anime.id))?;
+                    let mut status: AnimeStatus = serde_json::from_slice(&r.unwrap().value())?;
+                    status.anime_info = anime.clone();
+                    status
+                }
+                Err(TableError::TableDoesNotExist(_)) => AnimeStatus {
+                    status: true,
+                    anime_info: anime.clone(),
+                },
+                Err(e) => return Err(Error::msg(e.to_string())),
+            };
+            self.set_calender(status)?;
+        }
+
+        Ok(())
+    }
+
+    fn set_calender(&self, anime: AnimeStatus) -> Result<(), Error> {
         let tx = self.client.begin_write()?;
         {
             let mut table = tx.open_table(self.anime_calender.table)?;
-            for i in calender {
-                table.insert(self.anime_calender.to_key(i.id), serde_json::to_vec(&i)?)?;
-            }
+            table.insert(
+                self.anime_calender.to_key(anime.anime_info.id),
+                serde_json::to_vec(&anime)?,
+            )?;
         }
         tx.commit()?;
         Ok(())
     }
 
-    fn get_calender(&self) -> Result<Option<Vec<anna::anime::anime::AnimeInfo>>, Error> {
+    fn get_calender(&self) -> Result<Option<Vec<AnimeStatus>>, Error> {
         if self.is_empty()? {
             return Ok(None);
         }
         let tx = self.client.begin_read()?;
         let table = tx.open_table(self.anime_calender.table);
-        let mut calender = Vec::<AnimeInfo>::new();
+        let mut calender = Vec::<AnimeStatus>::new();
         match table {
             Ok(table) => {
                 for data in table.iter()? {
@@ -386,13 +415,14 @@ impl<'a> Anime for ReDB<'a> {
 
     fn set_anime_rss(
         &self,
-        anime_name: String,
+        anime_id: i64,
         anime_rss_record: crate::models::rss::AnimeRssRecord,
     ) -> Result<(), Error> {
         let tx = self.client.begin_write()?;
         {
-            let mut table =
-                tx.open_table(TableDefinition::<String, Vec<u8>>::new(anime_name.as_str()))?;
+            let mut table = tx.open_table(TableDefinition::<String, Vec<u8>>::new(
+                anime_id.to_string().as_str(),
+            ))?;
             table.insert(
                 anime_rss_record.title.clone(),
                 serde_json::to_vec(&anime_rss_record)?,
@@ -404,13 +434,15 @@ impl<'a> Anime for ReDB<'a> {
 
     fn get_anime_rss(
         &self,
-        anime_name: String,
+        anime_id: i64,
     ) -> Result<Option<Vec<crate::models::rss::AnimeRssRecord>>, Error> {
         if self.is_empty()? {
             return Ok(None);
         }
         let tx = self.client.begin_read()?;
-        let table = tx.open_table(TableDefinition::<String, Vec<u8>>::new(anime_name.as_str()));
+        let table = tx.open_table(TableDefinition::<String, Vec<u8>>::new(
+            anime_id.to_string().as_str(),
+        ));
         let mut list = Vec::<AnimeRssRecord>::new();
         match table {
             Ok(table) => {

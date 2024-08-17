@@ -4,6 +4,7 @@ use anna::anime::anime::AnimeInfo;
 use anyhow::Error;
 
 use crate::models::{
+    anime::AnimeStatus,
     rss::{AnimeRssRecord, RSSReq, RSS},
     rule::GroupRule,
     user::{RegisterCode, UserEntity},
@@ -39,15 +40,12 @@ pub trait Rss {
 }
 
 pub trait Anime {
-    fn set_calender(&self, calender: Vec<AnimeInfo>) -> Result<(), Error>;
-    fn get_calender(&self) -> Result<Option<Vec<AnimeInfo>>, Error>;
+    fn set_calenders(&self, calender: Vec<AnimeInfo>) -> Result<(), Error>;
+    fn set_calender(&self, anime_status: AnimeStatus) -> Result<(), Error>;
+    fn get_calender(&self) -> Result<Option<Vec<AnimeStatus>>, Error>;
 
-    fn set_anime_rss(
-        &self,
-        anime_name: String,
-        anime_rss_record: AnimeRssRecord,
-    ) -> Result<(), Error>;
-    fn get_anime_rss(&self, anime_name: String) -> Result<Option<Vec<AnimeRssRecord>>, Error>;
+    fn set_anime_rss(&self, anime_id: i64, anime_rss_record: AnimeRssRecord) -> Result<(), Error>;
+    fn get_anime_rss(&self, anime_id: i64) -> Result<Option<Vec<AnimeRssRecord>>, Error>;
 }
 
 pub trait Rules {
