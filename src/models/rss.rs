@@ -33,4 +33,5 @@ pub struct AnimeRssRecord {
     pub title: String,
     pub magnet: String,
     pub rule_name: String,
+    pub info_hash: String,
 }

@@ -11,7 +11,9 @@ use anna::{
 use anyhow::Error;
 use formatx::formatx;
 use regex::Regex;
+use reqwest::Url;
 use serde::{Deserialize, Serialize};
+use sha1::{Digest, Sha1};
 use tokio::{
     select, spawn,
     sync::{
@@ -22,7 +24,10 @@ use tokio::{
 };
 
 use crate::{
-    models::rss::{AnimeRssRecord, RssItem},
+    models::{
+        rss::{AnimeRssRecord, RssItem},
+        torrent::Torrent,
+    },
     provider::db::db_provider::{AnimeProvider, RssProvider, RuleProvider},
 };
 
@@ -299,26 +304,37 @@ impl Tasker {
                                 &msg.title,
                                 &i.re
                             );
-                            if let Err(e) = self.anime_db.set_anime_rss(
-                                anime.id,
-                                AnimeRssRecord {
-                                    title: msg.title,
-                                    magnet: msg.magnet,
-                                    rule_name: rule.name.clone(),
-                                },
-                            ) {
-                                tracing::error!(
-                                    "check_anime_rules set_calender failed, error: {}",
-                                    e
-                                );
-                            }
-                            // 检查是否已经完结
-                            if let Ok(anime_list) = self.anime_db.get_anime_rss(anime.id) {
-                                if anime_list.is_none() {
-                                    return;
+                            if let Ok(info_hash) = Self::get_info_hash(&msg.magnet).await {
+                                let r = self.anime_db.get_anime_recode(anime.id, &info_hash);
+                                if r.is_err() {
+                                    continue;
                                 }
-                                let anime_list = anime_list.unwrap();
-                                if anime_list.len() >= anime.eps as usize {}
+                                if r.unwrap().is_none() {
+                                    if let Err(e) = self.anime_db.set_anime_recode(
+                                        anime.id,
+                                        AnimeRssRecord {
+                                            title: msg.title,
+                                            magnet: msg.magnet,
+                                            rule_name: rule.name.clone(),
+                                            info_hash,
+                                        },
+                                    ) {
+                                        tracing::error!(
+                                            "check_anime_rules set_calender failed, error: {}",
+                                            e
+                                        );
+                                    }
+                                }
+                                // 检查是否已经完结
+                                // if let Ok(anime_list) =
+                                //     self.anime_db.get_anime_rss_recodes(anime.id)
+                                // {
+                                //     if anime_list.is_none() {
+                                //         return;
+                                //     }
+                                //     let anime_list = anime_list.unwrap();
+                                //     if anime_list.len() >= anime.eps as usize {}
+                                // }
                             }
                             return;
                         }
@@ -326,5 +342,27 @@ impl Tasker {
                 }
             }
         }
+    }
+
+    pub async fn get_info_hash(url: &str) -> Result<String, Error> {
+        if let Some(hash_info) = Self::get_magnet_info_hash(url) {
+            Ok(hash_info.to_lowercase())
+        } else {
+            let bytes = reqwest::get(url).await?.bytes().await?;
+            let info: Torrent = serde_bencode::from_bytes(&bytes.to_vec())?;
+            let mut hasher = Sha1::new();
+            let info = serde_bencode::to_bytes(&info.info)?;
+            hasher.update(info);
+            let info_hash = format!("{:x}", hasher.finalize());
+            return Ok(info_hash.to_lowercase());
+        }
+    }
+
+    fn get_magnet_info_hash(magnet_link: &str) -> Option<String> {
+        let url = Url::parse(magnet_link).ok()?;
+        let xt_param = url.query_pairs().find(|(k, _)| k == "xt")?;
+        let info_hash = xt_param.1.strip_prefix("urn:btih:")?;
+
+        Some(info_hash.to_string())
     }
 }

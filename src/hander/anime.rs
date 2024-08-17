@@ -46,7 +46,7 @@ pub async fn anime_records(
     if q.name_id <= 0 {
         return Err(Error::InvalidRequest);
     }
-    JsonResult::json_ok(service.anime_db.get_anime_rss(q.name_id)?)
+    JsonResult::json_ok(service.anime_db.get_anime_rss_recodes(q.name_id)?)
 }
 
 #[utoipa::path(

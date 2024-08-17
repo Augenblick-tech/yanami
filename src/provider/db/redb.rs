@@ -413,7 +413,7 @@ impl<'a> Anime for ReDB<'a> {
         }
     }
 
-    fn set_anime_rss(
+    fn set_anime_recode(
         &self,
         anime_id: i64,
         anime_rss_record: crate::models::rss::AnimeRssRecord,
@@ -424,7 +424,7 @@ impl<'a> Anime for ReDB<'a> {
                 anime_id.to_string().as_str(),
             ))?;
             table.insert(
-                anime_rss_record.title.clone(),
+                anime_rss_record.info_hash.clone(),
                 serde_json::to_vec(&anime_rss_record)?,
             )?;
         }
@@ -432,7 +432,30 @@ impl<'a> Anime for ReDB<'a> {
         Ok(())
     }
 
-    fn get_anime_rss(
+    fn get_anime_recode(
+        &self,
+        anime_id: i64,
+        info_hash: &str,
+    ) -> Result<Option<AnimeRssRecord>, Error> {
+        let tx = self.client.begin_read()?;
+        let table = tx.open_table(TableDefinition::<String, Vec<u8>>::new(
+            anime_id.to_string().as_str(),
+        ));
+        match &table {
+            Ok(table) => {
+                let r = table.get(info_hash.to_string())?;
+                if let Some(r) = r {
+                    Ok(serde_json::from_slice(&r.value())?)
+                } else {
+                    Ok(None)
+                }
+            }
+            Err(TableError::TableDoesNotExist(_)) => Ok(None),
+            Err(e) => Err(Error::msg(e.to_string())),
+        }
+    }
+
+    fn get_anime_rss_recodes(
         &self,
         anime_id: i64,
     ) -> Result<Option<Vec<crate::models::rss::AnimeRssRecord>>, Error> {

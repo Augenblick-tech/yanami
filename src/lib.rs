@@ -1,3 +1,4 @@
+#![feature(ascii_char)]
 pub mod common;
 pub mod config;
 pub mod hander;

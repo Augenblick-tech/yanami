@@ -44,8 +44,17 @@ pub trait Anime {
     fn set_calender(&self, anime_status: AnimeStatus) -> Result<(), Error>;
     fn get_calender(&self) -> Result<Option<Vec<AnimeStatus>>, Error>;
 
-    fn set_anime_rss(&self, anime_id: i64, anime_rss_record: AnimeRssRecord) -> Result<(), Error>;
-    fn get_anime_rss(&self, anime_id: i64) -> Result<Option<Vec<AnimeRssRecord>>, Error>;
+    fn set_anime_recode(
+        &self,
+        anime_id: i64,
+        anime_rss_record: AnimeRssRecord,
+    ) -> Result<(), Error>;
+    fn get_anime_recode(
+        &self,
+        anime_id: i64,
+        info_hash: &str,
+    ) -> Result<Option<AnimeRssRecord>, Error>;
+    fn get_anime_rss_recodes(&self, anime_id: i64) -> Result<Option<Vec<AnimeRssRecord>>, Error>;
 }
 
 pub trait Rules {
