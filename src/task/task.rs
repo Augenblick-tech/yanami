@@ -9,6 +9,7 @@ use anna::{
     rss::rss::RssHttpClient,
 };
 use anyhow::Error;
+use base32::Alphabet;
 use formatx::formatx;
 use regex::Regex;
 use reqwest::Url;
@@ -174,43 +175,42 @@ impl Tasker {
             .get_calender()
             .expect("check_update get_calender failed")
             .ok_or(Error::msg("anime list is empty"))?;
-        for item in rss_list.iter().filter(|item| item.url.is_some()) {
+        for item in rss_list.iter() {
             tracing::debug!("check_update get rss: {:?}", item);
-            let r = self
-                .rss_http_client
-                .get_channel(&item.url.clone().unwrap())
-                .await;
-            if r.is_err() {
-                tracing::error!(
-                    "check_update get_calender {} failed, {}",
-                    &item.url.clone().unwrap(),
-                    r.unwrap_err()
-                );
-                continue;
-            }
-            let rsp = r.unwrap();
-            // 全站RSS则获取后给所有番剧发送广播
-            for i in rsp.items.iter() {
-                // tracing::debug!("check_update rss: {:?}", i);
-                if i.title.is_none() {
+            if let Some(url) = item.url.clone() {
+                let r = self.rss_http_client.get_channel(&url).await;
+                if r.is_err() {
+                    tracing::error!(
+                        "check_update get_calender {} failed, {}",
+                        &item.url.clone().unwrap(),
+                        r.unwrap_err()
+                    );
                     continue;
                 }
-                if i.enclosure().is_none() && i.link().is_none() {
-                    continue;
-                }
+                let rsp = r.unwrap();
+                // 全站RSS则获取后给所有番剧发送广播
+                for i in rsp.items.iter() {
+                    // tracing::debug!("check_update rss: {:?}", i);
+                    if i.title.is_none() {
+                        continue;
+                    }
+                    if i.enclosure().is_none() && i.link().is_none() {
+                        continue;
+                    }
 
-                let url = if let Some(e) = i.enclosure() {
-                    e.url()
-                } else {
-                    i.link().unwrap()
-                };
+                    let url = if let Some(e) = i.enclosure() {
+                        e.url()
+                    } else {
+                        i.link().unwrap()
+                    };
 
-                let ri = RssItem {
-                    title: i.title.clone().unwrap(),
-                    magnet: url.to_string(),
-                };
-                if let Err(err) = self.anime_rss_broadcast.send(ri.clone()) {
-                    tracing::error!("broadcast rss item to chan failed, {}", err);
+                    let ri = RssItem {
+                        title: i.title.clone().unwrap(),
+                        magnet: url.to_string(),
+                    };
+                    if let Err(err) = self.anime_rss_broadcast.send(ri.clone()) {
+                        tracing::error!("broadcast rss item to chan failed, {}", err);
+                    }
                 }
             }
             // 特定番剧的搜索RSS则只给该番发送
@@ -230,6 +230,7 @@ impl Tasker {
                             {
                                 let chan = chan.clone();
                                 let rss_http_client = self.rss_http_client.clone();
+                                tracing::debug!("check_update search_url: {}", url);
                                 spawn(async move {
                                     if let Ok(rsp) = rss_http_client.get_channel(&url).await {
                                         for item in rsp.items.iter() {
@@ -290,6 +291,10 @@ impl Tasker {
                     for name in anime.names().iter() {
                         let name = formatx!(&i.re, name);
                         if name.is_err() {
+                            tracing::error!(
+                                "check_anime_rules format re failed, error: {}",
+                                name.unwrap_err()
+                            );
                             continue;
                         }
                         let re = name.unwrap();
@@ -346,7 +351,17 @@ impl Tasker {
 
     pub async fn get_info_hash(url: &str) -> Result<String, Error> {
         if let Some(hash_info) = Self::get_magnet_info_hash(url) {
-            Ok(hash_info.to_lowercase())
+            if hash_info.len() <= 32 {
+                Ok(
+                    base32::decode(Alphabet::Rfc4648 { padding: true }, &hash_info)
+                        .ok_or(Error::msg("base32 to hex failed"))?
+                        .iter()
+                        .map(|byte| format!("{:02x}", byte))
+                        .collect::<String>(),
+                )
+            } else {
+                Ok(hash_info)
+            }
         } else {
             let bytes = reqwest::get(url).await?.bytes().await?;
             let info: Torrent = serde_bencode::from_bytes(&bytes.to_vec())?;

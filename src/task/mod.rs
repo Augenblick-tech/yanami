@@ -9,12 +9,22 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_info_hash() {
-        let info_hash = Tasker::get_info_hash("https://nyaa.si/download/1860859.torrent")
-            .await
-            .unwrap();
+        let info_hash = Tasker::get_info_hash(
+            "https://dl.dmhy.org/2024/07/10/80fe910222908637baea6adeb44de49f0c512474.torrent",
+        )
+        .await
+        .unwrap();
         assert_eq!(
             info_hash,
-            "416cff2217b776196cc67b76b032734094377675".to_string()
-        )
+            "80fe910222908637baea6adeb44de49f0c512474".to_string()
+        );
+        let info_hash =
+            Tasker::get_info_hash("magnet:?xt=urn:btih:QD7JCARCSCDDPOXKNLPLITPET4GFCJDU")
+                .await
+                .unwrap();
+        assert_eq!(
+            info_hash,
+            "80fe910222908637baea6adeb44de49f0c512474".to_string()
+        );
     }
 }

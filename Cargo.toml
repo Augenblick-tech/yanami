@@ -20,6 +20,7 @@ async-trait = "0.1.81"
 axum = "0.7.5"
 axum-extra = { version = "0.9.3", features = ["typed-header"] }
 axum-macros = "0.4.1"
+base32 = "0.5.1"
 chrono = "0.4.38"
 clap = { version = "4.5.13", features = ["derive", "env"] }
 dotenv = "0.15.0"
