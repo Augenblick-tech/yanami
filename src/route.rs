@@ -24,7 +24,7 @@ use crate::{
     },
     hander::{
         anime::{anime_records, animes, set_anime},
-        path::{get_path, set_path},
+        config::{get_config, set_config},
         rss::{del_rss, rss_list, set_rss},
         rule::{del_rule, rules, set_rule},
         user::{login, register, register_code, users},
@@ -78,8 +78,8 @@ pub fn route(service: Service) -> Router {
         .route("/rule", post(set_rule))
         .route("/rules", get(rules))
         .route("/rule", delete(del_rule))
-        .route("/path", post(set_path))
-        .route("/path", get(get_path))
+        .route("/config", post(set_config))
+        .route("/config", get(get_config))
         .route("/animes", get(animes))
         .route("/anime", post(set_anime))
         .route("/anime/records", get(anime_records))

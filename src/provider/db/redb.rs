@@ -11,7 +11,7 @@ use crate::models::{
     user::{RegisterCode, UserEntity},
 };
 
-use super::db_provider::{Anime, Db, DownloadPath, Rss, Rules, User};
+use super::db_provider::{Anime, Db, Rss, Rules, ServiceConfig, User};
 
 struct UserTable<'a> {
     table: TableDefinition<'a, String, Vec<u8>>,
@@ -549,7 +549,7 @@ impl<'a> Rules for ReDB<'a> {
     }
 }
 
-impl<'a> DownloadPath for ReDB<'a> {
+impl<'a> ServiceConfig for ReDB<'a> {
     fn set_path(&self, path: &str) -> Result<(), Error> {
         let tx = self.client.begin_write()?;
         {

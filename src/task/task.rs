@@ -300,8 +300,8 @@ impl Tasker {
                         let re = name.unwrap();
                         if Regex::new(&re).unwrap().is_match(&msg.title) {
                             // TODO:
-                            // 检查磁力链接是否是相同的，注意去掉tracker
                             // 发送磁力链接到qbit下载
+
                             // 记录下载的内容到数据库
                             tracing::debug!(
                                 "anime: {}\nbt: {}\nrule: {}",
@@ -330,7 +330,10 @@ impl Tasker {
                                         );
                                     }
                                 }
+                                // TODO:
                                 // 检查是否已经完结
+                                // 完结则修改状态为false，退出监听
+
                                 // if let Ok(anime_list) =
                                 //     self.anime_db.get_anime_rss_recodes(anime.id)
                                 // {

@@ -8,7 +8,7 @@ use crate::{
         result::{JsonResultAuthBody, JsonResultDownloadPath, JsonResultRSS, JsonResultVecAnimeInfo, JsonResultVecAnimeRssRecord, JsonResultVecAnimeStatus, JsonResultVecGroupRule, JsonResultVecRSS, JsonResultVecUserEntity, JsonResulti32},
     },
     models::{
-        anime::{AnimeRecordReq, AnimeStatus}, path::DownloadPath, rss::{AnimeRssRecord, DelRSS, RSSReq, RSS}, rule::{DelRule, GroupRule, Rule}, user::{AuthBody, LoginReq, RegisterCodeReq, RegisterCodeRsp, RegisterReq, UserEntity}
+        anime::{AnimeRecordReq, AnimeStatus}, config::ServiceConfig, rss::{AnimeRssRecord, DelRSS, RSSReq, RSS}, rule::{DelRule, GroupRule, Rule}, user::{AuthBody, LoginReq, RegisterCodeReq, RegisterCodeRsp, RegisterReq, UserEntity}
     },
 };
 
@@ -27,8 +27,8 @@ use crate::{
             crate::hander::rule::set_rule,
             crate::hander::rule::del_rule,
             crate::hander::rule::rules,
-            crate::hander::path::set_path,
-            crate::hander::path::get_path,
+            crate::hander::config::set_config,
+            crate::hander::config::get_config,
             crate::hander::anime::animes,
             crate::hander::anime::set_anime,
             crate::hander::anime::anime_records,
@@ -56,7 +56,7 @@ use crate::{
                 Rule,
                 DelRule,
                 JsonResultDownloadPath,
-                DownloadPath,
+                ServiceConfig,
                 JsonResultVecAnimeInfo,
                 JsonResultVecAnimeStatus,
                 AnimeInfo,

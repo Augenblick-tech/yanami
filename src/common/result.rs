@@ -1,6 +1,6 @@
 use crate::{
     common::errors::Error,
-    models::{anime::AnimeStatus, path::DownloadPath, rss::{AnimeRssRecord, RSS}, rule::GroupRule, user::{AuthBody, RegisterCodeRsp, UserEntity}},
+    models::{anime::AnimeStatus, config::ServiceConfig, rss::{AnimeRssRecord, RSS}, rule::GroupRule, user::{AuthBody, RegisterCodeRsp, UserEntity}},
 };
 use anna::anime::anime::AnimeInfo;
 use axum::Json;
@@ -16,7 +16,7 @@ use utoipa::ToSchema;
     JsonResultVecRSS = JsonResult<Vec<RSS>>,
     JsonResultRSS = JsonResult<RSS>,
     JsonResultVecGroupRule = JsonResult<Vec<GroupRule>>,
-    JsonResultDownloadPath = JsonResult<DownloadPath>,
+    JsonResultDownloadPath = JsonResult<ServiceConfig>,
     JsonResultVecAnimeInfo = JsonResult<Vec<AnimeInfo>>,
     JsonResultVecAnimeStatus = JsonResult<Vec<AnimeStatus>>,
     JsonResultVecAnimeRssRecord = JsonResult<Vec<AnimeRssRecord>>,
