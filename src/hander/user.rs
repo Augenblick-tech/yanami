@@ -54,6 +54,9 @@ pub async fn login(
 #[utoipa::path(
         get,
         path = "/v1/register/code",
+        params(
+            RegisterCodeReq,
+        ),
         security(("api_key" = ["Authorization"])),
         responses(
             (status = 200, description = "管理员获取注册码", body = JsonResultRegisterCodeRsp)

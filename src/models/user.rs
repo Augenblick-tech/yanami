@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 
 use crate::common::auth::UserCharacter;
 
@@ -59,7 +59,7 @@ impl UserEntity {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize, ToSchema, IntoParams)]
 pub struct RegisterCodeReq {
     pub timers: usize,
     pub expire: i64,
