@@ -147,7 +147,7 @@ impl Tasker {
     async fn init_anime_listener(&self) -> Result<(), Error> {
         let anime = self
             .anime_db
-            .get_calender()
+            .get_calenders()
             .expect("init_anime_listener get_calender failed")
             .ok_or(Error::msg("anime list is empty"))?;
         for i in anime.iter() {
@@ -172,7 +172,7 @@ impl Tasker {
             .ok_or(Error::msg("rss list is empty"))?;
         let anime_list = self
             .anime_db
-            .get_calender()
+            .get_calenders()
             .expect("check_update get_calender failed")
             .ok_or(Error::msg("anime list is empty"))?;
         for item in rss_list.iter() {
@@ -330,19 +330,31 @@ impl Tasker {
                                         );
                                     }
                                 }
-                                // TODO:
                                 // 检查是否已经完结
                                 // 完结则修改状态为false，退出监听
-
-                                // if let Ok(anime_list) =
-                                //     self.anime_db.get_anime_rss_recodes(anime.id)
-                                // {
-                                //     if anime_list.is_none() {
-                                //         return;
-                                //     }
-                                //     let anime_list = anime_list.unwrap();
-                                //     if anime_list.len() >= anime.eps as usize {}
-                                // }
+                                if let Ok(is_season_over) = self.check_season_over(anime) {
+                                    if is_season_over {
+                                        match self.anime_db.get_calender(anime.id) {
+                                            Ok(status) => {
+                                                if let Some(mut status) = status {
+                                                    status.status = false;
+                                                    if let Err(e) =
+                                                        self.anime_db.set_calender(status)
+                                                    {
+                                                        tracing::error!("check_anime_rules season over set anime status failed, {}", e);
+                                                    }
+                                                }
+                                            }
+                                            Err(e) => tracing::error!("check_anime_rules season over get anime status failed, {}", e),
+                                        }
+                                        if let Err(e) = self.anime_broadcast.send(AnimeTask {
+                                            info: anime.clone(),
+                                            is_canncel: true,
+                                        }) {
+                                            tracing::error!("{} is season update over, stop listen failed, error: {}", anime.name, e);
+                                        }
+                                    }
+                                }
                             }
                             return;
                         }
@@ -350,6 +362,65 @@ impl Tasker {
                 }
             }
         }
+    }
+
+    fn check_season_over(&self, anime: &AnimeInfo) -> Result<bool, Error> {
+        let anime_list = self
+            .anime_db
+            // 获取番剧的下载记录
+            .get_anime_rss_recodes(anime.id)?
+            .ok_or(Error::msg("not found anime records"))?;
+        let eps = Self::get_season_eps(anime_list)?;
+        Ok(*(eps.last().unwrap_or(&0)) >= anime.eps)
+    }
+
+    pub fn get_season_eps(anime_list: Vec<AnimeRssRecord>) -> Result<Vec<i64>, Error> {
+        let anime_list: Vec<Vec<f64>> = anime_list
+            .iter()
+            // 将标题的数字获取出来转成浮点数数组，并过滤掉小数，只保留整数
+            .map(|anime| {
+                Regex::new(r"\d+(\.\d+)?")
+                    .unwrap()
+                    .captures_iter(&anime.title)
+                    .filter_map(|cap| cap[0].parse::<f64>().ok())
+                    .filter(|i| i.eq(&i.trunc()))
+                    .collect::<Vec<f64>>()
+            })
+            .collect();
+        // 如果下载记录只有两条以下，则不做判断
+        if anime_list.len() <= 2 {
+            return Ok(Vec::new());
+        }
+        let mut eps = Vec::new();
+        // 遍历数组的下标，最大下标为长度最短的数组长度
+        for index in 0..anime_list.iter().map(|v| v.len()).min().unwrap_or(0) {
+            // 将每个数组转化为相同下标的一列数组
+            let mut i_eps = Vec::new();
+            for i in anime_list.iter() {
+                if i.len() > index {
+                    i_eps.push(i[index] as i64);
+                }
+            }
+
+            // 过滤掉重复数字出现三次的一列数组
+            if !i_eps
+                .iter()
+                .fold(std::collections::HashMap::new(), |mut acc, &x| {
+                    *acc.entry(x).or_insert(0) += 1;
+                    acc
+                })
+                .values()
+                .all(|&count| count <= 2)
+            {
+                continue;
+            }
+            // 从做开始的第一个不重复三次的数字就是番剧的集数，退出循环
+            eps = i_eps;
+            break;
+        }
+        eps.sort();
+        eps.dedup();
+        Ok(eps)
     }
 
     pub async fn get_info_hash(url: &str) -> Result<String, Error> {

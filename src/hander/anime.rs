@@ -24,7 +24,7 @@ use crate::{
 pub async fn animes(
     Extension(service): Extension<Service>,
 ) -> ErrorResult<Json<JsonResult<Vec<AnimeStatus>>>> {
-    JsonResult::json_ok(service.anime_db.get_calender()?)
+    JsonResult::json_ok(service.anime_db.get_calenders()?)
 }
 
 #[utoipa::path(

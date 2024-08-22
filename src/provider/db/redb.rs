@@ -390,7 +390,7 @@ impl<'a> Anime for ReDB<'a> {
         Ok(())
     }
 
-    fn get_calender(&self) -> Result<Option<Vec<AnimeStatus>>, Error> {
+    fn get_calenders(&self) -> Result<Option<Vec<AnimeStatus>>, Error> {
         if self.is_empty()? {
             return Ok(None);
         }
@@ -407,6 +407,23 @@ impl<'a> Anime for ReDB<'a> {
                     }
                 }
                 Ok(Some(calender))
+            }
+            Err(TableError::TableDoesNotExist(_)) => Ok(None),
+            Err(e) => Err(Error::msg(e.to_string())),
+        }
+    }
+
+    fn get_calender(&self, id: i64) -> Result<Option<AnimeStatus>, Error> {
+        let tx = self.client.begin_read()?;
+        let table = tx.open_table(self.anime_calender.table);
+        match table {
+            Ok(table) => {
+                let r = table.get(self.anime_calender.to_key(id))?;
+                if let Some(r) = r {
+                    Ok(Some(serde_json::from_slice(&r.value())?))
+                } else {
+                    Ok(None)
+                }
             }
             Err(TableError::TableDoesNotExist(_)) => Ok(None),
             Err(e) => Err(Error::msg(e.to_string())),
