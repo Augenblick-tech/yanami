@@ -41,12 +41,12 @@ pub async fn set_rss(
         return Err(Error::InvalidRequest);
     }
 
+    let chan = service
+        .rss_http_client
+        .get_channel(&req.url.clone().unwrap())
+        .await
+        .expect("get rss channel failed");
     if req.title.is_none() && req.url.is_some() {
-        let chan = service
-            .rss_http_client
-            .get_channel(&req.url.clone().unwrap())
-            .await
-            .expect("get rss channel failed");
         req.title = Some(chan.title);
     }
 
