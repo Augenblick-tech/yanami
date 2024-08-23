@@ -154,7 +154,9 @@ impl Tasker {
         let anime = self
             .anime_db
             .get_calenders()
-            .expect("init_anime_listener get_calender failed")
+            .map_err(|e| {
+                anyhow::Error::msg(format!("init_anime_listener get_calender failed, {}", e))
+            })?
             .ok_or(Error::msg("anime list is empty"))?;
         for i in anime.iter() {
             if i.status {
@@ -174,12 +176,12 @@ impl Tasker {
         let rss_list = self
             .rss_db
             .get_all_rss()
-            .expect("check_update get_all_rules failed")
+            .map_err(|e| anyhow::Error::msg(format!("check_update get_all_rules failed, {}", e)))?
             .ok_or(Error::msg("rss list is empty"))?;
         let anime_list = self
             .anime_db
             .get_calenders()
-            .expect("check_update get_calender failed")
+            .map_err(|e| anyhow::Error::msg(format!("check_update get_calender failed, {}", e)))?
             .ok_or(Error::msg("anime list is empty"))?;
         for item in rss_list.iter() {
             tracing::debug!("check_update get rss: {:?}", item);
@@ -269,11 +271,10 @@ impl Tasker {
     }
 
     async fn sync_calender(&self) -> Result<(), Error> {
-        let anime = self
-            .anime
-            .get_calender()
-            .await
-            .expect("sync_calender get_calender failed");
+        let anime =
+            self.anime.get_calender().await.map_err(|e| {
+                anyhow::Error::msg(format!("sync_calender get_calender failed. {}", e))
+            })?;
         for i in anime.iter() {
             if let Err(e) = self.start_listener(i).await {
                 tracing::error!("sync_calender start_listener failed, error: {}", e);
@@ -282,7 +283,7 @@ impl Tasker {
         Ok(self
             .anime_db
             .set_calenders(anime)
-            .expect("sync_calender set failed"))
+            .map_err(|e| anyhow::Error::msg(format!("sync_calender set failed, {}", e)))?)
     }
 
     async fn check_anime_rules(&self, msg: RssItem, anime: &AnimeInfo) {

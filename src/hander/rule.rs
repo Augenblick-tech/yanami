@@ -69,6 +69,6 @@ pub async fn del_rule(
     service
         .rule_db
         .del_rule(params.name)
-        .expect("del rule failed");
+        .map_err(|e| anyhow::Error::msg(format!("del rule failed, {}", e)))?;
     JsonResult::json_ok(None)
 }

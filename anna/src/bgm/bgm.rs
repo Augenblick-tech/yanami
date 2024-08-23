@@ -73,10 +73,9 @@ impl BGM {
         let mut calender_anime_list = Vec::new();
         for i in list {
             for item in i.items {
-                let info = self
-                    .get_anime_info(item.id)
-                    .await
-                    .expect(format!("get {} info failed", item.id).as_str());
+                let info = self.get_anime_info(item.id).await.map_err(|e| {
+                    anyhow::Error::msg(format!("get {} info failed, {}", item.id, e))
+                })?;
                 if info.is_none() {
                     continue;
                 }

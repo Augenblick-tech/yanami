@@ -1,4 +1,4 @@
-use anyhow::Error;
+use anyhow::{Context, Error};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
@@ -46,9 +46,9 @@ impl AnimeTracker {
             .bgm
             .get_calender_anime()
             .await
-            .expect("get calender failed");
-        let re = Regex::new("第[0-9]+期").expect("set re rule failed");
-        let en_re = Regex::new("Season.*?$").expect("set re rule failed");
+            .context("get calender failed")?;
+        let re = Regex::new("第[0-9]+期").context("set re rule failed")?;
+        let en_re = Regex::new("Season.*?$").context("set re rule failed")?;
         for bgm in rsp.iter() {
             let name = re.replace(&bgm.name, "").trim().to_string();
             let name = en_re.replace(&name, "").trim().to_string();
@@ -56,7 +56,7 @@ impl AnimeTracker {
                 .tmdb
                 .search(SearchEnum::TV, &name, "zh-TW")
                 .await
-                .expect("search failed");
+                .context("search failed")?;
             if search_result.results.is_empty() {
                 // println!(
                 //     "search empty skip, name:{}, search name: {}",
@@ -68,7 +68,7 @@ impl AnimeTracker {
             if !res
                 .original_language
                 .clone()
-                .expect("not found original_language")
+                .context("not found original_language")?
                 .eq("ja")
             {
                 // println!(
@@ -81,16 +81,16 @@ impl AnimeTracker {
                 .tmdb
                 .get_series_details(res.id, "zh-CN")
                 .await
-                .expect("get series failed");
-            let season = series_result.seasons.last().expect("not found season");
+                .context("get series failed")?;
+            let season = series_result.seasons.last().context("not found season")?;
             if season.season_number <= 0 {
                 continue;
             }
             let anime_info = AnimeInfo {
                 id: bgm.id,
                 name: bgm.name.clone(),
-                name_cn: series_result.name.clone().expect("not found name cn"),
-                name_tw: res.name.expect("not found name tw"),
+                name_cn: series_result.name.clone().context("not found name cn")?,
+                name_tw: res.name.context("not found name tw")?,
                 weekday: bgm.weekday,
                 air_date: season.air_date.clone().unwrap(),
                 eps: bgm.eps,

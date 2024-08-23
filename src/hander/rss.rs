@@ -21,7 +21,12 @@ use crate::{
 pub async fn rss_list(
     Extension(service): Extension<Service>,
 ) -> ErrorResult<Json<JsonResult<Vec<RSS>>>> {
-    JsonResult::json_ok(service.rss_db.get_all_rss().expect("get all rss failed"))
+    JsonResult::json_ok(
+        service
+            .rss_db
+            .get_all_rss()
+            .map_err(|e| anyhow::Error::msg(format!("get all rss failed, {}", e)))?,
+    )
 }
 
 #[utoipa::path(
@@ -45,7 +50,7 @@ pub async fn set_rss(
         .rss_http_client
         .get_channel(&req.url.clone().unwrap())
         .await
-        .expect("get rss channel failed");
+        .map_err(|e| anyhow::Error::msg(format!("get rss channel failed, {}", e)))?;
     if req.title.is_none() && req.url.is_some() {
         req.title = Some(chan.title);
     }
@@ -54,7 +59,12 @@ pub async fn set_rss(
         return Err(Error::InvalidRequest);
     }
 
-    JsonResult::json_ok(Some(service.rss_db.set_rss(req).expect("set rss failed")))
+    JsonResult::json_ok(Some(
+        service
+            .rss_db
+            .set_rss(req)
+            .map_err(|e| anyhow::Error::msg(format!("set rss failed, {}", e)))?,
+    ))
 }
 
 #[utoipa::path(
@@ -76,6 +86,9 @@ pub async fn del_rss(
     if params.id == "" {
         return Err(Error::InvalidRequest);
     }
-    service.rss_db.del_rss(params.id).expect("del rss failed");
+    service
+        .rss_db
+        .del_rss(params.id)
+        .map_err(|e| anyhow::Error::msg(format!("del rss failed, {}", e)))?;
     JsonResult::json_ok(None)
 }
