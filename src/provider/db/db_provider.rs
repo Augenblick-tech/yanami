@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use anna::anime::anime::AnimeInfo;
+use anna::{anime::anime::AnimeInfo, qbit::qbit::QbitConfig};
 use anyhow::Error;
 
 use crate::models::{
@@ -15,7 +15,7 @@ pub type DbProvider = Arc<dyn Db + Send + Sync>;
 pub type RssProvider = Arc<dyn Rss + Send + Sync>;
 pub type RuleProvider = Arc<dyn Rules + Send + Sync>;
 pub type AnimeProvider = Arc<dyn Anime + Send + Sync>;
-pub type DownloadPathProvider = Arc<dyn ServiceConfig + Send + Sync>;
+pub type ServiceConfigProvider = Arc<dyn ServiceConfig + Send + Sync>;
 
 pub trait Db {
     fn is_empty(&self) -> Result<bool, Error>;
@@ -68,4 +68,7 @@ pub trait Rules {
 pub trait ServiceConfig {
     fn set_path(&self, path: &str) -> Result<(), Error>;
     fn get_path(&self) -> Result<Option<String>, Error>;
+
+    fn set_qbit(&self, url: &str, username: &str, password: &str) -> Result<(), Error>;
+    fn get_qbit(&self) -> Result<Option<QbitConfig>, Error>;
 }

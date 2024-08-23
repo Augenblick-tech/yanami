@@ -1,4 +1,4 @@
-use anna::anime::anime::AnimeInfo;
+use anna::{anime::anime::AnimeInfo, qbit::qbit::QbitConfig};
 use utoipa::{openapi::security::{ApiKey, ApiKeyValue, SecurityScheme}, Modify, OpenApi};
 
 use crate::{
@@ -64,6 +64,7 @@ use crate::{
                 AnimeRecordReq,
                 AnimeRssRecord,
                 JsonResultVecAnimeRssRecord,
+                QbitConfig,
             )
         ),
     )]

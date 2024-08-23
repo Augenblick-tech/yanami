@@ -68,8 +68,8 @@ impl IntoResponse for Error {
         }
 
         let (status, error_message) = match self {
-            Error::InvalidToken => (StatusCode::OK, "invalid token".to_string()),
-            Error::InvalidRequest => (StatusCode::BAD_REQUEST, "invalid request".to_string()),
+            // Error::InvalidToken => (StatusCode::OK, "invalid token".to_string()),
+            // Error::InvalidRequest => (StatusCode::OK, "invalid request".to_string()),
             _ => (
                 StatusCode::OK,
                 self.to_string(),

@@ -31,7 +31,7 @@ use crate::{
     },
     openapi::ApiDoc,
     provider::db::db_provider::{
-        AnimeProvider, DbProvider, DownloadPathProvider, RssProvider, RuleProvider, UserProvider,
+        AnimeProvider, DbProvider, RssProvider, RuleProvider, ServiceConfigProvider, UserProvider,
     },
 };
 
@@ -43,7 +43,7 @@ pub struct Service {
     pub rule_db: RuleProvider,
     pub anime_db: AnimeProvider,
     pub rss_http_client: Arc<RssHttpClient>,
-    pub path: DownloadPathProvider,
+    pub config: ServiceConfigProvider,
 }
 
 impl Service {
@@ -54,7 +54,7 @@ impl Service {
         rule_db: RuleProvider,
         anime_db: AnimeProvider,
         rss_http_client: Arc<RssHttpClient>,
-        path: DownloadPathProvider,
+        path: ServiceConfigProvider,
     ) -> Self {
         Service {
             user_db,
@@ -63,7 +63,7 @@ impl Service {
             rule_db,
             anime_db,
             rss_http_client,
-            path,
+            config: path,
         }
     }
 }

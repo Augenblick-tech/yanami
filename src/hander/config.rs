@@ -1,4 +1,5 @@
-use axum::{extract::Query, Extension, Json};
+use anna::qbit::qbit::Qbit;
+use axum::{Extension, Json};
 
 use crate::{
     common::{
@@ -22,7 +23,7 @@ use crate::{
 pub async fn set_config(
     Extension(c): Extension<Claims>,
     Extension(service): Extension<Service>,
-    Query(req): Query<ServiceConfig>,
+    Json(req): Json<ServiceConfig>,
 ) -> ErrorResult<Json<JsonResult<i32>>> {
     if !match UserCharacter::from(c.character.as_str()) {
         UserCharacter::Admin => true,
@@ -34,15 +35,23 @@ pub async fn set_config(
         return Err(Error::InvalidRequest);
     }
 
-    if !req.qbit_url.is_empty() {
-        if req.username.is_empty() || req.password.is_empty() {
+    if let Some(config) = req.qbit_config {
+        if config.url.is_empty() || config.username.is_empty() || config.password.is_empty() {
             return Err(Error::InvalidRequest);
         }
-        // TODO:
         // 登录qbit确认账号密码是否正确，正确则记录数据库
+        Qbit::new(
+            config.url.clone(),
+            config.username.clone(),
+            config.password.clone(),
+        )
+        .login()
+        .await?;
+        service
+            .config
+            .set_qbit(&config.url, &config.username, &config.password)?;
     }
-
-    service.path.set_path(&req.path)?;
+    service.config.set_path(&req.path)?;
     JsonResult::json_ok(None)
 }
 
@@ -66,9 +75,7 @@ pub async fn get_config(
         return Err(Error::InvalidRequest);
     }
     JsonResult::json_ok(Some(ServiceConfig {
-        path: service.path.get_path()?.unwrap_or("".to_string()),
-        qbit_url: "".to_string(),
-        username: "".to_string(),
-        password: "".to_string(),
+        path: service.config.get_path()?.unwrap_or("".to_string()),
+        qbit_config: service.config.get_qbit()?,
     }))
 }

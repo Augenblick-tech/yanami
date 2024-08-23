@@ -1,12 +1,19 @@
 use anyhow::Error;
 use reqwest::{multipart::Form, Client, ClientBuilder, StatusCode, Url};
+use serde::{Deserialize, Serialize};
+use utoipa::{IntoParams, ToSchema};
 
 #[derive(Debug, Clone)]
 pub struct Qbit {
-    url: String,
-    username: String,
-    password: String,
     client: Client,
+    config: QbitConfig,
+}
+
+#[derive(Default, Debug, Clone, Serialize, Deserialize, ToSchema, IntoParams)]
+pub struct QbitConfig {
+    pub url: String,
+    pub username: String,
+    pub password: String,
 }
 
 impl Qbit {
@@ -16,9 +23,11 @@ impl Qbit {
                 .cookie_store(true)
                 .build()
                 .expect("build client"),
-            url,
-            username,
-            password,
+            config: QbitConfig {
+                url,
+                username,
+                password,
+            },
         }
     }
 
@@ -26,17 +35,17 @@ impl Qbit {
         let url_path = "/api/v2/auth/login";
         let rsp = self
             .client
-            .post(Url::parse(self.url.as_str())?.join(url_path)?)
+            .post(Url::parse(self.config.url.as_str())?.join(url_path)?)
             .form(&[
-                ("username", self.username.to_string()),
-                ("password", self.password.to_string()),
+                ("username", self.config.username.to_string()),
+                ("password", self.config.password.to_string()),
             ])
             .send()
             .await?;
         if rsp.status() != StatusCode::OK {
             Err(Error::msg(format!(
                 "login qbit {} failed, http status code is {}",
-                self.url,
+                self.config.url,
                 rsp.status()
             )))
         } else {
@@ -48,7 +57,7 @@ impl Qbit {
         let url_path = "/api/v2/app/version";
         let rsp = self
             .client
-            .get(Url::parse(self.url.as_str())?.join(url_path)?)
+            .get(Url::parse(self.config.url.as_str())?.join(url_path)?)
             .send()
             .await?;
         if rsp.text().await?.contains("Forbidden") {
@@ -61,7 +70,7 @@ impl Qbit {
     pub async fn add(&self, magnet: &str, save_path: &str) -> Result<(), Error> {
         let rsp = self
             .client
-            .post(Url::parse(self.url.as_str())?.join("/api/v2/torrents/add")?)
+            .post(Url::parse(self.config.url.as_str())?.join("/api/v2/torrents/add")?)
             .multipart(
                 Form::new()
                     .text("urls", magnet.to_string())
@@ -78,7 +87,7 @@ impl Qbit {
         if rsp.status() != StatusCode::OK {
             Err(Error::msg(format!(
                 "login qbit {} failed, http status code is {}, response body is {}",
-                self.url,
+                self.config.url,
                 rsp.status(),
                 rsp.text().await?,
             )))

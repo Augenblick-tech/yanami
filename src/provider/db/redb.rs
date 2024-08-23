@@ -1,4 +1,4 @@
-use anna::anime::anime::AnimeInfo;
+use anna::{anime::anime::AnimeInfo, qbit::qbit::QbitConfig};
 use anyhow::Error;
 use chrono::Local;
 use redb::{Database, ReadableTable, TableDefinition, TableError};
@@ -585,6 +585,39 @@ impl<'a> ServiceConfig for ReDB<'a> {
                 let r = table.get("path".to_string())?;
                 if let Some(r) = r {
                     Ok(Some(r.value().to_string()))
+                } else {
+                    Ok(None)
+                }
+            }
+            Err(TableError::TableDoesNotExist(_)) => Ok(None),
+            Err(e) => Err(Error::msg(e.to_string())),
+        }
+    }
+
+    fn set_qbit(&self, url: &str, username: &str, password: &str) -> Result<(), Error> {
+        let value = QbitConfig {
+            url: url.to_string(),
+            username: username.to_string(),
+            password: password.to_string(),
+        };
+        let tx = self.client.begin_write()?;
+        {
+            let mut table = tx.open_table(self.kv.table)?;
+
+            table.insert("qbit_config".to_string(), serde_json::to_string(&value)?)?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    fn get_qbit(&self) -> Result<Option<anna::qbit::qbit::QbitConfig>, Error> {
+        let tx = self.client.begin_read()?;
+        let table = tx.open_table(self.kv.table);
+        match table {
+            Ok(table) => {
+                let r = table.get("qbit_config".to_string())?;
+                if let Some(r) = r {
+                    Ok(Some(serde_json::from_str(&r.value())?))
                 } else {
                     Ok(None)
                 }
