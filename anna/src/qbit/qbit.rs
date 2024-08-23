@@ -9,7 +9,7 @@ pub struct Qbit {
     config: QbitConfig,
 }
 
-#[derive(Default, Debug, Clone, Serialize, Deserialize, ToSchema, IntoParams)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize, ToSchema, IntoParams, PartialEq)]
 pub struct QbitConfig {
     pub url: String,
     pub username: String,
@@ -94,5 +94,17 @@ impl Qbit {
         } else {
             Ok(())
         }
+    }
+
+    pub async fn load_new_config(&mut self, config: &QbitConfig) -> Result<(), Error> {
+        if config.url.is_empty() || config.username.is_empty() || config.password.is_empty() {
+            return Ok(());
+        }
+
+        if !self.config.eq(config) {
+            self.config = config.clone();
+            self.login().await?;
+        }
+        Ok(())
     }
 }

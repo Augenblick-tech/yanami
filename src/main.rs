@@ -43,6 +43,7 @@ async fn main() {
             BGM::new().expect("new bgm client failed"),
         )),
         redb.clone(),
+        redb.clone(),
     );
     spawn(async move {
         tasker.run().await;

@@ -1,11 +1,8 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use std::{collections::HashMap, path::Path, sync::Arc, time::Duration};
 
 use anna::{
     anime::anime::{AnimeInfo, AnimeTracker},
+    qbit::qbit::Qbit,
     rss::rss::RssHttpClient,
 };
 use anyhow::Error;
@@ -19,7 +16,7 @@ use tokio::{
     select, spawn,
     sync::{
         broadcast::{self},
-        mpsc,
+        mpsc, Mutex,
     },
     time,
 };
@@ -29,7 +26,7 @@ use crate::{
         rss::{AnimeRssRecord, RssItem},
         torrent::Torrent,
     },
-    provider::db::db_provider::{AnimeProvider, RssProvider, RuleProvider},
+    provider::db::db_provider::{AnimeProvider, RssProvider, RuleProvider, ServiceConfigProvider},
 };
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -45,6 +42,8 @@ pub struct Tasker {
     anime_db: AnimeProvider,
     anime: Arc<AnimeTracker>,
     rule_db: RuleProvider,
+    config_db: ServiceConfigProvider,
+    qbit_client: Arc<Mutex<Qbit>>,
 
     // 用于发送番剧退出广播
     anime_broadcast: broadcast::Sender<AnimeTask>,
@@ -61,6 +60,7 @@ impl Tasker {
         anime_db: AnimeProvider,
         anime: Arc<AnimeTracker>,
         rule_db: RuleProvider,
+        config_db: ServiceConfigProvider,
     ) -> Self {
         let (ab, _) = broadcast::channel::<AnimeTask>(10);
         let (arb, _) = broadcast::channel::<RssItem>(10);
@@ -73,6 +73,12 @@ impl Tasker {
             anime_broadcast: ab,
             anime_rss_broadcast: arb,
             rss_send_map: Arc::new(Mutex::new(HashMap::new())),
+            qbit_client: Arc::new(Mutex::new(Qbit::new(
+                "".to_string(),
+                "".to_string(),
+                "".to_string(),
+            ))),
+            config_db,
         }
     }
     pub async fn run(&self) {
@@ -96,7 +102,7 @@ impl Tasker {
                     });
                 }
                 _ = check_update_ticker.tick() => {
-                    if s.rss_send_map.lock().unwrap().len() > 0 {
+                    if s.rss_send_map.lock().await.len() > 0 {
                         tokio::spawn( async move {
                             if let Err(err) = s.check_update().await {
                                 tracing::error!("{}", err);
@@ -112,7 +118,7 @@ impl Tasker {
         // for i in anime.iter() {
         let mut rx = self.anime_broadcast.subscribe();
         // let anime = i.clone();
-        let mut send_map = self.rss_send_map.lock().unwrap();
+        let mut send_map = self.rss_send_map.lock().await;
         // 如果已经启动过协程监听，则跳过
         if send_map.get(&anime.id).is_some() {
             return Ok(());
@@ -215,52 +221,48 @@ impl Tasker {
             }
             // 特定番剧的搜索RSS则只给该番发送
             if let Some(search_url) = item.search_url.clone() {
-                anime_list.iter().for_each(|anime| {
-                    anime
-                        .anime_info
-                        .names()
-                        .iter()
-                        .filter_map(|name| match formatx!(&search_url, &name) {
+                for anime in anime_list.iter() {
+                    for url in anime.anime_info.names().iter().filter_map(|name| {
+                        match formatx!(&search_url, &name) {
                             Ok(url) => Some(url),
                             Err(_) => None,
-                        })
-                        .for_each(|url| {
-                            if let Some(chan) =
-                                self.rss_send_map.lock().unwrap().get(&anime.anime_info.id)
-                            {
-                                let chan = chan.clone();
-                                let rss_http_client = self.rss_http_client.clone();
-                                tracing::debug!("check_update search_url: {}", url);
-                                spawn(async move {
-                                    if let Ok(rsp) = rss_http_client.get_channel(&url).await {
-                                        for item in rsp.items.iter() {
-                                            if item.enclosure().is_none() && item.link().is_none() {
-                                                continue;
-                                            }
+                        }
+                    }) {
+                        if let Some(chan) = self.rss_send_map.lock().await.get(&anime.anime_info.id)
+                        {
+                            let chan = chan.clone();
+                            let rss_http_client = self.rss_http_client.clone();
+                            tracing::debug!("check_update search_url: {}", url);
+                            spawn(async move {
+                                if let Ok(rsp) = rss_http_client.get_channel(&url).await {
+                                    for item in rsp.items.iter() {
+                                        if item.enclosure().is_none() && item.link().is_none() {
+                                            continue;
+                                        }
 
-                                            let url = if let Some(e) = item.enclosure() {
-                                                e.url()
-                                            } else {
-                                                item.link().unwrap()
-                                            };
-                                            if let Err(err) = chan
-                                                .send(RssItem {
-                                                    title: item.title.clone().unwrap(),
-                                                    magnet: url.to_string(),
-                                                })
-                                                .await
-                                            {
-                                                tracing::error!(
-                                                    "send rss item to chan failed, {}",
-                                                    err
-                                                );
-                                            }
+                                        let url = if let Some(e) = item.enclosure() {
+                                            e.url()
+                                        } else {
+                                            item.link().unwrap()
+                                        };
+                                        if let Err(err) = chan
+                                            .send(RssItem {
+                                                title: item.title.clone().unwrap(),
+                                                magnet: url.to_string(),
+                                            })
+                                            .await
+                                        {
+                                            tracing::error!(
+                                                "send rss item to chan failed, {}",
+                                                err
+                                            );
                                         }
                                     }
-                                });
-                            }
-                        })
-                })
+                                }
+                            });
+                        }
+                    }
+                }
             }
         }
         Ok(())
@@ -299,9 +301,6 @@ impl Tasker {
                         }
                         let re = name.unwrap();
                         if Regex::new(&re).unwrap().is_match(&msg.title) {
-                            // TODO:
-                            // 发送磁力链接到qbit下载
-
                             // 记录下载的内容到数据库
                             tracing::debug!(
                                 "anime: {}\nbt: {}\nrule: {}",
@@ -312,9 +311,21 @@ impl Tasker {
                             if let Ok(info_hash) = Self::get_info_hash(&msg.magnet).await {
                                 let r = self.anime_db.get_anime_recode(anime.id, &info_hash);
                                 if r.is_err() {
-                                    continue;
+                                    return;
                                 }
                                 if r.unwrap().is_none() {
+                                    // TODO:
+                                    // 发送磁力链接到qbit下载，设置下载路径
+                                    // 考虑是否直接使用qbit的命名功能，这个功能曾经不稳定，接口返回ok但实际没有命名成功
+                                    if let Err(e) = self.send_qbit(&msg.magnet, &anime).await {
+                                        tracing::error!(
+                                            "check_anime_rules send {:?} to qbit failed, error: {}",
+                                            &msg,
+                                            e
+                                        );
+                                        return;
+                                    }
+
                                     if let Err(e) = self.anime_db.set_anime_recode(
                                         anime.id,
                                         AnimeRssRecord {
@@ -362,6 +373,39 @@ impl Tasker {
                 }
             }
         }
+    }
+
+    /// send_qbit
+    ///
+    /// 发送下载链接到qbit下载
+    ///
+    /// 下载路径：{config_path}/{anime.name}/S{02:anime.season}
+    ///
+    /// 当qbit_config和download_path都为空时，不送发任何信息
+    async fn send_qbit(&self, url: &str, anime: &AnimeInfo) -> Result<(), Error> {
+        let mut client = self.qbit_client.lock().await;
+        let qbit_config = self
+            .config_db
+            .get_qbit()?
+            .ok_or(Error::msg("send_qbit get qbit config empty"))?;
+        let download_path = self
+            .config_db
+            .get_path()?
+            .ok_or(Error::msg("send_qbit get download path empty"))?;
+
+        client.load_new_config(&qbit_config).await?;
+        let download_path =
+            Path::new(&download_path).join(format!("{}/S{:02}", anime.name, anime.season));
+        client
+            .add(
+                url,
+                download_path
+                    .to_str()
+                    .ok_or(Error::msg("send_qbit get download path failed"))?,
+            )
+            .await?;
+
+        Ok(())
     }
 
     fn check_season_over(&self, anime: &AnimeInfo) -> Result<bool, Error> {
