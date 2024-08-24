@@ -23,7 +23,9 @@ use tokio::{
 
 use crate::{
     models::{
+        anime::AnimeStatus,
         rss::{AnimeRssRecord, RssItem},
+        rule::GroupRule,
         torrent::Torrent,
     },
     provider::db::db_provider::{AnimeProvider, RssProvider, RuleProvider, ServiceConfigProvider},
@@ -114,34 +116,34 @@ impl Tasker {
         }
     }
 
-    async fn start_listener(&self, anime: &AnimeInfo) -> Result<(), Error> {
+    async fn start_listener(&self, anime_status: AnimeStatus) -> Result<(), Error> {
         // for i in anime.iter() {
         let mut rx = self.anime_broadcast.subscribe();
         // let anime = i.clone();
         let mut send_map = self.rss_send_map.lock().await;
         // 如果已经启动过协程监听，则跳过
-        if send_map.get(&anime.id).is_some() {
+        if send_map.get(&anime_status.anime_info.id).is_some() {
             return Ok(());
         }
         let (tx, mut recv) = mpsc::channel(20);
         let mut broadcast_recv = self.anime_rss_broadcast.subscribe();
-        send_map.insert(anime.id, tx);
+        send_map.insert(anime_status.anime_info.id, tx);
         let s = self.clone();
-        let anime = anime.clone();
+        let mut anime = anime_status.clone();
         spawn(async move {
             tracing::debug!("spawn anime: {:?}", &anime);
             loop {
                 select! {
                     Ok(msg) = rx.recv() => {
-                        if msg.is_canncel && anime.id == msg.info.id {
+                        if msg.is_canncel && anime_status.anime_info.id == msg.info.id {
                             return;
                         }
                     }
                     Some(msg) = recv.recv() => {
-                        s.check_anime_rules(msg, &anime).await;
+                        s.check_anime_rules(msg, &mut anime).await;
                     }
                     Ok(msg) = broadcast_recv.recv() => {
-                        s.check_anime_rules(msg,&anime).await;
+                        s.check_anime_rules(msg,&mut anime).await;
                     }
                 }
             }
@@ -160,7 +162,7 @@ impl Tasker {
             .ok_or(Error::msg("anime list is empty"))?;
         for i in anime.iter() {
             if i.status {
-                if let Err(e) = self.start_listener(&i.anime_info).await {
+                if let Err(e) = self.start_listener(i.clone()).await {
                     tracing::error!(
                         "init_anime_listener start_listener failed, anime: {:?} error: {}",
                         i,
@@ -276,7 +278,14 @@ impl Tasker {
                 anyhow::Error::msg(format!("sync_calender get_calender failed. {}", e))
             })?;
         for i in anime.iter() {
-            if let Err(e) = self.start_listener(i).await {
+            if let Err(e) = self
+                .start_listener(AnimeStatus {
+                    status: true,
+                    rule_name: "".to_string(),
+                    anime_info: i.clone(),
+                })
+                .await
+            {
                 tracing::error!("sync_calender start_listener failed, error: {}", e);
             }
         }
@@ -286,9 +295,10 @@ impl Tasker {
             .map_err(|e| anyhow::Error::msg(format!("sync_calender set failed, {}", e)))?)
     }
 
-    async fn check_anime_rules(&self, msg: RssItem, anime: &AnimeInfo) {
+    async fn check_anime_rules(&self, msg: RssItem, anime_status: &mut AnimeStatus) {
         // tracing::debug!("check_anime_rules rss: {:?}", msg);
         if let Ok(Some(rules)) = self.rule_db.get_all_rules() {
+            let anime = &anime_status.anime_info;
             for rule in rules.iter() {
                 for i in rule.rules.iter() {
                     for name in anime.names().iter() {
@@ -309,67 +319,90 @@ impl Tasker {
                                 &msg.title,
                                 &i.re
                             );
-                            if let Ok(info_hash) = Self::get_info_hash(&msg.magnet).await {
-                                let r = self.anime_db.get_anime_recode(anime.id, &info_hash);
-                                if r.is_err() {
-                                    return;
-                                }
-                                if r.unwrap().is_none() {
-                                    // TODO:
-                                    // 发送磁力链接到qbit下载，设置下载路径
-                                    // 考虑是否直接使用qbit的命名功能，这个功能曾经不稳定，接口返回ok但实际没有命名成功
-                                    if let Err(e) = self.send_qbit(&msg.magnet, &anime).await {
-                                        tracing::error!(
-                                            "check_anime_rules send {:?} to qbit failed, error: {}",
-                                            &msg,
-                                            e
-                                        );
-                                        return;
-                                    }
-
-                                    if let Err(e) = self.anime_db.set_anime_recode(
-                                        anime.id,
-                                        AnimeRssRecord {
-                                            title: msg.title,
-                                            magnet: msg.magnet,
-                                            rule_name: rule.name.clone(),
-                                            info_hash,
-                                        },
-                                    ) {
-                                        tracing::error!(
-                                            "check_anime_rules set_calender failed, error: {}",
-                                            e
-                                        );
-                                    }
-                                }
-                                // 检查是否已经完结
-                                // 完结则修改状态为false，退出监听
-                                if let Ok(is_season_over) = self.check_season_over(anime) {
-                                    if is_season_over {
-                                        match self.anime_db.get_calender(anime.id) {
-                                            Ok(status) => {
-                                                if let Some(mut status) = status {
-                                                    status.status = false;
-                                                    if let Err(e) =
-                                                        self.anime_db.set_calender(status)
-                                                    {
-                                                        tracing::error!("check_anime_rules season over set anime status failed, {}", e);
-                                                    }
-                                                }
-                                            }
-                                            Err(e) => tracing::error!("check_anime_rules season over get anime status failed, {}", e),
-                                        }
-                                        if let Err(e) = self.anime_broadcast.send(AnimeTask {
-                                            info: anime.clone(),
-                                            is_canncel: true,
-                                        }) {
-                                            tracing::error!("{} is season update over, stop listen failed, error: {}", anime.name, e);
-                                        }
-                                    }
-                                }
-                            }
+                            self.handle_rss(rule, msg, anime_status).await;
                             return;
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    async fn handle_rss(&self, rule: &GroupRule, msg: RssItem, anime_status: &mut AnimeStatus) {
+        // 判断是否已经命中过规则
+        if anime_status.rule_name.is_empty() {
+            anime_status.rule_name = rule.name.clone();
+            if let Err(e) = self.anime_db.set_calender(anime_status.clone()) {
+                tracing::error!("handle_rss set set_calender failed, {}", e);
+                return;
+            }
+        }
+
+        if !anime_status.rule_name.eq(&rule.name) {
+            return;
+        }
+
+        let anime = &anime_status.anime_info;
+        if let Ok(info_hash) = Self::get_info_hash(&msg.magnet).await {
+            let r = self.anime_db.get_anime_record(anime.id, &info_hash);
+            if r.is_err() {
+                return;
+            }
+            if r.unwrap().is_none() {
+                // TODO:
+                // 发送磁力链接到qbit下载，设置下载路径
+                // 考虑是否直接使用qbit的命名功能，这个功能曾经不稳定，接口返回ok但实际没有命名成功
+                if let Err(e) = self.send_qbit(&msg.magnet, &anime).await {
+                    tracing::error!(
+                        "check_anime_rules send {:?} to qbit failed, error: {}",
+                        &msg,
+                        e
+                    );
+                    return;
+                }
+
+                if let Err(e) = self.anime_db.set_anime_recode(
+                    anime.id,
+                    AnimeRssRecord {
+                        title: msg.title,
+                        magnet: msg.magnet,
+                        rule_name: rule.name.clone(),
+                        info_hash,
+                    },
+                ) {
+                    tracing::error!("check_anime_rules set_calender failed, error: {}", e);
+                }
+            }
+            // 检查是否已经完结
+            // 完结则修改状态为false，退出监听
+            if let Ok(is_season_over) = self.check_season_over(anime) {
+                if is_season_over {
+                    match self.anime_db.get_calender(anime.id) {
+                        Ok(status) => {
+                            if let Some(mut status) = status {
+                                status.status = false;
+                                if let Err(e) = self.anime_db.set_calender(status) {
+                                    tracing::error!(
+                                        "check_anime_rules season over set anime status failed, {}",
+                                        e
+                                    );
+                                }
+                            }
+                        }
+                        Err(e) => tracing::error!(
+                            "check_anime_rules season over get anime status failed, {}",
+                            e
+                        ),
+                    }
+                    if let Err(e) = self.anime_broadcast.send(AnimeTask {
+                        info: anime.clone(),
+                        is_canncel: true,
+                    }) {
+                        tracing::error!(
+                            "{} is season update over, stop listen failed, error: {}",
+                            anime.name,
+                            e
+                        );
                     }
                 }
             }

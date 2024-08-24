@@ -367,6 +367,7 @@ impl<'a> Anime for ReDB<'a> {
                 }
                 Err(TableError::TableDoesNotExist(_)) => AnimeStatus {
                     status: true,
+                    rule_name: "".to_string(),
                     anime_info: anime.clone(),
                 },
                 Err(e) => return Err(Error::msg(e.to_string())),
@@ -449,7 +450,7 @@ impl<'a> Anime for ReDB<'a> {
         Ok(())
     }
 
-    fn get_anime_recode(
+    fn get_anime_record(
         &self,
         anime_id: i64,
         info_hash: &str,

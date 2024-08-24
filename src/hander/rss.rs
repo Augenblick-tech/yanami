@@ -1,4 +1,6 @@
+use anyhow::Context;
 use axum::{extract::Query, Extension, Json};
+use formatx::formatx;
 
 use crate::{
     common::{
@@ -21,12 +23,7 @@ use crate::{
 pub async fn rss_list(
     Extension(service): Extension<Service>,
 ) -> ErrorResult<Json<JsonResult<Vec<RSS>>>> {
-    JsonResult::json_ok(
-        service
-            .rss_db
-            .get_all_rss()
-            .map_err(|e| anyhow::Error::msg(format!("get all rss failed, {}", e)))?,
-    )
+    JsonResult::json_ok(service.rss_db.get_all_rss().context("get all rss failed")?)
 }
 
 #[utoipa::path(
@@ -46,13 +43,29 @@ pub async fn set_rss(
         return Err(Error::InvalidRequest);
     }
 
-    let chan = service
-        .rss_http_client
-        .get_channel(&req.url.clone().unwrap())
-        .await
-        .map_err(|e| anyhow::Error::msg(format!("get rss channel failed, {}", e)))?;
-    if req.title.is_none() && req.url.is_some() {
-        req.title = Some(chan.title);
+    if req.url.is_some() {
+        let chan = service
+            .rss_http_client
+            .get_channel(&req.url.clone().unwrap())
+            .await
+            .context("get rss channel failed")?;
+        if req.title.is_none() {
+            req.title = Some(chan.title);
+        }
+    }
+
+    if req.search_url.is_some() {
+        let chan = service
+            .rss_http_client
+            .get_channel(
+                &formatx!(req.search_url.clone().unwrap(), "test")
+                    .context("create test search url failed")?,
+            )
+            .await
+            .context("get rss search_url channel failed")?;
+        if req.title.is_none() {
+            req.title = Some(chan.title);
+        }
     }
 
     if req.title.is_none() {
@@ -89,6 +102,6 @@ pub async fn del_rss(
     service
         .rss_db
         .del_rss(params.id)
-        .map_err(|e| anyhow::Error::msg(format!("del rss failed, {}", e)))?;
+        .context("del rss failed")?;
     JsonResult::json_ok(None)
 }

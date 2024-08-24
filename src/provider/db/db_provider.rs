@@ -50,7 +50,7 @@ pub trait Anime {
         anime_id: i64,
         anime_rss_record: AnimeRssRecord,
     ) -> Result<(), Error>;
-    fn get_anime_recode(
+    fn get_anime_record(
         &self,
         anime_id: i64,
         info_hash: &str,

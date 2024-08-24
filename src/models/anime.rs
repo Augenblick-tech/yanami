@@ -7,8 +7,9 @@ pub struct AnimeRecordReq {
     pub name_id: i64,
 }
 
-#[derive(Debug, Serialize, Deserialize, ToSchema, IntoParams)]
+#[derive(Debug, Serialize, Deserialize, ToSchema, IntoParams, Clone)]
 pub struct AnimeStatus {
     pub status: bool,
+    pub rule_name: String,
     pub anime_info: AnimeInfo,
 }
