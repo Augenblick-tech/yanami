@@ -2,6 +2,7 @@ use core::panic;
 use std::sync::Arc;
 
 use anna::{anime::anime::AnimeTracker, bgm::bgm::BGM, rss::rss::RssHttpClient, tmdb::tmdb::TMDB};
+use mimalloc::MiMalloc;
 use tokio::spawn;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -13,6 +14,9 @@ use yanami::{
     route::{route, Service},
     task::task::Tasker,
 };
+
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
 
 #[tokio::main]
 async fn main() {
