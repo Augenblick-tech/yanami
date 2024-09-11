@@ -96,7 +96,7 @@ pub async fn del_rss(
     Extension(service): Extension<Service>,
     Query(params): Query<DelRSS>,
 ) -> ErrorResult<Json<JsonResult<i32>>> {
-    if params.id == "" {
+    if params.id.is_empty() {
         return Err(Error::InvalidRequest);
     }
     service

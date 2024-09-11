@@ -25,10 +25,10 @@ pub async fn set_config(
     Extension(service): Extension<Service>,
     Json(req): Json<ServiceConfig>,
 ) -> ErrorResult<Json<JsonResult<i32>>> {
-    if !match UserCharacter::from(c.character.as_str()) {
-        UserCharacter::Admin => true,
-        _ => false,
-    } {
+    if !matches!(
+        UserCharacter::from(c.character.as_str()),
+        UserCharacter::Admin
+    ) {
         return Err(Error::InvalidRequest);
     }
     if req.path.is_empty() {
@@ -68,10 +68,10 @@ pub async fn get_config(
     Extension(c): Extension<Claims>,
     Extension(service): Extension<Service>,
 ) -> ErrorResult<Json<JsonResult<ServiceConfig>>> {
-    if !match UserCharacter::from(c.character.as_str()) {
-        UserCharacter::Admin => true,
-        _ => false,
-    } {
+    if !matches!(
+        UserCharacter::from(c.character.as_str()),
+        UserCharacter::Admin
+    ) {
         return Err(Error::InvalidRequest);
     }
     JsonResult::json_ok(Some(ServiceConfig {

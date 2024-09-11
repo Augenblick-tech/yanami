@@ -72,7 +72,7 @@ struct RuleTable<'a> {
 
 impl<'a> RuleTable<'a> {
     pub fn to_key(&self, id: &str) -> String {
-        format!("{}", id)
+        id.to_string()
     }
 }
 
@@ -118,7 +118,7 @@ impl<'a> ReDB<'a> {
 
 impl<'a> Db for ReDB<'a> {
     fn is_empty(&self) -> Result<bool, Error> {
-        Ok(self.client.begin_read()?.list_tables()?.count() <= 0)
+        Ok(self.client.begin_read()?.list_tables()?.count() == 0)
     }
 }
 impl<'a> User for ReDB<'a> {
@@ -260,7 +260,7 @@ impl<'a> User for ReDB<'a> {
                 }
                 let a: RegisterCode = serde_json::from_slice(&r.unwrap().value().to_vec())?;
                 let now = Local::now().to_utc().timestamp();
-                if a.now + a.expire <= now || a.timers <= 0 {
+                if a.now + a.expire <= now || a.timers == 0 {
                     let tx = self.client.begin_write()?;
                     {
                         let mut table = tx.open_table(self.register.table)?;
@@ -403,8 +403,8 @@ impl<'a> Anime for ReDB<'a> {
                 for data in table.iter()? {
                     let data = data?;
                     let rss = serde_json::from_slice(&data.1.value());
-                    if rss.is_ok() {
-                        calender.push(rss.unwrap());
+                    if let Ok(rss) = rss {
+                        calender.push(rss);
                     }
                 }
                 Ok(Some(calender))
@@ -490,8 +490,8 @@ impl<'a> Anime for ReDB<'a> {
                 for data in table.iter()? {
                     let data = data?;
                     let rss = serde_json::from_slice(&data.1.value());
-                    if rss.is_ok() {
-                        list.push(rss.unwrap());
+                    if let Ok(rss) = rss {
+                        list.push(rss);
                     }
                 }
                 Ok(Some(list))
@@ -555,8 +555,8 @@ impl<'a> Rules for ReDB<'a> {
                 for data in table.iter()? {
                     let data = data?;
                     let rss = serde_json::from_slice(&data.1.value());
-                    if rss.is_ok() {
-                        group_rules.push(rss.unwrap());
+                    if let Ok(rss) = rss {
+                        group_rules.push(rss);
                     }
                 }
                 Ok(Some(group_rules))

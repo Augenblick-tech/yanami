@@ -22,7 +22,7 @@ pub async fn set_rule(
     Extension(service): Extension<Service>,
     Json(mut req): Json<GroupRule>,
 ) -> ErrorResult<Json<JsonResult<i32>>> {
-    if req.name.is_empty() || req.rules.len() <= 0 || !req.rules.iter().all(|r| !r.re.is_empty()) {
+    if req.name.is_empty() || req.rules.is_empty() || !req.rules.iter().all(|r| !r.re.is_empty()) {
         return Err(Error::InvalidRequest);
     }
     req.rules.sort_by(|a, b| a.cost.cmp(&b.cost));
@@ -63,7 +63,7 @@ pub async fn del_rule(
     Extension(service): Extension<Service>,
     Query(params): Query<DelRule>,
 ) -> ErrorResult<Json<JsonResult<i32>>> {
-    if params.name == "" {
+    if params.name.is_empty() {
         return Err(Error::InvalidRequest);
     }
     service

@@ -40,7 +40,7 @@ pub async fn login(
     }
 
     let mut time = Local::now().timestamp();
-    time = time + (60 * 60 * 24 * 30);
+    time += 60 * 60 * 24 * 30;
     let claims = Claims {
         user_id: user.id,
         exp: time as usize,
@@ -68,10 +68,10 @@ pub async fn register_code(
     Extension(service): Extension<Service>,
     Query(params): Query<RegisterCodeReq>,
 ) -> ErrorResult<Json<JsonResult<RegisterCodeRsp>>> {
-    if !match UserCharacter::from(c.character.as_str()) {
-        UserCharacter::Admin => true,
-        _ => false,
-    } {
+    if !matches!(
+        UserCharacter::from(c.character.as_str()),
+        UserCharacter::Admin
+    ) {
         return Err(Error::InvalidRequest);
     }
     let code = Uuid::new_v4();
@@ -139,10 +139,10 @@ pub async fn users(
     Extension(c): Extension<Claims>,
     Extension(service): Extension<Service>,
 ) -> ErrorResult<Json<JsonResult<Vec<UserEntity>>>> {
-    if !match UserCharacter::from(c.character.as_str()) {
-        UserCharacter::Admin => true,
-        _ => false,
-    } {
+    if !matches!(
+        UserCharacter::from(c.character.as_str()),
+        UserCharacter::Admin
+    ) {
         return Err(Error::InvalidRequest);
     }
 
