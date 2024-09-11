@@ -4,7 +4,7 @@ use std::sync::Arc;
 use anna::{anime::anime::AnimeTracker, bgm::bgm::BGM, rss::rss::RssHttpClient, tmdb::tmdb::TMDB};
 use mimalloc::MiMalloc;
 use tokio::spawn;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{fmt, EnvFilter};
 
 use yanami::{
     common::auth::{self, UserCharacter},
@@ -20,18 +20,23 @@ static GLOBAL: MiMalloc = MiMalloc;
 
 #[tokio::main]
 async fn main() {
-    dotenv::dotenv().ok();
-    tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "yanami=debug".into()),
-        )
-        .with(tracing_subscriber::fmt::layer())
-        .init();
     let config = Config::load().unwrap();
+    if let Some(mode) = config.mode {
+        let mode = if !mode.eq("debug") && !mode.eq("warn") {
+            "info"
+        } else {
+            mode.as_str()
+        };
+        tracing::subscriber::set_global_default(
+            fmt::Subscriber::builder()
+                .with_env_filter(EnvFilter::new(format!("yanami={mode}")))
+                .finish(),
+        )
+        .unwrap();
+    }
 
     auth::init(config.key.clone().unwrap().to_owned());
-    tracing::debug!("listening on {}", &config.addr.clone().unwrap());
+    tracing::info!("listening on {}", &config.addr.clone().unwrap());
 
     let redb = Arc::new(match ReDB::new(config.db_path.unwrap().to_string()) {
         Ok(db) => db,
