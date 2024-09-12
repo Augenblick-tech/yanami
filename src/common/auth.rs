@@ -21,7 +21,7 @@ pub static KEYS: OnceCell<Keys> = OnceCell::new();
 
 pub fn init(key: String) {
     let r = KEYS.set(Keys::new(key.as_bytes()));
-    if let Err(_) = r {
+    if r.is_err() {
         tracing::error!("set jwt secret err");
     }
 }
@@ -64,9 +64,9 @@ impl From<&str> for UserCharacter {
     }
 }
 
-impl Into<String> for UserCharacter {
-    fn into(self) -> String {
-        match self {
+impl From<UserCharacter> for String {
+    fn from(val: UserCharacter) -> Self {
+        match val {
             UserCharacter::Admin => String::from("admin"),
             UserCharacter::User => String::from("user"),
             UserCharacter::None => String::from(""),

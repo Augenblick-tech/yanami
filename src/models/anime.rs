@@ -1,4 +1,4 @@
-use anna::anime::anime::AnimeInfo;
+use anna::anime::tracker::AnimeInfo;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 

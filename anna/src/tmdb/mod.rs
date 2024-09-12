@@ -1,1 +1,1 @@
-pub mod tmdb;
+pub mod client;

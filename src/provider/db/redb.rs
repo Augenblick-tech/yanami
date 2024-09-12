@@ -1,4 +1,4 @@
-use anna::{anime::anime::AnimeInfo, qbit::qbit::QbitConfig};
+use anna::{anime::tracker::AnimeInfo, qbit::qbitorrent::QbitConfig};
 use anyhow::Error;
 use chrono::Local;
 use redb::{Database, ReadableTable, TableDefinition, TableError};
@@ -611,7 +611,7 @@ impl<'a> ServiceConfig for ReDB<'a> {
         Ok(())
     }
 
-    fn get_qbit(&self) -> Result<Option<anna::qbit::qbit::QbitConfig>, Error> {
+    fn get_qbit(&self) -> Result<Option<anna::qbit::qbitorrent::QbitConfig>, Error> {
         let tx = self.client.begin_read()?;
         let table = tx.open_table(self.kv.table);
         match table {

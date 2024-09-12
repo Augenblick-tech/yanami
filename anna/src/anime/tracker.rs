@@ -3,8 +3,8 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    bgm::bgm::BGM,
-    tmdb::tmdb::{SearchEnum, TMDB},
+    bgm::bangumi::BGM,
+    tmdb::client::{SearchEnum, TMDB},
 };
 use utoipa::ToSchema;
 
@@ -64,7 +64,7 @@ impl AnimeTracker {
                 // );
                 continue;
             }
-            let res = search_result.results.get(0).unwrap().clone();
+            let res = search_result.results.first().unwrap().clone();
             if !res
                 .original_language
                 .clone()

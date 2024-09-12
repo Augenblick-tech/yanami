@@ -2,7 +2,7 @@ use crate::{
     common::errors::Error,
     models::{anime::AnimeStatus, config::ServiceConfig, rss::{AnimeRssRecord, RSS}, rule::GroupRule, user::{AuthBody, RegisterCodeRsp, UserEntity}},
 };
-use anna::anime::anime::AnimeInfo;
+use anna::anime::tracker::AnimeInfo;
 use axum::Json;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;

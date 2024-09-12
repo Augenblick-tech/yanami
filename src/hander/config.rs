@@ -1,4 +1,4 @@
-use anna::qbit::qbit::Qbit;
+use anna::qbit::qbitorrent::Qbit;
 use axum::{Extension, Json};
 
 use crate::{

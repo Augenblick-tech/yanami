@@ -1,4 +1,4 @@
-use anna::{anime::anime::AnimeInfo, qbit::qbit::QbitConfig};
+use anna::{anime::tracker::AnimeInfo, qbit::qbitorrent::QbitConfig};
 use utoipa::{openapi::security::{ApiKey, ApiKeyValue, SecurityScheme}, Modify, OpenApi};
 
 use crate::{

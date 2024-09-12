@@ -1,4 +1,4 @@
-use anna::qbit::qbit::QbitConfig;
+use anna::qbit::qbitorrent::QbitConfig;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 

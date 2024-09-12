@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use anna::rss::rss::RssHttpClient;
+use anna::rss::client::Client;
 use axum::{
     body::Body,
     extract::MatchedPath,
@@ -42,7 +42,7 @@ pub struct Service {
     pub rss_db: RssProvider,
     pub rule_db: RuleProvider,
     pub anime_db: AnimeProvider,
-    pub rss_http_client: Arc<RssHttpClient>,
+    pub rss_http_client: Arc<Client>,
     pub config: ServiceConfigProvider,
 }
 
@@ -53,7 +53,7 @@ impl Service {
         rss_db: RssProvider,
         rule_db: RuleProvider,
         anime_db: AnimeProvider,
-        rss_http_client: Arc<RssHttpClient>,
+        rss_http_client: Arc<Client>,
         path: ServiceConfigProvider,
     ) -> Self {
         Service {

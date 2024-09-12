@@ -1,1 +1,1 @@
-pub mod bgm;
+pub mod bangumi;

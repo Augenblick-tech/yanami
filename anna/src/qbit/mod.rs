@@ -1,1 +1,1 @@
-pub mod qbit;
+pub mod qbitorrent;

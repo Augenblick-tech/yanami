@@ -1,7 +1,9 @@
 use core::panic;
 use std::sync::Arc;
 
-use anna::{anime::anime::AnimeTracker, bgm::bgm::BGM, rss::rss::RssHttpClient, tmdb::tmdb::TMDB};
+use anna::{
+    anime::tracker::AnimeTracker, bgm::bangumi::BGM, rss::client::Client, tmdb::client::TMDB,
+};
 use mimalloc::MiMalloc;
 use tokio::spawn;
 use tracing_subscriber::{fmt, EnvFilter};
@@ -12,7 +14,7 @@ use yanami::{
     models::user::UserEntity,
     provider::db::redb::ReDB,
     route::{route, Service},
-    task::task::Tasker,
+    task::tasker::Tasker,
 };
 
 #[global_allocator]
@@ -42,7 +44,7 @@ async fn main() {
         Ok(db) => db,
         Err(err) => panic!("init db failed, {}", err),
     });
-    let rss_http_client = Arc::new(RssHttpClient::new());
+    let rss_http_client = Arc::new(Client::new());
     let tasker = Tasker::new(
         redb.clone(),
         rss_http_client.clone(),

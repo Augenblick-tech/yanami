@@ -1,9 +1,9 @@
-pub mod task;
+pub mod tasker;
 
 #[cfg(test)]
 mod tests {
 
-    use task::Tasker;
+    use tasker::Tasker;
 
     use crate::models::rss::AnimeRssRecord;
 

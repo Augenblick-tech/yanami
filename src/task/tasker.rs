@@ -1,11 +1,11 @@
-use std::{collections::HashMap, path::Path, sync::Arc, time::Duration};
+use std::{collections::HashMap, fmt::Write, path::Path, sync::Arc, time::Duration};
 
 use anna::{
-    anime::anime::{AnimeInfo, AnimeTracker},
-    qbit::qbit::Qbit,
-    rss::rss::RssHttpClient,
+    anime::tracker::{AnimeInfo, AnimeTracker},
+    qbit::qbitorrent::Qbit,
+    rss::client::Client,
 };
-use anyhow::Error;
+use anyhow::{Context, Error};
 use base32::Alphabet;
 use formatx::formatx;
 use regex::Regex;
@@ -40,7 +40,7 @@ struct AnimeTask {
 #[derive(Clone)]
 pub struct Tasker {
     rss_db: RssProvider,
-    rss_http_client: Arc<RssHttpClient>,
+    rss_http_client: Arc<Client>,
     anime_db: AnimeProvider,
     anime: Arc<AnimeTracker>,
     rule_db: RuleProvider,
@@ -58,7 +58,7 @@ pub struct Tasker {
 impl Tasker {
     pub fn new(
         rss: RssProvider,
-        rss_http_client: Arc<RssHttpClient>,
+        rss_http_client: Arc<Client>,
         anime_db: AnimeProvider,
         anime: Arc<AnimeTracker>,
         rule_db: RuleProvider,
@@ -289,10 +289,9 @@ impl Tasker {
                 tracing::error!("sync_calender start_listener failed, error: {}", e);
             }
         }
-        Ok(self
-            .anime_db
+        self.anime_db
             .set_calenders(anime)
-            .map_err(|e| anyhow::Error::msg(format!("sync_calender set failed, {}", e)))?)
+            .map_err(|e| anyhow::Error::msg(format!("sync_calender set failed, {}", e)))
     }
 
     async fn check_anime_rules(&self, msg: RssItem, anime_status: &mut AnimeStatus) {
@@ -352,7 +351,7 @@ impl Tasker {
                 // TODO:
                 // 发送磁力链接到qbit下载，设置下载路径
                 // 考虑是否直接使用qbit的命名功能，这个功能曾经不稳定，接口返回ok但实际没有命名成功
-                if let Err(e) = self.send_qbit(&msg.magnet, &anime).await {
+                if let Err(e) = self.send_qbit(&msg.magnet, anime).await {
                     tracing::error!(
                         "check_anime_rules send {:?} to qbit failed, error: {}",
                         &msg,
@@ -506,22 +505,24 @@ impl Tasker {
             if hash_info.len() <= 32 {
                 Ok(
                     base32::decode(Alphabet::Rfc4648 { padding: true }, &hash_info)
-                        .ok_or(Error::msg("base32 to hex failed"))?
+                        .context("base32 to hex failed")?
                         .iter()
-                        .map(|byte| format!("{:02x}", byte))
-                        .collect::<String>(),
+                        .fold(String::new(), |mut acc, byte| {
+                            write!(&mut acc, "{:02x}", byte).unwrap();
+                            acc
+                        }),
                 )
             } else {
                 Ok(hash_info)
             }
         } else {
             let bytes = reqwest::get(url).await?.bytes().await?;
-            let info: Torrent = serde_bencode::from_bytes(&bytes.to_vec())?;
+            let info: Torrent = serde_bencode::from_bytes(&bytes)?;
             let mut hasher = Sha1::new();
             let info = serde_bencode::to_bytes(&info.info)?;
             hasher.update(info);
             let info_hash = format!("{:x}", hasher.finalize());
-            return Ok(info_hash.to_lowercase());
+            Ok(info_hash.to_lowercase())
         }
     }
 

@@ -56,7 +56,7 @@ impl TMDB {
         mut lang: &str,
     ) -> Result<SearchResult, reqwest::Error> {
         let url = "https://api.themoviedb.org/3/search/";
-        if lang == "" {
+        if lang.is_empty() {
             lang = "ja";
         }
         self.client
@@ -78,7 +78,7 @@ impl TMDB {
         series_id: i64,
         mut lang: &str,
     ) -> Result<SeriesResult, Error> {
-        if lang == "" {
+        if lang.is_empty() {
             lang = "ja";
         }
         let url = format!(

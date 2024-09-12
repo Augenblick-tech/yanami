@@ -42,7 +42,7 @@ impl Error {
                         for error in field_meta.into_iter() {
                             validation_errors
                                 .entry(Cow::from(struct_property))
-                                .or_insert_with(Vec::new)
+                                .or_default()
                                 .push(error.message.unwrap_or_else(|| {
                                     // required validators contain None for their message, assume a default response
                                     Cow::from(format!("{} is required", struct_property))
@@ -67,15 +67,17 @@ impl IntoResponse for Error {
             return Self::unprocessable_entity(e);
         }
 
-        let (status, error_message) = match self {
-            // Error::InvalidToken => (StatusCode::OK, "invalid token".to_string()),
-            // Error::InvalidRequest => (StatusCode::OK, "invalid request".to_string()),
-            _ => (
-                StatusCode::OK,
-                self.to_string(),
-                // String::from("INTERNAL_SERVER_ERROR"),
-            ),
-        };
+        // let (status, error_message) = match self {
+        // Error::InvalidToken => (StatusCode::OK, "invalid token".to_string()),
+        // Error::InvalidRequest => (StatusCode::OK, "invalid request".to_string()),
+        // _ => (
+        //     StatusCode::OK,
+        //     self.to_string(),
+        // String::from("INTERNAL_SERVER_ERROR"),
+        // ),
+        // };
+        let status = StatusCode::OK;
+        let error_message = self.to_string();
 
         let body = JsonResult::<String>::json_err(error_message).unwrap();
         (status, body).into_response()

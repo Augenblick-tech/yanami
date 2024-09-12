@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use anna::{anime::anime::AnimeInfo, qbit::qbit::QbitConfig};
+use anna::{anime::tracker::AnimeInfo, qbit::qbitorrent::QbitConfig};
 use anyhow::Error;
 
 use crate::models::{
