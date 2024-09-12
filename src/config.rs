@@ -30,6 +30,16 @@ impl Config {
         } else {
             Config::default()
         };
+        let mode = args
+            .mode
+            .or(config.mode.or(Some("info".to_string())))
+            .unwrap();
+
+        let mode = if mode.eq("debug") || mode.eq("warn") {
+            mode
+        } else {
+            "info".to_string()
+        };
 
         Ok(Config {
             addr: Some(args.addr.or(config.addr).expect("addr is required")),
@@ -39,7 +49,7 @@ impl Config {
                     .expect("db_path is required"),
             ),
             key: Some(args.key.or(config.key).expect("key is required")),
-            mode: args.mode.or(config.mode.or(Some("Info".to_string()))),
+            mode: Some(mode),
             tmdb_token: Some(
                 args.tmdb_token
                     .or(config.tmdb_token)

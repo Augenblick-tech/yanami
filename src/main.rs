@@ -23,19 +23,15 @@ static GLOBAL: MiMalloc = MiMalloc;
 #[tokio::main]
 async fn main() {
     let config = Config::load().unwrap();
-    if let Some(mode) = config.mode {
-        let mode = if !mode.eq("debug") && !mode.eq("warn") {
-            "info"
-        } else {
-            mode.as_str()
-        };
-        tracing::subscriber::set_global_default(
-            fmt::Subscriber::builder()
-                .with_env_filter(EnvFilter::new(format!("yanami={mode}")))
-                .finish(),
-        )
-        .unwrap();
-    }
+    tracing::subscriber::set_global_default(
+        fmt::Subscriber::builder()
+            .with_env_filter(EnvFilter::new(format!(
+                "yanami={}",
+                config.mode.unwrap_or_else(|| "info".to_string())
+            )))
+            .finish(),
+    )
+    .unwrap();
 
     auth::init(config.key.clone().unwrap().to_owned());
     tracing::info!("listening on {}", &config.addr.clone().unwrap());
