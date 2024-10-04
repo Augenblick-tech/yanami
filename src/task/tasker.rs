@@ -249,18 +249,13 @@ impl Tasker {
                                         } else {
                                             item.link().unwrap()
                                         };
-                                        if let Err(err) = chan
+                                        // 该错误只会在chan被关闭时抛出，而接收端未启动时chan就是处于关闭状态的，此时允许写入失败，忽略错误
+                                        let _ = chan
                                             .send(RssItem {
                                                 title: item.title.clone().unwrap(),
                                                 magnet: url.to_string(),
                                             })
-                                            .await
-                                        {
-                                            tracing::error!(
-                                                "send rss item to chan failed, {}",
-                                                err
-                                            );
-                                        }
+                                            .await;
                                     }
                                 }
                             });
