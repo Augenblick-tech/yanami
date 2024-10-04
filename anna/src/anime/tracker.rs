@@ -49,9 +49,11 @@ impl AnimeTracker {
             .context("get calender failed")?;
         let re = Regex::new("第[0-9]+期").context("set re rule failed")?;
         let en_re = Regex::new("Season.*?$").context("set re rule failed")?;
+        let end_number_re = Regex::new(r"\d+$").context("set re rule failed")?;
         for bgm in rsp.iter() {
             let name = re.replace(&bgm.name, "").trim().to_string();
             let name = en_re.replace(&name, "").trim().to_string();
+            let name = end_number_re.replace(&name, "").trim().to_string();
             let search_result = self
                 .tmdb
                 .search(SearchEnum::TV, &name, "zh-TW")
