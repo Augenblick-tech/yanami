@@ -25,6 +25,16 @@
 
 `cargo run -- --addr 127.0.0.1:1234 --mode debug --key yanami --db-path ./yanami.redb`
 
+#### 启动配置
+
+```toml
+addr = "127.0.0.1:1234"
+mode = "debug"
+key = "your_yanami_service_auth_key"
+db_path = "yanami.redb"
+tmdb_token = "your_tmdb_key"
+```
+
 ### 接口
 OpenApi: `http://127.0.0.1:1234/redoc`  
 SwaggerUI: `http://127.0.0.1:1234/swagger-ui`
