@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use anna::rss::client::Client;
 use axum::{
-    body::Body,
+    body::{self, Body},
     extract::MatchedPath,
     http::{Request, StatusCode},
     middleware::{self, Next},
@@ -13,6 +13,7 @@ use axum::{
 use axum_extra::TypedHeader;
 use headers::{authorization::Bearer, Authorization};
 use jsonwebtoken::{decode, Validation};
+use serde_json::Value;
 use utoipa::OpenApi;
 use utoipa_redoc::{Redoc, Servable};
 use utoipa_swagger_ui::SwaggerUi;
@@ -111,14 +112,35 @@ async fn log(request: Request<Body>, next: Next) -> Result<Response, StatusCode>
     } else {
         request.uri().path().to_owned()
     };
+    // 解析请求体打印日志
+    let (parts, mut body) = request.into_parts();
+    let body_bytes = body::to_bytes(body, usize::MAX).await;
+    match body_bytes {
+        Ok(bytes) => {
+            match serde_json::from_slice::<Value>(&bytes) {
+                Ok(body_str) => {
+                    tracing::debug!(
+                        "method: {}, path: {}, body: {:?}",
+                        &parts.method,
+                        &path,
+                        body_str
+                    );
+                }
+                Err(_) => {
+                    tracing::debug!(
+                        "method: {}, path: {}, body: {:?}",
+                        &parts.method,
+                        &path,
+                        &bytes
+                    );
+                }
+            };
+            body = Body::from(bytes);
+        }
+        Err(_) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+    }
 
-    tracing::debug!(
-        "method: {}, path: {}, body: {:?}",
-        &request.method(),
-        &path,
-        &request.body(),
-    );
-    Ok(next.run(request).await)
+    Ok(next.run(Request::from_parts(parts, body)).await)
 }
 
 async fn auth(request: Request<Body>, next: Next) -> Result<Response, StatusCode> {
