@@ -32,10 +32,11 @@ impl Qbit {
     }
 
     pub async fn login(&self) -> Result<(), Error> {
-        let url_path = "/api/v2/auth/login";
+        let url_path = "api/v2/auth/login";
+        let url = Url::parse(self.config.url.as_str())?.join(url_path)?;
         let rsp = self
             .client
-            .post(Url::parse(self.config.url.as_str())?.join(url_path)?)
+            .post(url.clone())
             .form(&[
                 ("username", self.config.username.to_string()),
                 ("password", self.config.password.to_string()),
@@ -45,8 +46,8 @@ impl Qbit {
         if rsp.status() != StatusCode::OK {
             Err(Error::msg(format!(
                 "login qbit {} failed, http status code is {}",
-                self.config.url,
-                rsp.status()
+                url,
+                rsp.status(),
             )))
         } else {
             Ok(())
@@ -54,7 +55,7 @@ impl Qbit {
     }
 
     pub async fn check_and_login(&self) -> Result<(), Error> {
-        let url_path = "/api/v2/app/version";
+        let url_path = "api/v2/app/version";
         let rsp = self
             .client
             .get(Url::parse(self.config.url.as_str())?.join(url_path)?)
@@ -70,7 +71,7 @@ impl Qbit {
     pub async fn add(&self, magnet: &str, save_path: &str) -> Result<(), Error> {
         let rsp = self
             .client
-            .post(Url::parse(self.config.url.as_str())?.join("/api/v2/torrents/add")?)
+            .post(Url::parse(self.config.url.as_str())?.join("api/v2/torrents/add")?)
             .multipart(
                 Form::new()
                     .text("urls", magnet.to_string())
