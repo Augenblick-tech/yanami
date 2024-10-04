@@ -88,6 +88,9 @@ impl AnimeTracker {
             if season.season_number <= 0 {
                 continue;
             }
+            if bgm.eps <= 0 && season.episode_count <= 0 {
+                continue;
+            }
             let anime_info = AnimeInfo {
                 id: bgm.id,
                 name: bgm.name.clone(),
@@ -95,7 +98,11 @@ impl AnimeTracker {
                 name_tw: res.name.context("not found name tw")?,
                 weekday: bgm.weekday,
                 air_date: season.air_date.clone().unwrap(),
-                eps: bgm.eps,
+                eps: if bgm.eps > 0 {
+                    bgm.eps
+                } else {
+                    season.episode_count
+                },
                 season: season.season_number,
             };
             anime_info_list.push(anime_info);

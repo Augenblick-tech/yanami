@@ -273,6 +273,12 @@ impl Tasker {
                 anyhow::Error::msg(format!("sync_calender get_calender failed. {}", e))
             })?;
         for i in anime.iter() {
+            // 番剧已经被设置为不追踪，则跳过监听
+            if let Some(anime_status) = self.anime_db.get_calender(i.id)? {
+                if !anime_status.status {
+                    continue;
+                }
+            }
             if let Err(e) = self
                 .start_listener(AnimeStatus {
                     status: true,

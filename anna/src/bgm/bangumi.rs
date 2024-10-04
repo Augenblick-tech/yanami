@@ -80,9 +80,9 @@ impl BGM {
                     continue;
                 }
                 let mut info = info.unwrap();
-                if info.eps.is_none() || info.eps.unwrap() <= 0 {
-                    continue;
-                }
+                // if info.eps.is_none() || info.eps.unwrap() <= 0 {
+                //     continue;
+                // }
                 if info.air_date.is_none() {
                     if item.air_date.is_some() {
                         info.air_date = item.air_date;
