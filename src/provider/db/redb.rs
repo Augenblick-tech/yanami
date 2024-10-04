@@ -360,10 +360,17 @@ impl<'a> Anime for ReDB<'a> {
         for anime in calender.iter() {
             let status = match &table {
                 Ok(table) => {
-                    let r = table.get(self.anime_calender.to_key(anime.id))?;
-                    let mut status: AnimeStatus = serde_json::from_slice(&r.unwrap().value())?;
-                    status.anime_info = anime.clone();
-                    status
+                    if let Some(r) = table.get(self.anime_calender.to_key(anime.id))? {
+                        let mut status: AnimeStatus = serde_json::from_slice(&r.value())?;
+                        status.anime_info = anime.clone();
+                        status
+                    } else {
+                        AnimeStatus {
+                            status: true,
+                            rule_name: "".to_string(),
+                            anime_info: anime.clone(),
+                        }
+                    }
                 }
                 Err(TableError::TableDoesNotExist(_)) => AnimeStatus {
                     status: true,
