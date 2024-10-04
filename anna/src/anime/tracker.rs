@@ -1,4 +1,5 @@
 use anyhow::{Context, Error};
+use chrono::{Datelike, NaiveDate};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
@@ -91,13 +92,26 @@ impl AnimeTracker {
             if bgm.eps <= 0 && season.episode_count <= 0 {
                 continue;
             }
+
+            // 检查获取到的季度是否跟bgm的季度是同一个
+            // 判断逻辑 年月必须相同
+            if let Ok(date) = NaiveDate::parse_from_str(&bgm.air_date, "%Y-%m-%d") {
+                if let Some(tmdb_date) = &season.air_date {
+                    if let Ok(tmdb_date) = NaiveDate::parse_from_str(tmdb_date, "%Y-%m-%d") {
+                        if date.year() != tmdb_date.year() || date.month() != tmdb_date.month() {
+                            continue;
+                        }
+                    }
+                }
+            }
+
             let anime_info = AnimeInfo {
                 id: bgm.id,
                 name: bgm.name.clone(),
                 name_cn: series_result.name.clone().context("not found name cn")?,
                 name_tw: res.name.context("not found name tw")?,
                 weekday: bgm.weekday,
-                air_date: season.air_date.clone().unwrap(),
+                air_date: bgm.air_date.clone(),
                 eps: if bgm.eps > 0 {
                     bgm.eps
                 } else {

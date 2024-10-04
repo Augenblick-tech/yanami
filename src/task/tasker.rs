@@ -7,6 +7,7 @@ use anna::{
 };
 use anyhow::{Context, Error};
 use base32::Alphabet;
+use chrono::{DateTime, NaiveDate};
 use formatx::formatx;
 use regex::Regex;
 use reqwest::Url;
@@ -148,7 +149,6 @@ impl Tasker {
                 }
             }
         });
-        // }
         Ok(())
     }
 
@@ -217,6 +217,7 @@ impl Tasker {
                     let ri = RssItem {
                         title: i.title.clone().unwrap(),
                         magnet: url.to_string(),
+                        pub_date: i.pub_date.clone(),
                     };
                     if let Err(err) = self.anime_rss_broadcast.send(ri.clone()) {
                         tracing::error!("broadcast rss item to chan failed, {}", err);
@@ -254,6 +255,7 @@ impl Tasker {
                                             .send(RssItem {
                                                 title: item.title.clone().unwrap(),
                                                 magnet: url.to_string(),
+                                                pub_date: item.pub_date.clone(),
                                             })
                                             .await;
                                     }
@@ -340,6 +342,46 @@ impl Tasker {
 
         if !anime_status.rule_name.eq(&rule.name) {
             return;
+        }
+
+        // 判断当前种子的上传时间是否大于该番剧季度的开始更新时间
+        if let Some(pub_date) = &msg.pub_date {
+            if let Ok(pub_date) = DateTime::parse_from_rfc2822(pub_date) {
+                if let Ok(date) =
+                    NaiveDate::parse_from_str(&anime_status.anime_info.air_date, "%Y-%m-%d")
+                {
+                    if pub_date.date_naive() < date {
+                        tracing::debug!(
+                            "handle_rss check {} success, pub_date < date, skip, pub_date: {:?}, bgm_date: {}",
+                            &anime_status.anime_info.name,
+                            &msg.pub_date,
+                            &anime_status.anime_info.air_date
+                        );
+                        return;
+                    }
+                } else {
+                    tracing::debug!(
+                        "handle_rss check {} bgm date failed, pub_date: {:?}, bgm_date: {}",
+                        &anime_status.anime_info.name,
+                        &msg.pub_date,
+                        &anime_status.anime_info.air_date
+                    );
+                }
+            } else {
+                tracing::debug!(
+                    "handle_rss check {} pub date failed, pub_date: {:?}, bgm_date: {}",
+                    &anime_status.anime_info.name,
+                    &msg.pub_date,
+                    &anime_status.anime_info.air_date
+                );
+            }
+        } else {
+            tracing::debug!(
+                "handle_rss check {} pub date not found, pub_date: {:?}, bgm_date: {}",
+                &anime_status.anime_info.name,
+                &msg.pub_date,
+                &anime_status.anime_info.air_date
+            );
         }
 
         let anime = &anime_status.anime_info;
