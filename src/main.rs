@@ -6,7 +6,10 @@ use anna::{
 };
 use mimalloc::MiMalloc;
 use tokio::spawn;
-use tracing_subscriber::{fmt, EnvFilter};
+use tracing_subscriber::{
+    fmt::{self},
+    EnvFilter,
+};
 
 use yanami::{
     common::auth::{self, UserCharacter},
@@ -20,19 +23,27 @@ use yanami::{
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
-#[tokio::main]
-async fn main() {
+fn main() {
     let config = Config::load().unwrap();
     tracing::subscriber::set_global_default(
         fmt::Subscriber::builder()
             .with_env_filter(EnvFilter::new(format!(
                 "yanami={}",
-                config.mode.unwrap_or_else(|| "info".to_string())
+                config.mode.clone().unwrap_or_else(|| "info".to_string())
             )))
             .finish(),
     )
     .unwrap();
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            init(config).await;
+        })
+}
 
+async fn init(config: Config) {
     auth::init(config.key.clone().unwrap().to_owned());
     tracing::info!("listening on {}", &config.addr.clone().unwrap());
 

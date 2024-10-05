@@ -1,5 +1,4 @@
 use anyhow::{Context, Error};
-use chrono::{Datelike, NaiveDate};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
@@ -95,15 +94,17 @@ impl AnimeTracker {
 
             // 检查获取到的季度是否跟bgm的季度是同一个
             // 判断逻辑 年月必须相同
-            if let Ok(date) = NaiveDate::parse_from_str(&bgm.air_date, "%Y-%m-%d") {
-                if let Some(tmdb_date) = &season.air_date {
-                    if let Ok(tmdb_date) = NaiveDate::parse_from_str(tmdb_date, "%Y-%m-%d") {
-                        if date.year() != tmdb_date.year() || date.month() != tmdb_date.month() {
-                            continue;
-                        }
-                    }
-                }
-            }
+            // 修订：季度划分混乱时，有可能虽然bgm单独开了第二季的词条但是tmdb依旧沿用第一季度
+            // 并且集数也是继续递增的，所以这里不能这么判断
+            // if let Ok(date) = NaiveDate::parse_from_str(&bgm.air_date, "%Y-%m-%d") {
+            //     if let Some(tmdb_date) = &season.air_date {
+            //         if let Ok(tmdb_date) = NaiveDate::parse_from_str(tmdb_date, "%Y-%m-%d") {
+            //             if date.year() != tmdb_date.year() || date.month() != tmdb_date.month() {
+            //                 continue;
+            //             }
+            //         }
+            //     }
+            // }
 
             let anime_info = AnimeInfo {
                 id: bgm.id,
