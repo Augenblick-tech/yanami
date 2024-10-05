@@ -1,4 +1,5 @@
 use anyhow::{Context, Error};
+use chrono::{Datelike, NaiveDate};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
@@ -66,7 +67,28 @@ impl AnimeTracker {
                 // );
                 continue;
             }
-            let res = search_result.results.first().unwrap().clone();
+            let mut res = Option::None;
+            if let Ok(bgm_date) = NaiveDate::parse_from_str(&bgm.air_date, "%Y-%m-%d") {
+                for i in search_result.results.iter() {
+                    if let Some(air_date) = &i.first_air_date {
+                        if let Ok(air_date) = NaiveDate::parse_from_str(air_date, "%Y-%m-%d") {
+                            if air_date.year() == bgm_date.year()
+                                && air_date.month() == bgm_date.month()
+                            {
+                                res = Some(i.clone());
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            if res.is_none() {
+                res = Some(search_result.results.first().unwrap().clone());
+            }
+            if res.is_none() {
+                continue;
+            }
+            let res = res.unwrap();
             if !res
                 .original_language
                 .clone()

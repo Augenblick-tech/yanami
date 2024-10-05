@@ -298,7 +298,9 @@ impl Tasker {
     }
 
     async fn check_anime_rules(&self, msg: RssItem, anime_status: &mut AnimeStatus) {
-        // tracing::debug!("check_anime_rules rss: {:?}", msg);
+        if let Ok(Some(anime)) = self.anime_db.get_calender(anime_status.anime_info.id) {
+            anime_status.anime_info = anime.anime_info;
+        }
         if let Ok(Some(rules)) = self.rule_db.get_all_rules() {
             let anime = &anime_status.anime_info;
             for rule in rules.iter() {
