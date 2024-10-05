@@ -5,8 +5,6 @@ COPY . /build/
 WORKDIR /build
 
 RUN apt-get update && apt-get install -y musl-tools
-RUN rustup default nightly
-RUN rustup target add x86_64-unknown-linux-musl
 
 RUN cargo clean
 RUN cargo build --target x86_64-unknown-linux-musl --release
