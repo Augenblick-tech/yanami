@@ -80,9 +80,6 @@ impl BGM {
                     continue;
                 }
                 let mut info = info.unwrap();
-                // if info.eps.is_none() || info.eps.unwrap() <= 0 {
-                //     continue;
-                // }
                 if info.air_date.is_none() {
                     if item.air_date.is_some() {
                         info.air_date = item.air_date;
@@ -94,7 +91,7 @@ impl BGM {
                     id: info.id,
                     name: info.name,
                     weekday: i.weekday.id,
-                    eps: info.eps.unwrap(),
+                    eps: info.eps.unwrap_or(0),
                     air_date: info.air_date.unwrap(),
                 });
             }
