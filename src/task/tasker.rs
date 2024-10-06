@@ -321,7 +321,7 @@ impl Tasker {
                                 "anime: {}\nbt: {}\nrule: {}",
                                 &anime.name,
                                 &msg.title,
-                                &i.re
+                                &re
                             );
                             self.handle_rss(rule, msg, anime_status).await;
                             return;
@@ -472,6 +472,7 @@ impl Tasker {
             .ok_or(Error::msg("send_qbit get download path empty"))?;
 
         client.load_new_config(&qbit_config).await?;
+        client.check_and_login().await?;
         let download_path =
             Path::new(&download_path).join(format!("{}/S{:02}", anime.name, anime.season));
         client
