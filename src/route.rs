@@ -23,7 +23,7 @@ use crate::{
         auth::{Claims, KEYS},
         result::JsonResult,
     },
-    hander::{
+    handler::{
         anime::{anime_records, animes, set_anime},
         config::{get_config, set_config},
         rss::{del_rss, rss_list, set_rss},

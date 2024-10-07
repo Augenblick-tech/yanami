@@ -352,7 +352,13 @@ impl Tasker {
                 if let Ok(date) =
                     NaiveDate::parse_from_str(&anime_status.anime_info.air_date, "%Y-%m-%d")
                 {
-                    if pub_date.date_naive() < date {
+                    if pub_date
+                        .date_naive()
+                        // 兼容五天的误差，防止第一集提前放映无法通过检查
+                        .checked_add_days(chrono::Days::new(5))
+                        .unwrap_or(pub_date.date_naive())
+                        < date
+                    {
                         tracing::debug!(
                             "handle_rss check {} success, pub_date < date, skip, pub_date: {:?}, bgm_date: {}",
                             &anime_status.anime_info.name,
@@ -396,7 +402,7 @@ impl Tasker {
                 // TODO:
                 // 发送磁力链接到qbit下载，设置下载路径
                 // 考虑是否直接使用qbit的命名功能，这个功能曾经不稳定，接口返回ok但实际没有命名成功
-                if let Err(e) = self.send_qbit(&msg.magnet, anime).await {
+                if let Err(e) = self.send_qbit(&msg.magnet, anime, &info_hash).await {
                     tracing::error!(
                         "check_anime_rules send {:?} to qbit failed, error: {}",
                         &msg,
@@ -460,7 +466,7 @@ impl Tasker {
     /// 下载路径：{config_path}/{anime.name}/S{02:anime.season}
     ///
     /// 当qbit_config和download_path都为空时，不送发任何信息
-    async fn send_qbit(&self, url: &str, anime: &AnimeInfo) -> Result<(), Error> {
+    async fn send_qbit(&self, url: &str, anime: &AnimeInfo, hash: &str) -> Result<(), Error> {
         let mut client = self.qbit_client.lock().await;
         let qbit_config = self
             .config_db
@@ -474,13 +480,14 @@ impl Tasker {
         client.load_new_config(&qbit_config).await?;
         client.check_and_login().await?;
         let download_path =
-            Path::new(&download_path).join(format!("{}/S{:02}", anime.name, anime.season));
+            Path::new(&download_path).join(format!("{}/S{:02}", anime.search_name, anime.season));
         client
             .add(
                 url,
                 download_path
                     .to_str()
                     .ok_or(Error::msg("send_qbit get download path failed"))?,
+                hash,
             )
             .await?;
 

@@ -19,6 +19,7 @@ pub struct AnimeInfo {
     pub name_tw: String,
     pub name_cn: String,
     pub season: i64,
+    pub search_name: String,
 }
 
 impl AnimeInfo {
@@ -50,22 +51,31 @@ impl AnimeTracker {
             .context("get calender failed")?;
         let re = Regex::new("第[0-9]+期").context("set re rule failed")?;
         let en_re = Regex::new("Season.*?$").context("set re rule failed")?;
+        let en_nd_re = Regex::new(r"\d+.*?season$").context("set re rule failed")?;
         let end_number_re = Regex::new(r"\d+$").context("set re rule failed")?;
         for bgm in rsp.iter() {
             let name = re.replace(&bgm.name, "").trim().to_string();
-            let name = en_re.replace(&name, "").trim().to_string();
-            let name = end_number_re.replace(&name, "").trim().to_string();
-            let search_result = self
+            let name = en_nd_re.replace(&name, "").trim().to_string();
+            let mut name = en_re.replace(&name, "").trim().to_string();
+            let mut search_result = self
                 .tmdb
                 .search(SearchEnum::TV, &name, "zh-TW")
                 .await
                 .context("search failed")?;
             if search_result.results.is_empty() {
-                // println!(
-                //     "search empty skip, name:{}, search name: {}",
-                //     &bgm.name, name
-                // );
-                continue;
+                name = end_number_re.replace(&name, "").trim().to_string();
+                search_result = self
+                    .tmdb
+                    .search(SearchEnum::TV, &name, "zh-TW")
+                    .await
+                    .context("search failed")?;
+                if search_result.results.is_empty() {
+                    // println!(
+                    //     "search empty skip, name:{}, search name: {}",
+                    //     &bgm.name, name
+                    // );
+                    continue;
+                }
             }
             let mut res = Option::None;
             if let Ok(bgm_date) = NaiveDate::parse_from_str(&bgm.air_date, "%Y-%m-%d") {
@@ -141,6 +151,7 @@ impl AnimeTracker {
                     season.episode_count
                 },
                 season: season.season_number,
+                search_name: name,
             };
             anime_info_list.push(anime_info);
         }

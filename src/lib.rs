@@ -1,7 +1,7 @@
 #![feature(ascii_char)]
 pub mod common;
 pub mod config;
-pub mod hander;
+pub mod handler;
 pub mod models;
 pub mod openapi;
 pub mod provider;
