@@ -57,7 +57,7 @@ impl AnimeTracker {
             .await
             .context("get calender failed")?;
         let re = Regex::new("第[0-9]+期").context("set re rule failed")?;
-        let en_re = Regex::new("Season.*?$").context("set re rule failed")?;
+        let en_re = Regex::new("[Ss]eason.*?$").context("set re rule failed")?;
         let en_nd_re = Regex::new(r"\d+.*?season$").context("set re rule failed")?;
         let end_number_re = Regex::new(r"\d+$").context("set re rule failed")?;
         for bgm in rsp.iter() {
