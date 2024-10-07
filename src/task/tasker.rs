@@ -94,6 +94,20 @@ impl Tasker {
         if let Err(e) = self.init_anime_listener().await {
             tracing::error!("task run init_anime_listener failed, error: {}", e);
         }
+
+        // 启动广播监听，当收到番剧季度完结时，从map记录中移除
+        let send_map = self.rss_send_map.clone();
+        let mut rx = self.anime_broadcast.subscribe();
+        tokio::spawn(async move {
+            while let Ok(msg) = rx.recv().await {
+                let mut send_map = send_map.lock().await;
+                if msg.is_canncel {
+                    tracing::info!("stop worker {:?}", &msg.info);
+                    send_map.remove(&msg.info.id);
+                }
+            }
+        });
+
         loop {
             let s = self.clone();
             select! {
@@ -132,7 +146,7 @@ impl Tasker {
         let s = self.clone();
         let mut anime = anime_status.clone();
         spawn(async move {
-            tracing::debug!("spawn anime: {:?}", &anime);
+            tracing::info!("spawn anime: {:?}", &anime);
             loop {
                 select! {
                     Ok(msg) = rx.recv() => {
@@ -394,11 +408,7 @@ impl Tasker {
 
         let anime = &anime_status.anime_info;
         if let Ok(info_hash) = Self::get_info_hash(&msg.magnet).await {
-            let r = self.anime_db.get_anime_record(anime.id, &info_hash);
-            if r.is_err() {
-                return;
-            }
-            if r.unwrap().is_none() {
+            if let Ok(None) = self.anime_db.get_anime_record(anime.id, &info_hash) {
                 // TODO:
                 // 发送磁力链接到qbit下载，设置下载路径
                 // 考虑是否直接使用qbit的命名功能，这个功能曾经不稳定，接口返回ok但实际没有命名成功
@@ -421,6 +431,8 @@ impl Tasker {
                     },
                 ) {
                     tracing::error!("check_anime_rules set_calender failed, error: {}", e);
+                } else {
+                    tracing::info!("down anime {:?}", &anime);
                 }
             }
             // 检查是否已经完结
