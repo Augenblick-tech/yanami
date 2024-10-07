@@ -88,6 +88,17 @@ impl TMDB {
         Ok(self.client.get(url).send().await?.json().await?)
     }
 
+    pub async fn get_alternative_titles(
+        &self,
+        series_id: i64,
+    ) -> anyhow::Result<AlternativeTitleResult> {
+        let url = format!(
+            "https://api.themoviedb.org/3/tv/{}/alternative_titles",
+            series_id
+        );
+        Ok(self.client.get(url).send().await?.json().await?)
+    }
+
     pub async fn get_season_details(
         &self,
         series_id: i64,
@@ -288,4 +299,17 @@ pub struct Episode {
     // pub still_path: Option<String>,
     // pub vote_average: f64,
     // pub vote_count: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AlternativeTitle {
+    pub iso_3166_1: String,
+    pub title: String,
+    pub r#type: String, // 使用 r# 来避免和 Rust 关键字冲突
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AlternativeTitleResult {
+    pub id: i64,
+    pub results: Vec<AlternativeTitle>,
 }

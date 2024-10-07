@@ -200,6 +200,7 @@ impl Tasker {
             .map_err(|e| anyhow::Error::msg(format!("check_update get_calender failed, {}", e)))?
             .ok_or(Error::msg("anime list is empty"))?;
         for item in rss_list.iter() {
+            tracing::info!("start check update {}", &item.title);
             tracing::debug!("check_update get rss: {:?}", item);
             if let Some(url) = item.url.clone() {
                 let r = self.rss_http_client.get_channel(&url).await;
@@ -284,6 +285,7 @@ impl Tasker {
     }
 
     async fn sync_calender(&self) -> Result<(), Error> {
+        tracing::info!("start sync bgm calender");
         let anime =
             self.anime.get_calender().await.map_err(|e| {
                 anyhow::Error::msg(format!("sync_calender get_calender failed. {}", e))
@@ -368,8 +370,8 @@ impl Tasker {
                 {
                     if pub_date
                         .date_naive()
-                        // 兼容五天的误差，防止第一集提前放映无法通过检查
-                        .checked_add_days(chrono::Days::new(5))
+                        // 兼容一周加一天的误差，防止第一集提前放映无法通过检查
+                        .checked_add_days(chrono::Days::new(8))
                         .unwrap_or(pub_date.date_naive())
                         < date
                     {
@@ -431,8 +433,6 @@ impl Tasker {
                     },
                 ) {
                     tracing::error!("check_anime_rules set_calender failed, error: {}", e);
-                } else {
-                    tracing::info!("down anime {:?}", &anime);
                 }
             }
             // 检查是否已经完结
@@ -465,6 +465,8 @@ impl Tasker {
                             anime.name,
                             e
                         );
+                    } else {
+                        tracing::info!("down anime {:?}", &anime);
                     }
                 }
             }
@@ -513,6 +515,7 @@ impl Tasker {
             .get_anime_rss_recodes(anime.id)?
             .ok_or(Error::msg("not found anime records"))?;
         let eps = Self::get_season_eps(anime_list)?;
+        tracing::debug!("check_season_over anime {} eps {:?}", &anime.name, &eps);
         Ok(*(eps.last().unwrap_or(&0)) >= anime.eps)
     }
 

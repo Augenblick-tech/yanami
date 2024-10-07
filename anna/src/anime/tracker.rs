@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use anyhow::{Context, Error};
 use chrono::{Datelike, NaiveDate};
 use regex::Regex;
@@ -20,15 +22,20 @@ pub struct AnimeInfo {
     pub name_cn: String,
     pub season: i64,
     pub search_name: String,
+    pub alternative_titles: Option<Vec<String>>,
 }
 
 impl AnimeInfo {
     pub fn names(&self) -> Vec<String> {
-        [&self.name, &self.name_tw, &self.name_cn]
-            .into_iter()
-            .filter(|s| !s.is_empty())
-            .map(|s| s.to_string())
-            .collect()
+        if let Some(titles) = self.alternative_titles.clone() {
+            titles
+        } else {
+            [&self.name, &self.name_tw, &self.name_cn]
+                .into_iter()
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string())
+                .collect()
+        }
     }
 }
 
@@ -124,19 +131,15 @@ impl AnimeTracker {
                 continue;
             }
 
-            // 检查获取到的季度是否跟bgm的季度是同一个
-            // 判断逻辑 年月必须相同
-            // 修订：季度划分混乱时，有可能虽然bgm单独开了第二季的词条但是tmdb依旧沿用第一季度
-            // 并且集数也是继续递增的，所以这里不能这么判断
-            // if let Ok(date) = NaiveDate::parse_from_str(&bgm.air_date, "%Y-%m-%d") {
-            //     if let Some(tmdb_date) = &season.air_date {
-            //         if let Ok(tmdb_date) = NaiveDate::parse_from_str(tmdb_date, "%Y-%m-%d") {
-            //             if date.year() != tmdb_date.year() || date.month() != tmdb_date.month() {
-            //                 continue;
-            //             }
-            //         }
-            //     }
-            // }
+            let alternative_titles = self.tmdb.get_alternative_titles(res.id).await?;
+            let mut names = alternative_titles
+                .results
+                .iter()
+                .map(|v| v.title.clone())
+                .collect::<HashSet<String>>();
+            names.insert(bgm.name.clone());
+            names.insert(series_result.name.clone().context("not found name cn")?);
+            names.insert(res.name.clone().context("not found name tw")?);
 
             let anime_info = AnimeInfo {
                 id: bgm.id,
@@ -152,6 +155,7 @@ impl AnimeTracker {
                 },
                 season: season.season_number,
                 search_name: name,
+                alternative_titles: Some(names.into_iter().collect()),
             };
             anime_info_list.push(anime_info);
         }
