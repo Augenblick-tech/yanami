@@ -7,7 +7,7 @@ use uuid::Uuid;
 use crate::models::{
     anime::AnimeStatus,
     rss::{AnimeRssRecord, RSSReq, RSS},
-    rule::GroupRule,
+    rule::Rule,
     user::{RegisterCode, UserEntity},
 };
 
@@ -510,7 +510,7 @@ impl<'a> Anime for ReDB<'a> {
 }
 
 impl<'a> Rules for ReDB<'a> {
-    fn set_rule(&self, rule: crate::models::rule::GroupRule) -> Result<(), Error> {
+    fn set_rule(&self, rule: crate::models::rule::Rule) -> Result<(), Error> {
         let tx = self.client.begin_write()?;
         {
             let mut table = tx.open_table(self.rule.table)?;
@@ -533,7 +533,7 @@ impl<'a> Rules for ReDB<'a> {
         Ok(())
     }
 
-    fn get_rule(&self, name: String) -> Result<Option<GroupRule>, Error> {
+    fn get_rule(&self, name: String) -> Result<Option<Rule>, Error> {
         let tx = self.client.begin_read()?;
         let table = tx.open_table(self.rule.table);
         match table {
@@ -550,13 +550,13 @@ impl<'a> Rules for ReDB<'a> {
         }
     }
 
-    fn get_all_rules(&self) -> Result<Option<Vec<GroupRule>>, Error> {
+    fn get_all_rules(&self) -> Result<Option<Vec<Rule>>, Error> {
         if self.is_empty()? {
             return Ok(None);
         }
         let tx = self.client.begin_read()?;
         let table = tx.open_table(self.rule.table);
-        let mut group_rules = Vec::<GroupRule>::new();
+        let mut group_rules = Vec::<Rule>::new();
         match table {
             Ok(table) => {
                 for data in table.iter()? {

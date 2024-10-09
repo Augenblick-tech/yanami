@@ -6,7 +6,7 @@ use anyhow::Error;
 use crate::models::{
     anime::AnimeStatus,
     rss::{AnimeRssRecord, RSSReq, RSS},
-    rule::GroupRule,
+    rule::Rule,
     user::{RegisterCode, UserEntity},
 };
 
@@ -59,10 +59,10 @@ pub trait Anime {
 }
 
 pub trait Rules {
-    fn set_rule(&self, rule: GroupRule) -> Result<(), Error>;
+    fn set_rule(&self, rule: Rule) -> Result<(), Error>;
     fn del_rule(&self, name: String) -> Result<(), Error>;
-    fn get_rule(&self, name: String) -> Result<Option<GroupRule>, Error>;
-    fn get_all_rules(&self) -> Result<Option<Vec<GroupRule>>, Error>;
+    fn get_rule(&self, name: String) -> Result<Option<Rule>, Error>;
+    fn get_all_rules(&self) -> Result<Option<Vec<Rule>>, Error>;
 }
 
 pub trait ServiceConfig {

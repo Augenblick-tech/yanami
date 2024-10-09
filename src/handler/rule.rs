@@ -5,7 +5,7 @@ use crate::{
         errors::{Error, ErrorResult},
         result::JsonResult,
     },
-    models::rule::{DelRule, GroupRule},
+    models::rule::{DelRule, Rule},
     route::Service,
 };
 
@@ -20,12 +20,11 @@ use crate::{
 #[axum_macros::debug_handler]
 pub async fn set_rule(
     Extension(service): Extension<Service>,
-    Json(mut req): Json<GroupRule>,
+    Json(req): Json<Rule>,
 ) -> ErrorResult<Json<JsonResult<i32>>> {
-    if req.name.is_empty() || req.rules.is_empty() || !req.rules.iter().all(|r| !r.re.is_empty()) {
+    if req.name.is_empty() || req.re.is_empty() {
         return Err(Error::InvalidRequest);
     }
-    req.rules.sort_by(|a, b| a.cost.cmp(&b.cost));
 
     service.rule_db.set_rule(req)?;
 
@@ -37,13 +36,13 @@ pub async fn set_rule(
         path = "/v1/rules",
         security(("api_key" = ["Authorization"])),
         responses(
-            (status = 200, description = "获取所有规则", body = JsonResultVecGroupRule)
+            (status = 200, description = "获取所有规则", body = JsonResultVecRule)
         )
     )]
 #[axum_macros::debug_handler]
 pub async fn rules(
     Extension(service): Extension<Service>,
-) -> ErrorResult<Json<JsonResult<Vec<GroupRule>>>> {
+) -> ErrorResult<Json<JsonResult<Vec<Rule>>>> {
     JsonResult::json_ok(service.rule_db.get_all_rules()?)
 }
 

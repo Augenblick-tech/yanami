@@ -5,10 +5,10 @@ use crate::{
     common::{
         auth::UserCharacter,
         errors::Error,
-        result::{JsonResultAuthBody, JsonResultDownloadPath, JsonResultRSS, JsonResultVecAnimeInfo, JsonResultVecAnimeRssRecord, JsonResultVecAnimeStatus, JsonResultVecGroupRule, JsonResultVecRSS, JsonResultVecUserEntity, JsonResulti32},
+        result::{JsonResultAuthBody, JsonResultDownloadPath, JsonResultRSS, JsonResultVecAnimeInfo, JsonResultVecAnimeRssRecord, JsonResultVecAnimeStatus, JsonResultVecRule, JsonResultVecRSS, JsonResultVecUserEntity, JsonResulti32},
     },
     models::{
-        anime::{AnimeRecordReq, AnimeStatus}, config::ServiceConfig, rss::{AnimeRssRecord, DelRSS, RSSReq, RSS}, rule::{DelRule, GroupRule, Rule}, user::{AuthBody, LoginReq, RegisterCodeReq, RegisterCodeRsp, RegisterReq, UserEntity}
+        anime::{AnimeRecordReq, AnimeStatus}, config::ServiceConfig, rss::{AnimeRssRecord, DelRSS, RSSReq, RSS}, rule::{DelRule, Rule}, user::{AuthBody, LoginReq, RegisterCodeReq, RegisterCodeRsp, RegisterReq, UserEntity}
     },
 };
 
@@ -51,8 +51,7 @@ use crate::{
                 RegisterReq,
                 JsonResulti32,
                 LoginReq,
-                JsonResultVecGroupRule,
-                GroupRule,
+                JsonResultVecRule,
                 Rule,
                 DelRule,
                 JsonResultDownloadPath,

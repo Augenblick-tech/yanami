@@ -26,7 +26,7 @@ use crate::{
     models::{
         anime::AnimeStatus,
         rss::{AnimeRssRecord, RssItem},
-        rule::GroupRule,
+        rule::Rule,
         torrent::Torrent,
     },
     provider::db::db_provider::{AnimeProvider, RssProvider, RuleProvider, ServiceConfigProvider},
@@ -256,7 +256,9 @@ impl Tasker {
                             spawn(async move {
                                 if let Ok(rsp) = rss_http_client.get_channel(&url).await {
                                     for item in rsp.items.iter() {
-                                        if item.enclosure().is_none() && item.link().is_none() {
+                                        if (item.enclosure().is_none() && item.link().is_none())
+                                            || item.pub_date.is_none()
+                                        {
                                             continue;
                                         }
 
@@ -317,51 +319,49 @@ impl Tasker {
         if let Ok(Some(anime)) = self.anime_db.get_calender(anime_status.anime_info.id) {
             anime_status.anime_info = anime.anime_info;
         }
-        if let Ok(Some(rules)) = self.rule_db.get_all_rules() {
+        if let Ok(Some(mut rules)) = self.rule_db.get_all_rules() {
             let anime = &anime_status.anime_info;
+            rules.sort_by(|a, b| a.cost.cmp(&b.cost));
             for rule in rules.iter() {
-                for i in rule.rules.iter() {
-                    for name in anime.names().iter() {
-                        let name = formatx!(&i.re, name);
-                        if name.is_err() {
-                            tracing::error!(
-                                "check_anime_rules format re failed, error: {}",
-                                name.unwrap_err()
-                            );
+                for name in anime.names().iter() {
+                    let name = formatx!(&rule.re, name);
+                    if name.is_err() {
+                        tracing::error!(
+                            "check_anime_rules format re failed, error: {}",
+                            name.unwrap_err()
+                        );
+                        continue;
+                    }
+                    let re = name.unwrap();
+                    if Regex::new(&re).unwrap().is_match(&msg.title) {
+                        // 判断是否已经命中过规则
+                        if anime_status.rule_name.is_empty() {
+                            anime_status.rule_name = rule.name.clone();
+                            if let Err(e) = self.anime_db.set_calender(anime_status.clone()) {
+                                tracing::error!("handle_rss set set_calender failed, {}", e);
+                                continue;
+                            }
+                        }
+
+                        if !anime_status.rule_name.eq(&rule.name) {
                             continue;
                         }
-                        let re = name.unwrap();
-                        if Regex::new(&re).unwrap().is_match(&msg.title) {
-                            // 记录下载的内容到数据库
-                            tracing::debug!(
-                                "anime: {}\nbt: {}\nrule: {}",
-                                &anime.name,
-                                &msg.title,
-                                &re
-                            );
-                            self.handle_rss(rule, msg, anime_status).await;
-                            return;
-                        }
+                        // 记录下载的内容到数据库
+                        tracing::debug!(
+                            "anime: {}\nbt: {}\nrule: {}",
+                            &anime.name,
+                            &msg.title,
+                            &re
+                        );
+                        self.handle_rss(rule, msg, anime_status).await;
+                        return;
                     }
                 }
             }
         }
     }
 
-    async fn handle_rss(&self, rule: &GroupRule, msg: RssItem, anime_status: &mut AnimeStatus) {
-        // 判断是否已经命中过规则
-        if anime_status.rule_name.is_empty() {
-            anime_status.rule_name = rule.name.clone();
-            if let Err(e) = self.anime_db.set_calender(anime_status.clone()) {
-                tracing::error!("handle_rss set set_calender failed, {}", e);
-                return;
-            }
-        }
-
-        if !anime_status.rule_name.eq(&rule.name) {
-            return;
-        }
-
+    async fn handle_rss(&self, rule: &Rule, msg: RssItem, anime_status: &mut AnimeStatus) {
         // 判断当前种子的上传时间是否大于该番剧季度的开始更新时间
         if let Some(pub_date) = &msg.pub_date {
             if let Ok(pub_date) = DateTime::parse_from_rfc2822(pub_date) {
