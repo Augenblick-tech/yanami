@@ -200,7 +200,6 @@ impl Tasker {
             .map_err(|e| anyhow::Error::msg(format!("check_update get_calender failed, {}", e)))?
             .ok_or(Error::msg("anime list is empty"))?;
         for item in rss_list.iter() {
-            tracing::info!("start check update {}", &item.title);
             tracing::debug!("check_update get rss: {:?}", item);
             if let Some(url) = item.url.clone() {
                 let r = self.rss_http_client.get_channel(&url).await;
@@ -334,11 +333,31 @@ impl Tasker {
                     }
                     let re = name.unwrap();
                     if Regex::new(&re).unwrap().is_match(&msg.title) {
+                        // 判断当前种子的上传时间是否大于该番剧季度的开始更新时间
+                        if let Some(pub_date) = &msg.pub_date {
+                            if let Ok(pub_date) = DateTime::parse_from_rfc2822(pub_date) {
+                                if let Ok(date) = NaiveDate::parse_from_str(
+                                    &anime_status.anime_info.air_date,
+                                    "%Y-%m-%d",
+                                ) {
+                                    if pub_date
+                                        .date_naive()
+                                        // 兼容一周加一天的误差，防止第一集提前放映无法通过检查
+                                        .checked_add_days(chrono::Days::new(8))
+                                        .unwrap_or(pub_date.date_naive())
+                                        < date
+                                    {
+                                        tracing::debug!("check_anime_rules check {} success, pub_date < date, skip, pub_date: {:?}, bgm_date: {}",&msg.title,&msg.pub_date,&anime_status.anime_info.air_date);
+                                        continue;
+                                    }
+                                }
+                            }
+                        }
                         // 判断是否已经命中过规则
                         if anime_status.rule_name.is_empty() {
                             anime_status.rule_name = rule.name.clone();
                             if let Err(e) = self.anime_db.set_calender(anime_status.clone()) {
-                                tracing::error!("handle_rss set set_calender failed, {}", e);
+                                tracing::error!("check_anime_rules set set_calender failed, {}", e);
                                 continue;
                             }
                         }
@@ -346,9 +365,9 @@ impl Tasker {
                         if !anime_status.rule_name.eq(&rule.name) {
                             continue;
                         }
-                        // 记录下载的内容到数据库
+
                         tracing::debug!(
-                            "anime: {}\nbt: {}\nrule: {}",
+                            "check_anime_rules anime: {} bt: {} rule: {}",
                             &anime.name,
                             &msg.title,
                             &re
@@ -362,52 +381,6 @@ impl Tasker {
     }
 
     async fn handle_rss(&self, rule: &Rule, msg: RssItem, anime_status: &mut AnimeStatus) {
-        // 判断当前种子的上传时间是否大于该番剧季度的开始更新时间
-        if let Some(pub_date) = &msg.pub_date {
-            if let Ok(pub_date) = DateTime::parse_from_rfc2822(pub_date) {
-                if let Ok(date) =
-                    NaiveDate::parse_from_str(&anime_status.anime_info.air_date, "%Y-%m-%d")
-                {
-                    if pub_date
-                        .date_naive()
-                        // 兼容一周加一天的误差，防止第一集提前放映无法通过检查
-                        .checked_add_days(chrono::Days::new(8))
-                        .unwrap_or(pub_date.date_naive())
-                        < date
-                    {
-                        tracing::debug!(
-                            "handle_rss check {} success, pub_date < date, skip, pub_date: {:?}, bgm_date: {}",
-                            &anime_status.anime_info.name,
-                            &msg.pub_date,
-                            &anime_status.anime_info.air_date
-                        );
-                        return;
-                    }
-                } else {
-                    tracing::debug!(
-                        "handle_rss check {} bgm date failed, pub_date: {:?}, bgm_date: {}",
-                        &anime_status.anime_info.name,
-                        &msg.pub_date,
-                        &anime_status.anime_info.air_date
-                    );
-                }
-            } else {
-                tracing::debug!(
-                    "handle_rss check {} pub date failed, pub_date: {:?}, bgm_date: {}",
-                    &anime_status.anime_info.name,
-                    &msg.pub_date,
-                    &anime_status.anime_info.air_date
-                );
-            }
-        } else {
-            tracing::debug!(
-                "handle_rss check {} pub date not found, pub_date: {:?}, bgm_date: {}",
-                &anime_status.anime_info.name,
-                &msg.pub_date,
-                &anime_status.anime_info.air_date
-            );
-        }
-
         let anime = &anime_status.anime_info;
         if let Ok(info_hash) = Self::get_info_hash(&msg.magnet).await {
             if let Ok(None) = self.anime_db.get_anime_record(anime.id, &info_hash) {
@@ -415,13 +388,14 @@ impl Tasker {
                 // 发送磁力链接到qbit下载，设置下载路径
                 // 考虑是否直接使用qbit的命名功能，这个功能曾经不稳定，接口返回ok但实际没有命名成功
                 if let Err(e) = self.send_qbit(&msg.magnet, anime, &info_hash).await {
-                    tracing::error!(
-                        "check_anime_rules send {:?} to qbit failed, error: {}",
-                        &msg,
-                        e
-                    );
+                    tracing::error!("handle_rss send {:?} to qbit failed, error: {}", &msg, e);
                     return;
                 }
+                tracing::info!(
+                    "handle_rss download anime: {} bt: {}",
+                    &anime.name,
+                    &msg.title
+                );
 
                 if let Err(e) = self.anime_db.set_anime_recode(
                     anime.id,
@@ -432,7 +406,7 @@ impl Tasker {
                         info_hash,
                     },
                 ) {
-                    tracing::error!("check_anime_rules set_calender failed, error: {}", e);
+                    tracing::error!("handle_rss set_anime_recode failed, error: {}", e);
                 }
             }
             // 检查是否已经完结
@@ -445,28 +419,27 @@ impl Tasker {
                                 status.status = false;
                                 if let Err(e) = self.anime_db.set_calender(status) {
                                     tracing::error!(
-                                        "check_anime_rules season over set anime status failed, {}",
+                                        "handle_rss season over set anime status failed, {}",
                                         e
                                     );
                                 }
                             }
                         }
-                        Err(e) => tracing::error!(
-                            "check_anime_rules season over get anime status failed, {}",
-                            e
-                        ),
+                        Err(e) => {
+                            tracing::error!("handle_rss season over get anime status failed, {}", e)
+                        }
                     }
                     if let Err(e) = self.anime_broadcast.send(AnimeTask {
                         info: anime.clone(),
                         is_canncel: true,
                     }) {
                         tracing::error!(
-                            "{} is season update over, stop listen failed, error: {}",
+                            "handle_rss {} is season update over, stop listen failed, error: {}",
                             anime.name,
                             e
                         );
                     } else {
-                        tracing::info!("down anime {:?}", &anime);
+                        tracing::info!("handle_rss stop anime {:?}", &anime);
                     }
                 }
             }
