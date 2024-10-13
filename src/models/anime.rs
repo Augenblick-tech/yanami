@@ -12,4 +12,6 @@ pub struct AnimeStatus {
     pub status: bool,
     pub rule_name: String,
     pub anime_info: AnimeInfo,
+    #[serde(default)]
+    pub is_search: bool,
 }

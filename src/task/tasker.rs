@@ -239,8 +239,9 @@ impl Tasker {
                 }
             }
             // 特定番剧的搜索RSS则只给该番发送
+            // 该行为会导致频繁请求RSS，触发nyaa的429，故默认停用
             if let Some(search_url) = item.search_url.clone() {
-                for anime in anime_list.iter() {
+                for anime in anime_list.iter().filter(|anime| anime.is_search) {
                     for url in anime.anime_info.names().iter().filter_map(|name| {
                         match formatx!(&search_url, &name) {
                             Ok(url) => Some(url),
@@ -303,6 +304,7 @@ impl Tasker {
                     status: true,
                     rule_name: "".to_string(),
                     anime_info: i.clone(),
+                    is_search: false,
                 })
                 .await
             {

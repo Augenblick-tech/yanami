@@ -43,27 +43,22 @@ pub async fn set_rss(
         return Err(Error::InvalidRequest);
     }
 
-    if req.url.is_some() {
-        let chan = service
-            .rss_http_client
-            .get_channel(&req.url.clone().unwrap())
-            .await
-            .context("get rss channel failed")?;
-        if req.title.is_none() {
+    if req.title.is_none() {
+        if let Some(url) = &req.url {
+            let chan = service
+                .rss_http_client
+                .get_channel(url)
+                .await
+                .context("get rss channel failed")?;
             req.title = Some(chan.title);
-        }
-    }
-
-    if req.search_url.is_some() {
-        let chan = service
-            .rss_http_client
-            .get_channel(
-                &formatx!(req.search_url.clone().unwrap(), "test")
-                    .context("create test search url failed")?,
-            )
-            .await
-            .context("get rss search_url channel failed")?;
-        if req.title.is_none() {
+        } else if let Some(search_url) = &req.search_url {
+            let chan = service
+                .rss_http_client
+                .get_channel(
+                    &formatx!(search_url, "test").context("create test search url failed")?,
+                )
+                .await
+                .context("get rss search_url channel failed")?;
             req.title = Some(chan.title);
         }
     }

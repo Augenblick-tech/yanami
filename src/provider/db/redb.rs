@@ -369,6 +369,7 @@ impl<'a> Anime for ReDB<'a> {
                             status: true,
                             rule_name: "".to_string(),
                             anime_info: anime.clone(),
+                            is_search: false,
                         }
                     }
                 }
@@ -376,6 +377,7 @@ impl<'a> Anime for ReDB<'a> {
                     status: true,
                     rule_name: "".to_string(),
                     anime_info: anime.clone(),
+                    is_search: false,
                 },
                 Err(e) => return Err(Error::msg(e.to_string())),
             };
