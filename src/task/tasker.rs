@@ -65,8 +65,8 @@ impl Tasker {
         rule_db: RuleProvider,
         config_db: ServiceConfigProvider,
     ) -> Self {
-        let (ab, _) = broadcast::channel::<AnimeTask>(10);
-        let (arb, _) = broadcast::channel::<RssItem>(10);
+        let (ab, _) = broadcast::channel::<AnimeTask>(100);
+        let (arb, _) = broadcast::channel::<RssItem>(100000);
         Tasker {
             rss_db: rss,
             rss_http_client,
@@ -140,7 +140,7 @@ impl Tasker {
         if send_map.get(&anime_status.anime_info.id).is_some() {
             return Ok(());
         }
-        let (tx, mut recv) = mpsc::channel(20);
+        let (tx, mut recv) = mpsc::channel(10000);
         let mut broadcast_recv = self.anime_rss_broadcast.subscribe();
         send_map.insert(anime_status.anime_info.id, tx);
         let s = self.clone();
@@ -158,6 +158,7 @@ impl Tasker {
                         s.check_anime_rules(msg, &mut anime).await;
                     }
                     Ok(msg) = broadcast_recv.recv() => {
+                        tracing::debug!("broadcasr recv {:?}", msg);
                         s.check_anime_rules(msg,&mut anime).await;
                     }
                 }
@@ -218,7 +219,8 @@ impl Tasker {
                     if i.title.is_none() {
                         continue;
                     }
-                    if i.enclosure().is_none() && i.link().is_none() {
+
+                    if (i.enclosure().is_none() && i.link().is_none()) || i.pub_date.is_none() {
                         continue;
                     }
 
@@ -233,6 +235,7 @@ impl Tasker {
                         magnet: url.to_string(),
                         pub_date: i.pub_date.clone(),
                     };
+                    tracing::debug!("broadcast rss {:?}", ri);
                     if let Err(err) = self.anime_rss_broadcast.send(ri.clone()) {
                         tracing::error!("broadcast rss item to chan failed, {}", err);
                     }
@@ -256,6 +259,9 @@ impl Tasker {
                             spawn(async move {
                                 if let Ok(rsp) = rss_http_client.get_channel(&url).await {
                                     for item in rsp.items.iter() {
+                                        if item.title.is_none() {
+                                            continue;
+                                        }
                                         if (item.enclosure().is_none() && item.link().is_none())
                                             || item.pub_date.is_none()
                                         {
