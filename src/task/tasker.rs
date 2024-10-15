@@ -26,7 +26,6 @@ use crate::{
     models::{
         anime::AnimeStatus,
         rss::{AnimeRssRecord, RssItem},
-        rule::Rule,
         torrent::Torrent,
     },
     provider::db::db_provider::{AnimeProvider, RssProvider, RuleProvider, ServiceConfigProvider},
@@ -38,6 +37,13 @@ struct AnimeTask {
     pub is_canncel: bool,
 }
 
+#[derive(Debug, Clone)]
+pub struct RuleRegex {
+    pub name: String,
+    pub re_str: String,
+    pub re: Regex,
+}
+
 #[derive(Clone)]
 pub struct Tasker {
     rss_db: RssProvider,
@@ -47,6 +53,8 @@ pub struct Tasker {
     rule_db: RuleProvider,
     config_db: ServiceConfigProvider,
     qbit_client: Arc<Mutex<Qbit>>,
+
+    rules_re: Arc<Mutex<Vec<RuleRegex>>>,
 
     // 用于发送番剧退出广播
     anime_broadcast: broadcast::Sender<AnimeTask>,
@@ -73,6 +81,7 @@ impl Tasker {
             anime_db,
             anime,
             rule_db,
+            rules_re: Arc::new(Mutex::new(Vec::new())),
             anime_broadcast: ab,
             anime_rss_broadcast: arb,
             rss_send_map: Arc::new(Mutex::new(HashMap::new())),
@@ -200,6 +209,41 @@ impl Tasker {
             .get_calenders()
             .map_err(|e| anyhow::Error::msg(format!("check_update get_calender failed, {}", e)))?
             .ok_or(Error::msg("anime list is empty"))?;
+        let rules = self.rule_db.get_all_rules()?.context("rules is empty")?;
+        {
+            let mut rules_re = self.rules_re.lock().await;
+            rules_re.retain_mut(|item| {
+                rules
+                    .iter()
+                    .any(|r| r.re == item.re_str && r.name == item.name)
+            });
+            for rule in rules.iter() {
+                let re = rule.re.clone();
+                if let Some(item) = rules_re.iter_mut().find(|r| r.name == rule.name) {
+                    // 正则变化则修改
+                    if item.re_str != rule.re {
+                        if let Ok(re) = Regex::new(&re) {
+                            let rss_regex = RuleRegex {
+                                name: rule.name.clone(),
+                                re_str: rule.re.clone(),
+                                re,
+                            };
+                            *item = rss_regex;
+                        }
+                    }
+                } else {
+                    // 不存在该正则则插入
+                    if let Ok(re) = Regex::new(&re) {
+                        let rss_regex = RuleRegex {
+                            name: rule.name.clone(),
+                            re_str: rule.re.clone(),
+                            re,
+                        };
+                        rules_re.push(rss_regex);
+                    }
+                }
+            }
+        }
         for item in rss_list.iter() {
             tracing::debug!("check_update get rss: {:?}", item);
             if let Some(url) = item.url.clone() {
@@ -229,15 +273,24 @@ impl Tasker {
                     } else {
                         i.link().unwrap()
                     };
-
-                    let ri = RssItem {
-                        title: i.title.clone().unwrap(),
-                        magnet: url.to_string(),
-                        pub_date: i.pub_date.clone(),
-                    };
-                    tracing::debug!("broadcast rss {:?}", ri);
-                    if let Err(err) = self.anime_rss_broadcast.send(ri.clone()) {
-                        tracing::error!("broadcast rss item to chan failed, {}", err);
+                    let title = i.title.clone().unwrap();
+                    {
+                        let rules_re = self.rules_re.lock().await;
+                        for re in rules_re.iter() {
+                            if re.re.is_match(&title) {
+                                let ri = RssItem {
+                                    title,
+                                    magnet: url.to_string(),
+                                    pub_date: i.pub_date.clone(),
+                                    rule_name: re.name.clone(),
+                                };
+                                tracing::debug!("broadcast rss {:?}", ri);
+                                if let Err(err) = self.anime_rss_broadcast.send(ri.clone()) {
+                                    tracing::error!("broadcast rss item to chan failed, {}", err);
+                                }
+                                break;
+                            }
+                        }
                     }
                 }
             }
@@ -256,6 +309,7 @@ impl Tasker {
                             let chan = chan.clone();
                             let rss_http_client = self.rss_http_client.clone();
                             tracing::debug!("check_update search_url: {}", url);
+                            let s = self.clone();
                             spawn(async move {
                                 if let Ok(rsp) = rss_http_client.get_channel(&url).await {
                                     for item in rsp.items.iter() {
@@ -273,14 +327,23 @@ impl Tasker {
                                         } else {
                                             item.link().unwrap()
                                         };
-                                        // 该错误只会在chan被关闭时抛出，而接收端未启动时chan就是处于关闭状态的，此时允许写入失败，忽略错误
-                                        let _ = chan
-                                            .send(RssItem {
-                                                title: item.title.clone().unwrap(),
-                                                magnet: url.to_string(),
-                                                pub_date: item.pub_date.clone(),
-                                            })
-                                            .await;
+                                        let title = item.title.clone().unwrap();
+                                        {
+                                            let rules_re = s.rules_re.lock().await;
+                                            for re in rules_re.iter() {
+                                                if re.re.is_match(&title) {
+                                                    let ri = RssItem {
+                                                        title,
+                                                        magnet: url.to_string(),
+                                                        pub_date: item.pub_date.clone(),
+                                                        rule_name: re.name.clone(),
+                                                    };
+                                                    // 该错误只会在chan被关闭时抛出，而接收端未启动时chan就是处于关闭状态的，此时允许写入失败，忽略错误
+                                                    let _ = chan.send(ri).await;
+                                                    break;
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             });
@@ -329,66 +392,56 @@ impl Tasker {
         if let Ok(Some(mut rules)) = self.rule_db.get_all_rules() {
             let anime = &anime_status.anime_info;
             rules.sort_by(|a, b| a.cost.cmp(&b.cost));
-            for rule in rules.iter() {
-                for name in anime.names().iter() {
-                    let name = formatx!(&rule.re, name);
-                    if name.is_err() {
-                        tracing::error!(
-                            "check_anime_rules format re failed, error: {}",
-                            name.unwrap_err()
-                        );
-                        continue;
-                    }
-                    let re = name.unwrap();
-                    if Regex::new(&re).unwrap().is_match(&msg.title) {
-                        // 判断当前种子的上传时间是否大于该番剧季度的开始更新时间
-                        if let Some(pub_date) = &msg.pub_date {
-                            if let Ok(pub_date) = DateTime::parse_from_rfc2822(pub_date) {
-                                if let Ok(date) = NaiveDate::parse_from_str(
-                                    &anime_status.anime_info.air_date,
-                                    "%Y-%m-%d",
-                                ) {
-                                    if pub_date
-                                        .date_naive()
-                                        // 兼容一周加一天的误差，防止第一集提前放映无法通过检查
-                                        .checked_add_days(chrono::Days::new(8))
-                                        .unwrap_or(pub_date.date_naive())
-                                        < date
-                                    {
-                                        tracing::debug!("check_anime_rules check {} success, pub_date < date, skip, pub_date: {:?}, bgm_date: {}",&msg.title,&msg.pub_date,&anime_status.anime_info.air_date);
-                                        continue;
-                                    }
+            for name in anime.names().iter() {
+                if msg.title.contains(name) {
+                    // 判断当前种子的上传时间是否大于该番剧季度的开始更新时间
+                    if let Some(pub_date) = &msg.pub_date {
+                        if let Ok(pub_date) = DateTime::parse_from_rfc2822(pub_date) {
+                            if let Ok(date) = NaiveDate::parse_from_str(
+                                &anime_status.anime_info.air_date,
+                                "%Y-%m-%d",
+                            ) {
+                                if pub_date
+                                    .date_naive()
+                                    // 兼容一周加一天的误差，防止第一集提前放映无法通过检查
+                                    .checked_add_days(chrono::Days::new(8))
+                                    .unwrap_or(pub_date.date_naive())
+                                    < date
+                                {
+                                    tracing::debug!("check_anime_rules check {} success, pub_date < date, skip, pub_date: {:?}, bgm_date: {}",&msg.title,&msg.pub_date,&anime_status.anime_info.air_date);
+                                    continue;
                                 }
                             }
                         }
-                        // 判断是否已经命中过规则
-                        if anime_status.rule_name.is_empty() {
-                            anime_status.rule_name = rule.name.clone();
-                            if let Err(e) = self.anime_db.set_calender(anime_status.clone()) {
-                                tracing::error!("check_anime_rules set set_calender failed, {}", e);
-                                continue;
-                            }
-                        }
-
-                        if !anime_status.rule_name.eq(&rule.name) {
+                    }
+                    // 判断是否已经命中过规则
+                    if anime_status.rule_name.is_empty() {
+                        anime_status.rule_name = msg.rule_name.clone();
+                        if let Err(e) = self.anime_db.set_calender(anime_status.clone()) {
+                            tracing::error!("check_anime_rules set set_calender failed, {}", e);
                             continue;
                         }
-
-                        tracing::debug!(
-                            "check_anime_rules anime: {} bt: {} rule: {}",
-                            &anime.name,
-                            &msg.title,
-                            &re
-                        );
-                        self.handle_rss(rule, msg, anime_status).await;
-                        return;
                     }
+
+                    if !anime_status.rule_name.eq(&msg.rule_name) {
+                        continue;
+                    }
+
+                    tracing::debug!(
+                        "check_anime_rules anime: {} bt: {} rule: {}",
+                        &anime.name,
+                        &msg.title,
+                        &msg.rule_name,
+                    );
+                    self.handle_rss(&msg.rule_name.clone(), msg, anime_status)
+                        .await;
+                    return;
                 }
             }
         }
     }
 
-    async fn handle_rss(&self, rule: &Rule, msg: RssItem, anime_status: &mut AnimeStatus) {
+    async fn handle_rss(&self, rule_name: &str, msg: RssItem, anime_status: &AnimeStatus) {
         let anime = &anime_status.anime_info;
         if let Ok(info_hash) = Self::get_info_hash(&msg.magnet).await {
             if let Ok(None) = self.anime_db.get_anime_record(anime.id, &info_hash) {
@@ -410,7 +463,7 @@ impl Tasker {
                     AnimeRssRecord {
                         title: msg.title,
                         magnet: msg.magnet,
-                        rule_name: rule.name.clone(),
+                        rule_name: rule_name.to_string(),
                         info_hash,
                     },
                 ) {

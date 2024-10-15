@@ -27,6 +27,7 @@ pub struct RssItem {
     pub title: String,
     pub magnet: String,
     pub pub_date: Option<String>,
+    pub rule_name: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema, Clone)]
