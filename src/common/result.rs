@@ -19,6 +19,7 @@ use utoipa::ToSchema;
     JsonResultDownloadPath = JsonResult<ServiceConfig>,
     JsonResultVecAnimeInfo = JsonResult<Vec<AnimeInfo>>,
     JsonResultVecAnimeStatus = JsonResult<Vec<AnimeStatus>>,
+    JsonResultAnimeStatus = JsonResult<AnimeStatus>,
     JsonResultVecAnimeRssRecord = JsonResult<Vec<AnimeRssRecord>>,
 )]
 pub struct JsonResult<T> {

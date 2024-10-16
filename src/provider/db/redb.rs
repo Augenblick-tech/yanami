@@ -2,6 +2,7 @@ use anna::{anime::tracker::AnimeInfo, qbit::qbitorrent::QbitConfig};
 use anyhow::Error;
 use chrono::Local;
 use redb::{Database, ReadableTable, TableDefinition, TableError};
+use regex::Regex;
 use uuid::Uuid;
 
 use crate::models::{
@@ -433,6 +434,35 @@ impl<'a> Anime for ReDB<'a> {
                     Ok(Some(serde_json::from_slice(&r.value())?))
                 } else {
                     Ok(None)
+                }
+            }
+            Err(TableError::TableDoesNotExist(_)) => Ok(None),
+            Err(e) => Err(Error::msg(e.to_string())),
+        }
+    }
+
+    fn search_calender(&self, name: String) -> Result<Option<Vec<AnimeStatus>>, Error> {
+        let tx = self.client.begin_read()?;
+        let table = tx.open_table(self.anime_calender.table);
+        let regex_pattern = format!("[{}]", regex::escape(&name));
+        let re = Regex::new(&regex_pattern)?;
+        match table {
+            Ok(table) => {
+                let mut rsp = Vec::new();
+                for entry in table.iter()? {
+                    let (_key, value) = entry?;
+                    let anime_status = serde_json::from_slice::<AnimeStatus>(&value.value())?;
+                    for i in anime_status.anime_info.names().iter() {
+                        if re.is_match(i) {
+                            rsp.push(anime_status);
+                            break;
+                        }
+                    }
+                }
+                if rsp.is_empty() {
+                    Ok(None)
+                } else {
+                    Ok(Some(rsp))
                 }
             }
             Err(TableError::TableDoesNotExist(_)) => Ok(None),

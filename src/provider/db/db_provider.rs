@@ -44,6 +44,7 @@ pub trait Anime {
     fn set_calender(&self, anime_status: AnimeStatus) -> Result<(), Error>;
     fn get_calenders(&self) -> Result<Option<Vec<AnimeStatus>>, Error>;
     fn get_calender(&self, id: i64) -> Result<Option<AnimeStatus>, Error>;
+    fn search_calender(&self, name: String) -> Result<Option<Vec<AnimeStatus>>, Error>;
 
     fn set_anime_recode(
         &self,

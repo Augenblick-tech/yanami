@@ -5,7 +5,7 @@ use crate::{
     common::{
         auth::UserCharacter,
         errors::Error,
-        result::{JsonResultAuthBody, JsonResultDownloadPath, JsonResultRSS, JsonResultVecAnimeInfo, JsonResultVecAnimeRssRecord, JsonResultVecAnimeStatus, JsonResultVecRule, JsonResultVecRSS, JsonResultVecUserEntity, JsonResulti32},
+        result::{JsonResultAnimeStatus, JsonResultAuthBody, JsonResultDownloadPath, JsonResultRSS, JsonResultVecAnimeInfo, JsonResultVecAnimeRssRecord, JsonResultVecAnimeStatus, JsonResultVecRSS, JsonResultVecRule, JsonResultVecUserEntity, JsonResulti32},
     },
     models::{
         anime::{AnimeRecordReq, AnimeStatus}, config::ServiceConfig, rss::{AnimeRssRecord, DelRSS, RSSReq, RSS}, rule::{DelRule, Rule}, user::{AuthBody, LoginReq, RegisterCodeReq, RegisterCodeRsp, RegisterReq, UserEntity}
@@ -31,6 +31,8 @@ use crate::{
             crate::handler::config::get_config,
             crate::handler::anime::animes,
             crate::handler::anime::set_anime,
+            crate::handler::anime::get_anime,
+            crate::handler::anime::search_anime,
             crate::handler::anime::anime_records,
         ),
         components(
@@ -58,6 +60,7 @@ use crate::{
                 ServiceConfig,
                 JsonResultVecAnimeInfo,
                 JsonResultVecAnimeStatus,
+                JsonResultAnimeStatus,
                 AnimeInfo,
                 AnimeStatus,
                 AnimeRecordReq,
