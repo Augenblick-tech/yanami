@@ -1,3 +1,4 @@
+use anyhow::Context;
 use axum::{extract::Query, Extension, Json};
 use chrono::Local;
 use jsonwebtoken::{encode, Header};
@@ -10,7 +11,8 @@ use crate::{
         result::JsonResult,
     },
     models::user::{
-        AuthBody, LoginReq, RegisterCode, RegisterCodeReq, RegisterCodeRsp, RegisterReq, UserEntity,
+        AuthBody, LoginReq, RegisterCode, RegisterCodeReq, RegisterCodeRsp, RegisterReq,
+        SetUserPassword, UserEntity,
     },
     route::Service,
 };
@@ -49,6 +51,36 @@ pub async fn login(
     let token = encode(&Header::default(), &claims, &KEYS.get().unwrap().encoding)
         .map_err(|_| Error::InvalidToken)?;
     JsonResult::json_ok(Some(AuthBody::new(token, time as usize)))
+}
+
+#[utoipa::path(
+        post,
+        path = "/v1/user",
+        security(("api_key" = ["Authorization"])),
+        responses(
+            (status = 200, description = "用户修改密码", body = JsonResulti32)
+        )
+    )]
+#[axum_macros::debug_handler]
+pub async fn set_user_password(
+    Extension(c): Extension<Claims>,
+    Extension(service): Extension<Service>,
+    Json(req): Json<SetUserPassword>,
+) -> ErrorResult<Json<JsonResult<i32>>> {
+    let user = service
+        .user_db
+        .get_user(c.user_id)?
+        .context("not found user")?;
+    if UserEntity::into_sha256_pwd(req.old_password) != user.password {
+        return Err(Error::InvalidRequest);
+    }
+    if req.new_password.len() < 6 {
+        return Err(Error::InvalidRequest);
+    }
+
+    service.user_db.edit_password(user.id, &req.new_password)?;
+
+    JsonResult::json_ok(None)
 }
 
 #[utoipa::path(

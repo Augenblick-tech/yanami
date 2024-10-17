@@ -28,7 +28,7 @@ use crate::{
         config::{get_config, set_config},
         rss::{del_rss, rss_list, set_rss},
         rule::{del_rule, rules, set_rule},
-        user::{login, register, register_code, users},
+        user::{login, register, register_code, set_user_password, users},
     },
     openapi::ApiDoc,
     provider::db::db_provider::{
@@ -73,6 +73,7 @@ pub fn route(service: Service) -> Router {
     let v1_auth = Router::new()
         .route("/register/code", get(register_code))
         .route("/users", get(users))
+        .route("/user", post(set_user_password))
         .route("/rss", get(rss_list))
         .route("/rss", post(set_rss))
         .route("/rss", delete(del_rss))

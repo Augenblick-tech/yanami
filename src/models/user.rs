@@ -17,6 +17,12 @@ pub struct LoginReq {
     pub password: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct SetUserPassword {
+    pub old_password: String,
+    pub new_password: String,
+}
+
 #[derive(Debug, Serialize, ToSchema)]
 pub struct AuthBody {
     access_token: String,

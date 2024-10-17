@@ -1,5 +1,5 @@
 use anna::{anime::tracker::AnimeInfo, qbit::qbitorrent::QbitConfig};
-use anyhow::Error;
+use anyhow::{Context, Error};
 use chrono::Local;
 use redb::{Database, ReadableTable, TableDefinition, TableError};
 use regex::Regex;
@@ -276,6 +276,18 @@ impl<'a> User for ReDB<'a> {
             Err(TableError::TableDoesNotExist(_)) => Ok(None),
             Err(e) => Err(Error::msg(e.to_string())),
         }
+    }
+
+    fn edit_password(&self, id: i64, password: &str) -> anyhow::Result<()> {
+        let mut user = self.get_user(id)?.context("not found user")?;
+        user.password = UserEntity::into_sha256_pwd(password.to_string());
+        let tx = self.client.begin_write()?;
+        {
+            let mut table = tx.open_table(self.user.table)?;
+            table.insert(self.user.to_id_key(user.id), user.to_vec()?)?;
+        }
+        tx.commit()?;
+        Ok(())
     }
 }
 

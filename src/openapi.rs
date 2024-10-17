@@ -8,7 +8,7 @@ use crate::{
         result::{JsonResultAnimeStatus, JsonResultAuthBody, JsonResultDownloadPath, JsonResultRSS, JsonResultVecAnimeInfo, JsonResultVecAnimeRssRecord, JsonResultVecAnimeStatus, JsonResultVecRSS, JsonResultVecRule, JsonResultVecUserEntity, JsonResulti32},
     },
     models::{
-        anime::{AnimeRecordReq, AnimeStatus}, config::ServiceConfig, rss::{AnimeRssRecord, DelRSS, RSSReq, RSS}, rule::{DelRule, Rule}, user::{AuthBody, LoginReq, RegisterCodeReq, RegisterCodeRsp, RegisterReq, UserEntity}
+        anime::{AnimeRecordReq, AnimeStatus}, config::ServiceConfig, rss::{AnimeRssRecord, DelRSS, RSSReq, RSS}, rule::{DelRule, Rule}, user::{AuthBody, LoginReq, RegisterCodeReq, RegisterCodeRsp, RegisterReq, SetUserPassword, UserEntity}
     },
 };
 
@@ -21,6 +21,7 @@ use crate::{
             crate::handler::user::register,
             crate::handler::user::register_code,
             crate::handler::user::users,
+            crate::handler::user::set_user_password,
             crate::handler::rss::rss_list,
             crate::handler::rss::set_rss,
             crate::handler::rss::del_rss,
@@ -53,6 +54,7 @@ use crate::{
                 RegisterReq,
                 JsonResulti32,
                 LoginReq,
+                SetUserPassword,
                 JsonResultVecRule,
                 Rule,
                 DelRule,
