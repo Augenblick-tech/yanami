@@ -14,4 +14,8 @@ pub struct AnimeStatus {
     pub anime_info: AnimeInfo,
     #[serde(default)]
     pub is_search: bool,
+    #[serde(default)]
+    pub is_lock: bool,
+    #[serde(default)]
+    pub progress: f64,
 }

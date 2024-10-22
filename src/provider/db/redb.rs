@@ -383,6 +383,8 @@ impl<'a> Anime for ReDB<'a> {
                             rule_name: "".to_string(),
                             anime_info: anime.clone(),
                             is_search: false,
+                            is_lock: false,
+                            progress: 0.0,
                         }
                     }
                 }
@@ -391,10 +393,14 @@ impl<'a> Anime for ReDB<'a> {
                     rule_name: "".to_string(),
                     anime_info: anime.clone(),
                     is_search: false,
+                    is_lock: false,
+                    progress: 0.0,
                 },
                 Err(e) => return Err(Error::msg(e.to_string())),
             };
-            self.set_calender(status)?;
+            if !status.is_lock {
+                self.set_calender(status)?;
+            }
         }
 
         Ok(())

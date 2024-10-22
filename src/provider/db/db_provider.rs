@@ -41,7 +41,10 @@ pub trait Rss {
 }
 
 pub trait Anime {
+    // 覆盖所有存在id的信息，不存在id的则创建，如果is_lock为true这跳过覆盖
     fn set_calenders(&self, calender: Vec<AnimeInfo>) -> Result<(), Error>;
+
+    // 忽略is_lock
     fn set_calender(&self, anime_status: AnimeStatus) -> Result<(), Error>;
     fn get_calenders(&self) -> Result<Option<Vec<AnimeStatus>>, Error>;
     fn get_calender(&self, id: i64) -> Result<Option<AnimeStatus>, Error>;

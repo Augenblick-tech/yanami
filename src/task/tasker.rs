@@ -374,6 +374,8 @@ impl Tasker {
                     rule_name: "".to_string(),
                     anime_info: i.clone(),
                     is_search: false,
+                    is_lock: false,
+                    progress: 0.0,
                 })
                 .await
             {
@@ -472,35 +474,40 @@ impl Tasker {
             }
             // 检查是否已经完结
             // 完结则修改状态为false，退出监听
-            if let Ok(is_season_over) = self.check_season_over(anime) {
-                if is_season_over {
-                    match self.anime_db.get_calender(anime.id) {
-                        Ok(status) => {
-                            if let Some(mut status) = status {
+            if let Ok(progress) = self.get_update_progress(anime) {
+                match self.anime_db.get_calender(anime.id) {
+                    Ok(status) => {
+                        if let Some(mut status) = status {
+                            if progress == 100.0 {
                                 status.status = false;
+                                status.progress = 100.0;
                                 if let Err(e) = self.anime_db.set_calender(status) {
                                     tracing::error!(
                                         "handle_rss season over set anime status failed, {}",
                                         e
                                     );
                                 }
+                                if let Err(e) = self.anime_broadcast.send(AnimeTask {
+                                    info: anime.clone(),
+                                    is_canncel: true,
+                                }) {
+                                    tracing::error!( "handle_rss {} is season update over, stop listen failed, error: {}", anime.name, e);
+                                } else {
+                                    tracing::info!("handle_rss stop anime {:?}", &anime);
+                                }
+                            } else if progress > status.progress {
+                                status.progress = progress;
+                                if let Err(e) = self.anime_db.set_calender(status) {
+                                    tracing::error!(
+                                        "handle_rss season update progress set anime status failed, {}",
+                                        e
+                                    );
+                                }
                             }
                         }
-                        Err(e) => {
-                            tracing::error!("handle_rss season over get anime status failed, {}", e)
-                        }
                     }
-                    if let Err(e) = self.anime_broadcast.send(AnimeTask {
-                        info: anime.clone(),
-                        is_canncel: true,
-                    }) {
-                        tracing::error!(
-                            "handle_rss {} is season update over, stop listen failed, error: {}",
-                            anime.name,
-                            e
-                        );
-                    } else {
-                        tracing::info!("handle_rss stop anime {:?}", &anime);
+                    Err(e) => {
+                        tracing::error!("handle_rss season over get anime status failed, {}", e)
                     }
                 }
             }
@@ -542,7 +549,8 @@ impl Tasker {
         Ok(())
     }
 
-    fn check_season_over(&self, anime: &AnimeInfo) -> Result<bool, Error> {
+    // 检查是否完结，返回更新进度百分比
+    fn get_update_progress(&self, anime: &AnimeInfo) -> Result<f64, Error> {
         let anime_list = self
             .anime_db
             // 获取番剧的下载记录
@@ -550,7 +558,12 @@ impl Tasker {
             .ok_or(Error::msg("not found anime records"))?;
         let eps = Self::get_season_eps(anime_list)?;
         tracing::debug!("check_season_over anime {} eps {:?}", &anime.name, &eps);
-        Ok(*(eps.last().unwrap_or(&0)) >= anime.eps)
+        let progress = ((eps.len() as f64 / anime.eps as f64 * 100.0) * 100.0).round() / 100.0;
+        if progress > 100.0 {
+            Ok(100.0)
+        } else {
+            Ok(progress)
+        }
     }
 
     pub fn get_season_eps(anime_list: Vec<AnimeRssRecord>) -> Result<Vec<i64>, Error> {
