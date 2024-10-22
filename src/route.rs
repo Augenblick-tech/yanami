@@ -4,7 +4,7 @@ use anna::rss::client::Client;
 use axum::{
     body::{self, Body},
     extract::MatchedPath,
-    http::{Request, StatusCode},
+    http::{Request, StatusCode, Uri},
     middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{delete, get, post},
@@ -13,6 +13,8 @@ use axum::{
 use axum_extra::TypedHeader;
 use headers::{authorization::Bearer, Authorization};
 use jsonwebtoken::{decode, Validation};
+use reqwest::header;
+use rust_embed::Embed;
 use serde_json::Value;
 use utoipa::OpenApi;
 use utoipa_redoc::{Redoc, Servable};
@@ -69,6 +71,50 @@ impl Service {
     }
 }
 
+#[derive(Embed)]
+#[folder = "webfile/"]
+struct Asset;
+pub struct StaticFile<T>(pub T);
+
+impl<T> IntoResponse for StaticFile<T>
+where
+    T: Into<String>,
+{
+    fn into_response(self) -> Response {
+        let path = self.0.into();
+        match Asset::get(path.as_str()) {
+            Some(content) => {
+                let mime = mime_guess::from_path(path).first_or_octet_stream();
+                ([(header::CONTENT_TYPE, mime.as_ref())], content.data).into_response()
+            }
+            None => {
+                let p = &format!("{path}.html");
+                match Asset::get(p) {
+                    Some(content) => {
+                        let mime = mime_guess::from_path(p).first_or_octet_stream();
+                        ([(header::CONTENT_TYPE, mime.as_ref())], content.data).into_response()
+                    }
+                    None => match Asset::get("404.html") {
+                        Some(content) => {
+                            ([(header::CONTENT_TYPE, "text/html")], content.data).into_response()
+                        }
+                        None => (StatusCode::NOT_FOUND, "404 Not Found").into_response(),
+                    },
+                }
+            }
+        }
+    }
+}
+
+async fn static_handler(uri: Uri) -> impl IntoResponse {
+    let path = uri.path().trim_start_matches('/').to_string();
+    StaticFile(path)
+}
+
+async fn index_handler() -> impl IntoResponse {
+    static_handler("/index.html".parse::<Uri>().unwrap()).await
+}
+
 pub fn route(service: Service) -> Router {
     let v1_auth = Router::new()
         .route("/register/code", get(register_code))
@@ -97,10 +143,15 @@ pub fn route(service: Service) -> Router {
         .nest("/", v1_auth)
         .layer(Extension(service.clone()));
 
+    let web_file = Router::new()
+        .route("/", get(index_handler))
+        .route("/*file", get(static_handler));
+
     Router::new()
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
         .merge(Redoc::with_url("/redoc", ApiDoc::openapi()))
         .nest("/v1", v1)
+        .nest("/", web_file)
         .route_layer(middleware::from_fn(log))
         .fallback(handler_404)
 }
