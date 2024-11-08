@@ -1,0 +1,19 @@
+[package]
+name = "orm"
+version = "0.1.0"
+edition = "2021"
+
+
+[dependencies]
+entity = { path = "entity" }
+model = { path = "../model" }
+anna = { path = "../anna" }
+provider = { path = "../provider" }
+serde = { version = "1.0.204", features = ["derive"] }
+async-trait = "0.1.81"
+serde_json = "1.0.122"
+anyhow = "1.0.86"
+sea-orm = { version = "1.1.0", features = ["sqlx-sqlite", "runtime-tokio-rustls", "debug-print"] }
+sea-orm-migration = { version = "1.1.0", features = ["runtime-tokio-rustls", "sqlx-sqlite"] }
+uuid = { version = "1.11.0", features = ["v4"] }
+sqlx = { version = "0.8.2", features = ["sqlite", "json", "runtime-tokio-rustls"] }

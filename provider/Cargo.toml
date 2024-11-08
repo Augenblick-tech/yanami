@@ -1,0 +1,10 @@
+[package]
+name = "provider"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anna = { path = "../anna" }
+model = { path = "../model" }
+async-trait = "0.1.81"
+anyhow = "1.0.86"

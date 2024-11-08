@@ -4,17 +4,15 @@ use chrono::Local;
 use jsonwebtoken::{encode, Header};
 use uuid::Uuid;
 
-use crate::{
-    common::{
-        auth::{Claims, UserCharacter, KEYS},
-        errors::{Error, ErrorResult},
-        result::JsonResult,
-    },
-    models::user::{
-        AuthBody, LoginReq, RegisterCode, RegisterCodeReq, RegisterCodeRsp, RegisterReq,
-        SetUserPassword, UserEntity,
-    },
-    route::Service,
+use crate::route::Service;
+use common::{
+    auth::{Claims, KEYS},
+    errors::{Error, ErrorResult},
+    result::JsonResult,
+};
+use model::user::{
+    AuthBody, LoginReq, RegisterCode, RegisterCodeReq, RegisterCodeRsp, RegisterReq,
+    SetUserPassword, UserCharacter, UserEntity,
 };
 
 #[utoipa::path(
@@ -31,7 +29,8 @@ pub async fn login(
 ) -> ErrorResult<Json<JsonResult<AuthBody>>> {
     let user = service
         .user_db
-        .get_user_from_username(req.username.as_str())?;
+        .get_user_from_username(req.username.as_str())
+        .await?;
     if user.is_none() {
         return Err(Error::InvalidRequest);
     }
@@ -69,7 +68,8 @@ pub async fn set_user_password(
 ) -> ErrorResult<Json<JsonResult<i32>>> {
     let user = service
         .user_db
-        .get_user(c.user_id)?
+        .get_user(c.user_id)
+        .await?
         .context("not found user")?;
     if UserEntity::into_sha256_pwd(req.old_password) != user.password {
         return Err(Error::InvalidRequest);
@@ -78,7 +78,10 @@ pub async fn set_user_password(
         return Err(Error::InvalidRequest);
     }
 
-    service.user_db.edit_password(user.id, &req.new_password)?;
+    service
+        .user_db
+        .edit_password(user.id, &req.new_password)
+        .await?;
 
     JsonResult::json_ok(None)
 }
@@ -108,12 +111,15 @@ pub async fn register_code(
     }
     let code = Uuid::new_v4();
 
-    service.user_db.set_register_code(RegisterCode {
-        now: Local::now().timestamp(),
-        expire: params.expire,
-        code: code.to_string(),
-        timers: params.timers,
-    })?;
+    service
+        .user_db
+        .set_register_code(RegisterCode {
+            now: Local::now().timestamp(),
+            expire: params.expire,
+            code: code.to_string(),
+            timers: params.timers,
+        })
+        .await?;
 
     JsonResult::json_ok(Some(RegisterCodeRsp {
         code: code.to_string(),
@@ -134,12 +140,16 @@ pub async fn register(
 ) -> ErrorResult<Json<JsonResult<i32>>> {
     let user = service
         .user_db
-        .get_user_from_username(req.username.as_str())?;
+        .get_user_from_username(req.username.as_str())
+        .await?;
     if user.is_some() {
         return Err(Error::InvalidRequest);
     }
 
-    let register_code = service.user_db.get_register_code(req.code.to_string())?;
+    let register_code = service
+        .user_db
+        .get_register_code(req.code.to_string())
+        .await?;
     if register_code.is_none() {
         return Err(Error::InvalidRequest);
     }
@@ -150,10 +160,10 @@ pub async fn register(
         password: UserEntity::into_sha256_pwd(req.password),
         chatacter: UserCharacter::User,
     };
-    service.user_db.create_user(user)?;
+    service.user_db.create_user(user).await?;
     let mut register_code = register_code.unwrap();
     register_code.timers -= 1;
-    service.user_db.set_register_code(register_code)?;
+    service.user_db.set_register_code(register_code).await?;
 
     JsonResult::json_ok(None)
 }
@@ -178,5 +188,5 @@ pub async fn users(
         return Err(Error::InvalidRequest);
     }
 
-    JsonResult::json_ok(service.user_db.get_users()?)
+    JsonResult::json_ok(service.user_db.get_users().await?)
 }

@@ -2,6 +2,11 @@
 members = [
   ".",
   "anna",
+  "common",
+  "model", 
+  "provider",
+  "orm",
+  "orm/entity",
 ]
 
 [package]
@@ -11,9 +16,17 @@ edition = "2021"
 
 [workspace.dependencies]
 anna = { path = "./anna" }
+orm = { path = "./orm" }
+model = { path = "./model" }
+common = { path = "./common" }
+provider = { path = "./provider" }
 
 [dependencies]
 anna = { workspace = true }
+orm = { workspace = true }
+model = { workspace = true }
+provider = { workspace = true }
+common = { workspace = true }
 
 anyhow = "1.0.86"
 async-trait = "0.1.81"
@@ -31,7 +44,6 @@ md5 = "0.7.0"
 mimalloc = "0.1.43"
 mime_guess = "2.0.5"
 once_cell = "1.19.0"
-redb = "2.1.1"
 regex = "1.10.6"
 reqwest = { version = "0.12.5", default-features = false, features = ["charset", "http2", "macos-system-configuration", "cookies", "json", "multipart", "rustls-tls"] }
 rust-embed = { version = "8.5.0", features = ["axum"] }

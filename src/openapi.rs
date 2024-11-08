@@ -1,16 +1,13 @@
 use anna::{anime::tracker::AnimeInfo, qbit::qbitorrent::QbitConfig};
 use utoipa::{openapi::security::{ApiKey, ApiKeyValue, SecurityScheme}, Modify, OpenApi};
 
-use crate::{
-    common::{
-        auth::UserCharacter,
+   use  common::{
         errors::Error,
         result::{JsonResultAnimeStatus, JsonResultAuthBody, JsonResultDownloadPath, JsonResultRSS, JsonResultVecAnimeInfo, JsonResultVecAnimeRssRecord, JsonResultVecAnimeStatus, JsonResultVecRSS, JsonResultVecRule, JsonResultVecUserEntity, JsonResulti32},
-    },
-    models::{
-        anime::{AnimeRecordReq, AnimeStatus}, config::ServiceConfig, rss::{AnimeRssRecord, DelRSS, RSSReq, RSS}, rule::{DelRule, Rule}, user::{AuthBody, LoginReq, RegisterCodeReq, RegisterCodeRsp, RegisterReq, SetUserPassword, UserEntity}
-    },
-};
+    };
+    use model::{
+        anime::{AnimeRecordReq, AnimeStatus}, config::ServiceConfig, rss::{AnimeRssRecord, DelRSS, RSSReq, RSS}, rule::{DelRule, Rule}, user::{AuthBody, LoginReq, RegisterCodeReq, RegisterCodeRsp, RegisterReq, SetUserPassword, UserCharacter, UserEntity}
+    };
 
 
     #[derive(OpenApi)]

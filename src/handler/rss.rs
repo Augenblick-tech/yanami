@@ -2,14 +2,12 @@ use anyhow::Context;
 use axum::{extract::Query, Extension, Json};
 use formatx::formatx;
 
-use crate::{
-    common::{
-        errors::{Error, ErrorResult},
-        result::JsonResult,
-    },
-    models::rss::{DelRSS, RSSReq, RSS},
-    route::Service,
+use crate::route::Service;
+use common::{
+    errors::{Error, ErrorResult},
+    result::JsonResult,
 };
+use model::rss::{DelRSS, RSSReq, RSS};
 
 #[utoipa::path(
         get,
@@ -23,7 +21,13 @@ use crate::{
 pub async fn rss_list(
     Extension(service): Extension<Service>,
 ) -> ErrorResult<Json<JsonResult<Vec<RSS>>>> {
-    JsonResult::json_ok(service.rss_db.get_all_rss().context("get all rss failed")?)
+    JsonResult::json_ok(
+        service
+            .rss_db
+            .get_all_rss()
+            .await
+            .context("get all rss failed")?,
+    )
 }
 
 #[utoipa::path(
@@ -71,6 +75,7 @@ pub async fn set_rss(
         service
             .rss_db
             .set_rss(req)
+            .await
             .map_err(|e| anyhow::Error::msg(format!("set rss failed, {}", e)))?,
     ))
 }
@@ -97,6 +102,7 @@ pub async fn del_rss(
     service
         .rss_db
         .del_rss(params.id)
+        .await
         .context("del rss failed")?;
     JsonResult::json_ok(None)
 }

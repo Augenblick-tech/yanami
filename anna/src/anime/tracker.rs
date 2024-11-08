@@ -11,7 +11,7 @@ use crate::{
 };
 use utoipa::ToSchema;
 
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema, Eq)]
 pub struct AnimeInfo {
     pub id: i64,
     pub name: String,

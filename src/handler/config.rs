@@ -1,15 +1,13 @@
 use anna::qbit::qbitorrent::Qbit;
 use axum::{Extension, Json};
 
-use crate::{
-    common::{
-        auth::{Claims, UserCharacter},
-        errors::{Error, ErrorResult},
-        result::JsonResult,
-    },
-    models::config::ServiceConfig,
-    route::Service,
+use crate::route::Service;
+use common::{
+    auth::Claims,
+    errors::{Error, ErrorResult},
+    result::JsonResult,
 };
+use model::{config::ServiceConfig, user::UserCharacter};
 
 #[utoipa::path(
         post,
@@ -49,9 +47,10 @@ pub async fn set_config(
         .await?;
         service
             .config
-            .set_qbit(&config.url, &config.username, &config.password)?;
+            .set_qbit(&config.url, &config.username, &config.password)
+            .await?;
     }
-    service.config.set_path(&req.path)?;
+    service.config.set_path(&req.path).await?;
     JsonResult::json_ok(None)
 }
 
@@ -75,7 +74,7 @@ pub async fn get_config(
         return Err(Error::InvalidRequest);
     }
     JsonResult::json_ok(Some(ServiceConfig {
-        path: service.config.get_path()?.unwrap_or("".to_string()),
-        qbit_config: service.config.get_qbit()?,
+        path: service.config.get_path().await?.unwrap_or("".to_string()),
+        qbit_config: service.config.get_qbit().await?,
     }))
 }

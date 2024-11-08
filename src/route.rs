@@ -21,10 +21,6 @@ use utoipa_redoc::{Redoc, Servable};
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::{
-    common::{
-        auth::{Claims, KEYS},
-        result::JsonResult,
-    },
     handler::{
         anime::{anime_records, animes, get_anime, search_anime, set_anime},
         config::{get_config, set_config},
@@ -33,9 +29,13 @@ use crate::{
         user::{login, register, register_code, set_user_password, users},
     },
     openapi::ApiDoc,
-    provider::db::db_provider::{
-        AnimeProvider, DbProvider, RssProvider, RuleProvider, ServiceConfigProvider, UserProvider,
-    },
+};
+use common::{
+    auth::{Claims, KEYS},
+    result::JsonResult,
+};
+use provider::db::{
+    AnimeProvider, DbProvider, RssProvider, RuleProvider, ServiceConfigProvider, UserProvider,
 };
 
 #[derive(Clone)]

@@ -22,14 +22,12 @@ use tokio::{
     time,
 };
 
-use crate::{
-    models::{
-        anime::AnimeStatus,
-        rss::{AnimeRssRecord, RssItem},
-        torrent::Torrent,
-    },
-    provider::db::db_provider::{AnimeProvider, RssProvider, RuleProvider, ServiceConfigProvider},
+use model::{
+    anime::AnimeStatus,
+    rss::{AnimeRssRecord, RssItem},
+    torrent::Torrent,
 };
+use provider::db::{AnimeProvider, RssProvider, RuleProvider, ServiceConfigProvider};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct AnimeTask {
@@ -180,6 +178,7 @@ impl Tasker {
         let anime = self
             .anime_db
             .get_calenders()
+            .await
             .map_err(|e| {
                 anyhow::Error::msg(format!("init_anime_listener get_calender failed, {}", e))
             })?
@@ -202,14 +201,20 @@ impl Tasker {
         let rss_list = self
             .rss_db
             .get_all_rss()
+            .await
             .map_err(|e| anyhow::Error::msg(format!("check_update get_all_rules failed, {}", e)))?
             .ok_or(Error::msg("rss list is empty"))?;
         let anime_list = self
             .anime_db
             .get_calenders()
+            .await
             .map_err(|e| anyhow::Error::msg(format!("check_update get_calender failed, {}", e)))?
             .ok_or(Error::msg("anime list is empty"))?;
-        let rules = self.rule_db.get_all_rules()?.context("rules is empty")?;
+        let rules = self
+            .rule_db
+            .get_all_rules()
+            .await?
+            .context("rules is empty")?;
         {
             let mut rules_re = self.rules_re.lock().await;
             rules_re.retain_mut(|item| {
@@ -363,7 +368,7 @@ impl Tasker {
             })?;
         for i in anime.iter() {
             // 番剧已经被设置为不追踪，则跳过监听
-            if let Some(anime_status) = self.anime_db.get_calender(i.id)? {
+            if let Some(anime_status) = self.anime_db.get_calender(i.id).await? {
                 if !anime_status.status {
                     continue;
                 }
@@ -384,14 +389,15 @@ impl Tasker {
         }
         self.anime_db
             .set_calenders(anime)
+            .await
             .map_err(|e| anyhow::Error::msg(format!("sync_calender set failed, {}", e)))
     }
 
     async fn check_anime_rules(&self, msg: RssItem, anime_status: &mut AnimeStatus) {
-        if let Ok(Some(anime)) = self.anime_db.get_calender(anime_status.anime_info.id) {
+        if let Ok(Some(anime)) = self.anime_db.get_calender(anime_status.anime_info.id).await {
             anime_status.anime_info = anime.anime_info;
         }
-        if let Ok(Some(mut rules)) = self.rule_db.get_all_rules() {
+        if let Ok(Some(mut rules)) = self.rule_db.get_all_rules().await {
             let anime = &anime_status.anime_info;
             rules.sort_by(|a, b| a.cost.cmp(&b.cost));
             for name in anime.names().iter() {
@@ -419,7 +425,7 @@ impl Tasker {
                     // 判断是否已经命中过规则
                     if anime_status.rule_name.is_empty() {
                         anime_status.rule_name = msg.rule_name.clone();
-                        if let Err(e) = self.anime_db.set_calender(anime_status.clone()) {
+                        if let Err(e) = self.anime_db.set_calender(anime_status.clone()).await {
                             tracing::error!("check_anime_rules set set_calender failed, {}", e);
                             continue;
                         }
@@ -446,7 +452,7 @@ impl Tasker {
     async fn handle_rss(&self, rule_name: &str, msg: RssItem, anime_status: &AnimeStatus) {
         let anime = &anime_status.anime_info;
         if let Ok(info_hash) = Self::get_info_hash(&msg.magnet).await {
-            if let Ok(None) = self.anime_db.get_anime_record(anime.id, &info_hash) {
+            if let Ok(None) = self.anime_db.get_anime_record(anime.id, &info_hash).await {
                 // TODO:
                 // 发送磁力链接到qbit下载，设置下载路径
                 // 考虑是否直接使用qbit的命名功能，这个功能曾经不稳定，接口返回ok但实际没有命名成功
@@ -460,28 +466,32 @@ impl Tasker {
                     &msg.title
                 );
 
-                if let Err(e) = self.anime_db.set_anime_recode(
-                    anime.id,
-                    AnimeRssRecord {
-                        title: msg.title,
-                        magnet: msg.magnet,
-                        rule_name: rule_name.to_string(),
-                        info_hash,
-                    },
-                ) {
+                if let Err(e) = self
+                    .anime_db
+                    .set_anime_recode(
+                        anime.id,
+                        AnimeRssRecord {
+                            title: msg.title,
+                            magnet: msg.magnet,
+                            rule_name: rule_name.to_string(),
+                            info_hash,
+                        },
+                    )
+                    .await
+                {
                     tracing::error!("handle_rss set_anime_recode failed, error: {}", e);
                 }
             }
             // 检查是否已经完结
             // 完结则修改状态为false，退出监听
-            if let Ok(progress) = self.get_update_progress(anime) {
-                match self.anime_db.get_calender(anime.id) {
+            if let Ok(progress) = self.get_update_progress(anime).await {
+                match self.anime_db.get_calender(anime.id).await {
                     Ok(status) => {
                         if let Some(mut status) = status {
                             if progress == 100.0 {
                                 status.status = false;
                                 status.progress = 100.0;
-                                if let Err(e) = self.anime_db.set_calender(status) {
+                                if let Err(e) = self.anime_db.set_calender(status).await {
                                     tracing::error!(
                                         "handle_rss season over set anime status failed, {}",
                                         e
@@ -497,7 +507,7 @@ impl Tasker {
                                 }
                             } else if progress > status.progress {
                                 status.progress = progress;
-                                if let Err(e) = self.anime_db.set_calender(status) {
+                                if let Err(e) = self.anime_db.set_calender(status).await {
                                     tracing::error!(
                                         "handle_rss season update progress set anime status failed, {}",
                                         e
@@ -525,11 +535,13 @@ impl Tasker {
         let mut client = self.qbit_client.lock().await;
         let qbit_config = self
             .config_db
-            .get_qbit()?
+            .get_qbit()
+            .await?
             .ok_or(Error::msg("send_qbit get qbit config empty"))?;
         let download_path = self
             .config_db
-            .get_path()?
+            .get_path()
+            .await?
             .ok_or(Error::msg("send_qbit get download path empty"))?;
 
         client.load_new_config(&qbit_config).await?;
@@ -550,11 +562,12 @@ impl Tasker {
     }
 
     // 检查是否完结，返回更新进度百分比
-    fn get_update_progress(&self, anime: &AnimeInfo) -> Result<f64, Error> {
+    async fn get_update_progress(&self, anime: &AnimeInfo) -> Result<f64, Error> {
         let anime_list = self
             .anime_db
             // 获取番剧的下载记录
-            .get_anime_rss_recodes(anime.id)?
+            .get_anime_rss_recodes(anime.id)
+            .await?
             .ok_or(Error::msg("not found anime records"))?;
         let eps = Self::get_season_eps(anime_list)?;
         tracing::debug!("check_season_over anime {} eps {:?}", &anime.name, &eps);

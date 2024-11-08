@@ -1,0 +1,10 @@
+[package]
+name = "entity"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+sea-orm = { version = "1.1.0", features = ["sqlx-sqlite", "runtime-tokio-rustls"] }
+sea-orm-migration = { version = "1.1.0", features = ["runtime-tokio-rustls", "sqlx-sqlite"] }
+serde_json = "1.0.122"
+sqlx = { version = "0.8.2", features = ["sqlite", "json", "runtime-tokio-rustls"] }

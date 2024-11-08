@@ -3,16 +3,14 @@ use axum::{
     Extension, Json,
 };
 
-use crate::{
-    common::{
-        errors::{Error, ErrorResult},
-        result::JsonResult,
-    },
-    models::{
-        anime::{AnimeRecordReq, AnimeStatus},
-        rss::AnimeRssRecord,
-    },
-    route::Service,
+use crate::route::Service;
+use common::{
+    errors::{Error, ErrorResult},
+    result::JsonResult,
+};
+use model::{
+    anime::{AnimeRecordReq, AnimeStatus},
+    rss::AnimeRssRecord,
 };
 
 #[utoipa::path(
@@ -27,7 +25,7 @@ use crate::{
 pub async fn animes(
     Extension(service): Extension<Service>,
 ) -> ErrorResult<Json<JsonResult<Vec<AnimeStatus>>>> {
-    JsonResult::json_ok(service.anime_db.get_calenders()?)
+    JsonResult::json_ok(service.anime_db.get_calenders().await?)
 }
 
 #[utoipa::path(
@@ -49,7 +47,7 @@ pub async fn anime_records(
     if q.name_id <= 0 {
         return Err(Error::InvalidRequest);
     }
-    JsonResult::json_ok(service.anime_db.get_anime_rss_recodes(q.name_id)?)
+    JsonResult::json_ok(service.anime_db.get_anime_rss_recodes(q.name_id).await?)
 }
 
 #[utoipa::path(
@@ -65,7 +63,7 @@ pub async fn set_anime(
     Extension(service): Extension<Service>,
     Json(req): Json<AnimeStatus>,
 ) -> ErrorResult<Json<JsonResult<i32>>> {
-    service.anime_db.set_calender(req)?;
+    service.anime_db.set_calender(req).await?;
     JsonResult::json_ok(None)
 }
 
@@ -85,7 +83,7 @@ pub async fn get_anime(
     Extension(service): Extension<Service>,
     Path(id): Path<i64>,
 ) -> ErrorResult<Json<JsonResult<AnimeStatus>>> {
-    JsonResult::json_ok(service.anime_db.get_calender(id)?)
+    JsonResult::json_ok(service.anime_db.get_calender(id).await?)
 }
 
 #[utoipa::path(
@@ -104,5 +102,5 @@ pub async fn search_anime(
     Extension(service): Extension<Service>,
     Path(name): Path<String>,
 ) -> ErrorResult<Json<JsonResult<Vec<AnimeStatus>>>> {
-    JsonResult::json_ok(service.anime_db.search_calender(name)?)
+    JsonResult::json_ok(service.anime_db.search_calender(name).await?)
 }

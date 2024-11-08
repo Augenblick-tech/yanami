@@ -1,13 +1,11 @@
 use axum::{extract::Query, Extension, Json};
 
-use crate::{
-    common::{
-        errors::{Error, ErrorResult},
-        result::JsonResult,
-    },
-    models::rule::{DelRule, Rule},
-    route::Service,
+use crate::route::Service;
+use common::{
+    errors::{Error, ErrorResult},
+    result::JsonResult,
 };
+use model::rule::{DelRule, Rule};
 
 #[utoipa::path(
         post,
@@ -26,7 +24,7 @@ pub async fn set_rule(
         return Err(Error::InvalidRequest);
     }
 
-    service.rule_db.set_rule(req)?;
+    service.rule_db.set_rule(req).await?;
 
     JsonResult::json_ok(None)
 }
@@ -43,7 +41,7 @@ pub async fn set_rule(
 pub async fn rules(
     Extension(service): Extension<Service>,
 ) -> ErrorResult<Json<JsonResult<Vec<Rule>>>> {
-    JsonResult::json_ok(service.rule_db.get_all_rules()?)
+    JsonResult::json_ok(service.rule_db.get_all_rules().await?)
 }
 
 #[utoipa::path(
@@ -68,6 +66,7 @@ pub async fn del_rule(
     service
         .rule_db
         .del_rule(params.name)
+        .await
         .map_err(|e| anyhow::Error::msg(format!("del rule failed, {}", e)))?;
     JsonResult::json_ok(None)
 }
