@@ -380,7 +380,7 @@ impl Tasker {
                     anime_info: i.clone(),
                     is_search: false,
                     is_lock: false,
-                    progress: 0.0,
+                    progress: 0,
                 })
                 .await
             {
@@ -488,9 +488,9 @@ impl Tasker {
                 match self.anime_db.get_calender(anime.id).await {
                     Ok(status) => {
                         if let Some(mut status) = status {
-                            if progress == 100.0 {
+                            if progress >= status.anime_info.eps as usize {
                                 status.status = false;
-                                status.progress = 100.0;
+                                status.progress = progress;
                                 if let Err(e) = self.anime_db.set_calender(status).await {
                                     tracing::error!(
                                         "handle_rss season over set anime status failed, {}",
@@ -562,7 +562,7 @@ impl Tasker {
     }
 
     // 检查是否完结，返回更新进度百分比
-    async fn get_update_progress(&self, anime: &AnimeInfo) -> Result<f64, Error> {
+    async fn get_update_progress(&self, anime: &AnimeInfo) -> Result<usize, Error> {
         let anime_list = self
             .anime_db
             // 获取番剧的下载记录
@@ -571,12 +571,7 @@ impl Tasker {
             .ok_or(Error::msg("not found anime records"))?;
         let eps = Self::get_season_eps(anime_list)?;
         tracing::debug!("check_season_over anime {} eps {:?}", &anime.name, &eps);
-        let progress = ((eps.len() as f64 / anime.eps as f64 * 100.0) * 100.0).round() / 100.0;
-        if progress > 100.0 {
-            Ok(100.0)
-        } else {
-            Ok(progress)
-        }
+        Ok(eps.len())
     }
 
     pub fn get_season_eps(anime_list: Vec<AnimeRssRecord>) -> Result<Vec<i64>, Error> {

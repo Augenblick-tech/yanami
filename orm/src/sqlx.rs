@@ -446,7 +446,7 @@ impl Anime for SqlxDB {
                 .bind(anime_status.is_search)
                 .bind(anime_status.status)
                 .bind(anime_status.rule_name)
-                .bind(anime_status.progress)
+                .bind(anime_status.progress as i64)
                 .bind(anime_status.anime_info.id)
                 .execute(&mut *t)
                 .await?;

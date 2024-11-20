@@ -11,7 +11,7 @@ pub struct Model {
     pub anime_info: serde_json::Value,
     pub is_search: bool,
     pub is_lock: bool,
-    pub progress: u8,
+    pub progress: u32,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

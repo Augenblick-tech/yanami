@@ -17,7 +17,7 @@ pub struct AnimeStatus {
     #[serde(default)]
     pub is_lock: bool,
     #[serde(default)]
-    pub progress: f64,
+    pub progress: usize,
 }
 
 impl From<entity::anime::Model> for AnimeStatus {
@@ -28,7 +28,7 @@ impl From<entity::anime::Model> for AnimeStatus {
             anime_info: serde_json::from_value(value.anime_info).unwrap(),
             is_search: value.is_search,
             is_lock: value.is_lock,
-            progress: value.progress as f64 / 100.0,
+            progress: value.progress as usize,
         }
     }
 }

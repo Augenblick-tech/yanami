@@ -101,7 +101,7 @@ impl Anime for SeaDB {
                 anime_info: Set(serde_json::to_value(&anime_status.anime_info)?),
                 status: Set(anime_status.status),
                 rule_name: Set(anime_status.rule_name),
-                progress: Set((anime_status.progress * 100.0) as u8),
+                progress: Set(anime_status.progress as u32),
             }
             .insert(&self.conn)
             .await?;
