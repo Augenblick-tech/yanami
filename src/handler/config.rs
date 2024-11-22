@@ -75,6 +75,9 @@ pub async fn get_config(
     }
     JsonResult::json_ok(Some(ServiceConfig {
         path: service.config.get_path().await?.unwrap_or("".to_string()),
-        qbit_config: service.config.get_qbit().await?,
+        qbit_config: service.config.get_qbit().await?.map(|mut c| {
+            c.password = "".to_string();
+            c
+        }),
     }))
 }
