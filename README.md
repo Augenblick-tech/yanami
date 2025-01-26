@@ -23,7 +23,7 @@
 
 ### 运行
 
-`cargo run -- --addr 127.0.0.1:1234 --mode debug --key yanami --db-path ./yanami.redb`
+`cargo run -- --addr 127.0.0.1:1234 --mode debug --key yanami --db-path sqlite://yanami.db?mode=rwc`
 
 #### 启动配置
 
@@ -31,7 +31,7 @@
 addr = "127.0.0.1:1234"
 mode = "debug"
 key = "your_yanami_service_auth_key"
-db_path = "yanami.redb"
+db_path = "sqlite://yanami.db?mode=rwc"
 tmdb_token = "your_tmdb_key"
 ```
 
