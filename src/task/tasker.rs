@@ -126,7 +126,7 @@ impl Tasker {
                     });
                 }
                 _ = check_update_ticker.tick() => {
-                    if s.rss_send_map.lock().await.len() > 0 {
+                    if !s.rss_send_map.lock().await.is_empty() {
                         tokio::spawn( async move {
                             if let Err(err) = s.check_update().await {
                                 tracing::error!("{}", err);

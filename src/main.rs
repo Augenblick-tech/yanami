@@ -4,7 +4,6 @@ use anna::{
     anime::tracker::AnimeTracker, bgm::bangumi::BGM, rss::client::Client, tmdb::client::TMDB,
 };
 use common::auth;
-use mimalloc::MiMalloc;
 use model::user::{UserCharacter, UserEntity};
 use orm::sqlx;
 use tokio::spawn;
@@ -20,7 +19,7 @@ use yanami::{
 };
 
 #[global_allocator]
-static GLOBAL: MiMalloc = MiMalloc;
+static ALLOC: snmalloc_rs::SnMalloc = snmalloc_rs::SnMalloc;
 
 fn main() {
     let config = Config::load().unwrap();
