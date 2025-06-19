@@ -3,7 +3,7 @@ use anyhow::{Error, Result};
 use async_trait::async_trait;
 use entity::{anime, anime_record, config, register_code, rss, rule, user};
 use model::{
-    anime::AnimeStatus,
+    anime::{AnimeStatus, AnimesQuertOption},
     rss::{AnimeRssRecord, RSSReq, RSS},
     rule::Rule,
     user::{RegisterCode, UserEntity},
@@ -484,7 +484,117 @@ impl Anime for SqlxDB {
                 .map(|m| m.into()),
         )
     }
-    async fn search_calender(&self, name: String) -> Result<Option<Vec<AnimeStatus>>, Error> {
+
+    async fn get_calenders_with_query(&self, option: Option<AnimesQuertOption>) -> Result<Vec<AnimeStatus>, Error> {
+        if option.is_none(){
+            if let Some(r) = self.get_calenders().await? {
+                return Ok(r);
+            } else {
+                return Ok(vec![]);
+            }
+        }
+        let query_options = option.unwrap();
+
+        if query_options.enable.is_none() && query_options.search.is_none() && query_options.status.is_none() {
+            if let Some(r) = self.get_calenders().await? {
+                return Ok(r);
+            } else {
+                return Ok(vec![]);
+            }
+        }
+
+        let mut query_string = String::from("SELECT * FROM anime WHERE 1=1");
+        let mut param_index = 0; // To track the index for $N parameters
+
+        // Variables to hold values for binding, in the order they will appear in the query.
+        let mut enable_val_bind: Option<bool> = None;
+        let mut search_val_bind: Option<bool> = None;
+        let mut status_val_progress_bind: Option<i64> = None; // For progress = 0 or progress > 0
+        let mut status_val_status_bind: Option<bool> = None; // For status = true/false
+
+        // Conditionally build the WHERE clause and collect values for binding.
+        // The order of these `if let` blocks determines the order of `$N` placeholders
+        // in `query_string` and thus the order for subsequent `bind` calls.
+
+        // 1. Handle `enable` condition: Maps to `status` boolean in DB.
+        if let Some(enable_val) = query_options.enable {
+            param_index += 1;
+            query_string.push_str(&format!(" AND status = ${}", param_index));
+            enable_val_bind = Some(enable_val);
+        }
+
+        // 2. Handle `search` condition: Maps to `is_search` boolean in DB.
+        if let Some(search_val) = query_options.search {
+            param_index += 1;
+            query_string.push_str(&format!(" AND is_search = ${}", param_index));
+            search_val_bind = Some(search_val);
+        }
+
+        // 3. Handle `status` condition: Maps to `progress` integer and `status` boolean in DB.
+        //    Interpretation:
+        //    0: `progress = 0` (no progress)
+        //    1: `progress > 0 AND status = false` (some progress, but not yet "full"/completed)
+        //    2: `status = true` ("full"/completed)
+        if let Some(status_option_val) = query_options.status {
+            match status_option_val {
+                0 => { // Progress is 0
+                    param_index += 1;
+                    query_string.push_str(&format!(" AND progress = ${}", param_index));
+                    status_val_progress_bind = Some(0i64);
+                },
+                1 => { // Progress > 0 and not full (status = false)
+                    param_index += 1;
+                    query_string.push_str(&format!(" AND progress > ${}", param_index));
+                    status_val_progress_bind = Some(0i64);
+
+                    param_index += 1;
+                    query_string.push_str(&format!(" AND status = ${}", param_index));
+                    status_val_status_bind = Some(false);
+                },
+                2 => { // Progress is full (status = true)
+                    param_index += 1;
+                    query_string.push_str(&format!(" AND status = ${}", param_index));
+                    status_val_status_bind = Some(true);
+                },
+                _ => {
+                    // Ignore unsupported status values as per requirement (do not limit this item)
+                }
+            }
+        }
+
+        // Initialize the query builder with the dynamically constructed SQL string.
+        let mut query_builder = sqlx::query_as::<_, anime::Model>(&query_string);
+
+        // Bind parameters in the exact order they were appended to the query string.
+        // This is crucial for macro-free `sqlx::query_as`.
+
+        if let Some(val) = enable_val_bind {
+            query_builder = query_builder.bind(val);
+        }
+        if let Some(val) = search_val_bind {
+            query_builder = query_builder.bind(val);
+        }
+        // Handle status binding. Note the order matches the `query_string.push_str` order for `status`
+        // (progress first, then status boolean).
+        if let Some(val) = status_val_progress_bind {
+            query_builder = query_builder.bind(val);
+        }
+        if let Some(val) = status_val_status_bind {
+            query_builder = query_builder.bind(val);
+        }
+
+        // Execute the query.
+        let anime_models = query_builder.fetch_all(&self.conn).await?;
+
+        // Convert `AnimeModel` instances to `AnimeStatus` and return.
+        if anime_models.is_empty() {
+            Ok(vec![])
+        } else {
+            Ok(anime_models.into_iter().map(|model| model.into()).collect())
+        }
+    }
+
+    async fn search_calender(&self, name: String, _option: Option<AnimesQuertOption>) -> Result<Option<Vec<AnimeStatus>>, Error> {
         let vm = query_as::<_, anime::Model>(
             "SELECT * FROM anime WHERE json_extract(anime_info, '$.alternative_titles') LIKE $1",
         )

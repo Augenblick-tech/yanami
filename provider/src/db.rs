@@ -5,7 +5,7 @@ use anyhow::Error;
 
 use async_trait::async_trait;
 use model::{
-    anime::AnimeStatus,
+    anime::{AnimeStatus, AnimesQuertOption},
     rss::{AnimeRssRecord, RSSReq, RSS},
     rule::Rule,
     user::{RegisterCode, UserEntity},
@@ -53,7 +53,8 @@ pub trait Anime {
     async fn set_calender(&self, anime_status: AnimeStatus) -> Result<(), Error>;
     async fn get_calenders(&self) -> Result<Option<Vec<AnimeStatus>>, Error>;
     async fn get_calender(&self, id: i64) -> Result<Option<AnimeStatus>, Error>;
-    async fn search_calender(&self, name: String) -> Result<Option<Vec<AnimeStatus>>, Error>;
+    async fn search_calender(&self, name: String, option: Option<AnimesQuertOption>) -> Result<Option<Vec<AnimeStatus>>, Error>;
+    async fn get_calenders_with_query(&self, option: Option<AnimesQuertOption>) -> Result<Vec<AnimeStatus>, Error>;
 
     async fn set_anime_recode(
         &self,

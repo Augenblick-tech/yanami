@@ -2,6 +2,17 @@ use anna::anime::tracker::AnimeInfo;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
+
+#[derive(Debug, Serialize, Deserialize, ToSchema, IntoParams)]
+pub struct AnimesQuertOption {
+    // 是否启用
+    pub enable: Option<bool>,
+    // 是否启用搜索
+    pub search: Option<bool>,
+    // 进度状态，0：进度为0，1：进度大于0且未满，2：进度已满
+    pub status: Option<i64>,
+}
+
 #[derive(Debug, Serialize, Deserialize, ToSchema, IntoParams)]
 pub struct AnimeRecordReq {
     pub name_id: i64,

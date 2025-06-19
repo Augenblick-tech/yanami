@@ -9,14 +9,22 @@ use common::{
     result::JsonResult,
 };
 use model::{
-    anime::{AnimeRecordReq, AnimeStatus},
+    anime::{AnimeRecordReq, AnimeStatus, AnimesQuertOption},
     rss::AnimeRssRecord,
 };
 
 #[utoipa::path(
         get,
         path = "/v1/animes",
+        params(
+            AnimesQuertOption,
+        ),
         security(("api_key" = ["Authorization"])),
+        params(
+            ("enable" = Option<bool>, Query, description = "是否启用"),
+            ("search" = Option<bool>, Query, description = "是否启用搜索"),
+            ("status" = Option<i64>, Query, description = "进度状态, 0: 进度为0, 1: 进度大于0且未满, 2: 进度已满"),
+        ),
         responses(
             (status = 200, description = "获取所有番剧", body = JsonResultVecAnimeStatus)
         )
@@ -24,8 +32,9 @@ use model::{
 #[axum_macros::debug_handler]
 pub async fn animes(
     Extension(service): Extension<Service>,
+    Query(q): Query<AnimesQuertOption>,
 ) -> ErrorResult<Json<JsonResult<Vec<AnimeStatus>>>> {
-    JsonResult::json_ok(service.anime_db.get_calenders().await?)
+    JsonResult::json_ok(Some(service.anime_db.get_calenders_with_query(Some(q)).await?))
 }
 
 #[utoipa::path(
@@ -102,5 +111,5 @@ pub async fn search_anime(
     Extension(service): Extension<Service>,
     Path(name): Path<String>,
 ) -> ErrorResult<Json<JsonResult<Vec<AnimeStatus>>>> {
-    JsonResult::json_ok(service.anime_db.search_calender(name).await?)
+    JsonResult::json_ok(service.anime_db.search_calender(name, None).await?)
 }

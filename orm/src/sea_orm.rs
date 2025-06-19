@@ -123,6 +123,18 @@ impl Anime for SeaDB {
         ))
     }
 
+    async fn get_calenders_with_query(&self, option: Option<model::anime::AnimesQuertOption>) -> Result<Vec<model::anime::AnimeStatus>, Error> {
+        if option.is_none() {
+            if let Some(r) = self.get_calenders().await? {
+                return Ok(r);
+            } else {
+                return Ok(vec![]);
+            }
+        }
+        // TODO: 未实现
+        Ok(vec![])
+    }
+
     async fn get_calender(
         &self,
         id: i64,
@@ -137,6 +149,7 @@ impl Anime for SeaDB {
     async fn search_calender(
         &self,
         name: String,
+        _option: Option<model::anime::AnimesQuertOption>,
     ) -> std::result::Result<Option<Vec<model::anime::AnimeStatus>>, anyhow::Error> {
         let r = &self
             .conn

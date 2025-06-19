@@ -6,7 +6,7 @@ use utoipa::{openapi::security::{ApiKey, ApiKeyValue, SecurityScheme}, Modify, O
         result::{JsonResultAnimeStatus, JsonResultAuthBody, JsonResultDownloadPath, JsonResultRSS, JsonResultVecAnimeInfo, JsonResultVecAnimeRssRecord, JsonResultVecAnimeStatus, JsonResultVecRSS, JsonResultVecRule, JsonResultVecUserEntity, JsonResulti32},
     };
     use model::{
-        anime::{AnimeRecordReq, AnimeStatus}, config::ServiceConfig, rss::{AnimeRssRecord, DelRSS, RSSReq, RSS}, rule::{DelRule, Rule}, user::{AuthBody, LoginReq, RegisterCodeReq, RegisterCodeRsp, RegisterReq, SetUserPassword, UserCharacter, UserEntity}
+        anime::{AnimeRecordReq, AnimeStatus, AnimesQuertOption}, config::ServiceConfig, rss::{AnimeRssRecord, DelRSS, RSSReq, RSS}, rule::{DelRule, Rule}, user::{AuthBody, LoginReq, RegisterCodeReq, RegisterCodeRsp, RegisterReq, SetUserPassword, UserCharacter, UserEntity}
     };
 
 
@@ -66,6 +66,7 @@ use utoipa::{openapi::security::{ApiKey, ApiKeyValue, SecurityScheme}, Modify, O
                 AnimeRssRecord,
                 JsonResultVecAnimeRssRecord,
                 QbitConfig,
+                AnimesQuertOption,
             )
         ),
     )]
