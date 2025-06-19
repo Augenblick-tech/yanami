@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Write, path::Path, sync::Arc, time::Duration};
+use std::{fmt::Write, path::Path, sync::Arc, time::Duration};
 
 use anna::{
     anime::tracker::{AnimeInfo, AnimeTracker},
@@ -13,14 +13,7 @@ use regex::Regex;
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use sha1::{Digest, Sha1};
-use tokio::{
-    select, spawn,
-    sync::{
-        broadcast::{self},
-        mpsc, Mutex,
-    },
-    time,
-};
+use tokio::{select, sync::Mutex, time};
 
 use model::{
     anime::AnimeStatus,
@@ -53,13 +46,6 @@ pub struct Tasker {
     qbit_client: Arc<Mutex<Qbit>>,
 
     rules_re: Arc<Mutex<Vec<RuleRegex>>>,
-
-    // 用于发送番剧退出广播
-    anime_broadcast: broadcast::Sender<AnimeTask>,
-    // 用于发送全站RSS的更新
-    anime_rss_broadcast: broadcast::Sender<RssItem>,
-    // 用于发送特定番剧的搜索结果
-    rss_send_map: Arc<Mutex<HashMap<i64, mpsc::Sender<RssItem>>>>,
 }
 
 impl Tasker {
@@ -71,8 +57,6 @@ impl Tasker {
         rule_db: RuleProvider,
         config_db: ServiceConfigProvider,
     ) -> Self {
-        let (ab, _) = broadcast::channel::<AnimeTask>(100);
-        let (arb, _) = broadcast::channel::<RssItem>(100000);
         Tasker {
             rss_db: rss,
             rss_http_client,
@@ -80,9 +64,6 @@ impl Tasker {
             anime,
             rule_db,
             rules_re: Arc::new(Mutex::new(Vec::new())),
-            anime_broadcast: ab,
-            anime_rss_broadcast: arb,
-            rss_send_map: Arc::new(Mutex::new(HashMap::new())),
             qbit_client: Arc::new(Mutex::new(Qbit::new(
                 "".to_string(),
                 "".to_string(),
@@ -97,119 +78,96 @@ impl Tasker {
         // RSS轮询间隔5分钟
         let mut check_update_ticker = time::interval(Duration::from_secs(5 * 60));
 
-        // 启动时从数据库恢复历史监听
-        if let Err(e) = self.init_anime_listener().await {
-            tracing::error!("task run init_anime_listener failed, error: {}", e);
-        }
-
-        // 启动广播监听，当收到番剧季度完结时，从map记录中移除
-        let send_map = self.rss_send_map.clone();
-        let mut rx = self.anime_broadcast.subscribe();
-        tokio::spawn(async move {
-            while let Ok(msg) = rx.recv().await {
-                let mut send_map = send_map.lock().await;
-                if msg.is_canncel {
-                    tracing::info!("stop worker {:?}", &msg.info);
-                    send_map.remove(&msg.info.id);
-                }
-            }
-        });
-
         loop {
             let s = self.clone();
             select! {
-                _ = sync_calender_ticker.tick() => {
-                    tokio::spawn( async move {
-                        if let Err(err) = s.sync_calender().await {
-                            tracing::error!("{}", err);
-                        }
-                    });
-                }
-                _ = check_update_ticker.tick() => {
-                    if !s.rss_send_map.lock().await.is_empty() {
-                        tokio::spawn( async move {
-                            if let Err(err) = s.check_update().await {
+                        _ = sync_calender_ticker.tick() => {
+                            tokio::spawn( async move {
+                                if let Err(err) = s.update_calender().await {
                                 tracing::error!("{}", err);
-                            }
-                        });
-                    }
-                }
+                                }
+                            });
+                        }
+                        _ = check_update_ticker.tick() => {
+                            tokio::spawn( async move {
+                                if let Err(err) = s.update_anime_rss().await {
+                                    tracing::error!("{}", err);
+                                }
+                            });
+                        }
             }
         }
     }
 
-    async fn start_listener(&self, anime_status: AnimeStatus) -> Result<(), Error> {
-        // for i in anime.iter() {
-        let mut rx = self.anime_broadcast.subscribe();
-        // let anime = i.clone();
-        let mut send_map = self.rss_send_map.lock().await;
-        // 如果已经启动过协程监听，则跳过
-        if send_map.get(&anime_status.anime_info.id).is_some() {
+    // pub async fn test(&self) -> anyhow::Result<()> {
+    //     let rss_list = self
+    //         .rss_db
+    //         .get_all_rss()
+    //         .await
+    //         .map_err(|e| anyhow::Error::msg(format!("check_update get_all_rules failed, {}", e)))?
+    //         .ok_or(Error::msg("rss list is empty"))?;
+    //     for item in rss_list.iter() {
+    //         tracing::debug!("check_update get rss: {:?}", item);
+    //         if let Some(url) = item.url.clone() {
+    //             let r = self.rss_http_client.get_channel(&url).await;
+    //             if r.is_err() {
+    //                 tracing::error!(
+    //                     "check_update get_calender {} failed, {}",
+    //                     &item.url.clone().unwrap(),
+    //                     r.unwrap_err()
+    //                 );
+    //                 continue;
+    //             }
+    //             let rsp = r.unwrap();
+    //             tracing::debug!("{}, {}", url, rsp.title);
+    //         }
+    //     }
+    //     Ok(())
+    // }
+
+    // 更新番剧列表，写入数据库
+    pub async fn update_calender(&self) -> anyhow::Result<()> {
+        tracing::info!("start sync bgm calender");
+        let anime =
+            self.anime.get_calender().await.map_err(|e| {
+                anyhow::Error::msg(format!("sync_calender get_calender failed. {}", e))
+            })?;
+        self.anime_db
+            .set_calenders(anime)
+            .await
+            .map_err(|e| anyhow::Error::msg(format!("sync_calender set failed, {}", e)))
+    }
+
+    // 检查RSS更新番剧剧集
+    pub async fn update_anime_rss(&self) -> anyhow::Result<()> {
+        // 读取所有需要检查更新的番剧
+        let all_animes = self.anime_db.get_calenders().await?;
+
+        // 判断更新列表是否为空，为空则结束
+        if all_animes.is_none() {
             return Ok(());
         }
-        let (tx, mut recv) = mpsc::channel(10000);
-        let mut broadcast_recv = self.anime_rss_broadcast.subscribe();
-        send_map.insert(anime_status.anime_info.id, tx);
-        let s = self.clone();
-        let mut anime = anime_status.clone();
-        spawn(async move {
-            tracing::info!("spawn anime: {:?}", &anime);
-            loop {
-                select! {
-                    Ok(msg) = rx.recv() => {
-                        if msg.is_canncel && anime_status.anime_info.id == msg.info.id {
-                            return;
-                        }
-                    }
-                    Some(msg) = recv.recv() => {
-                        s.check_anime_rules(msg, &mut anime).await;
-                    }
-                    Ok(msg) = broadcast_recv.recv() => {
-                        tracing::debug!("broadcasr recv {:?}", msg);
-                        s.check_anime_rules(msg,&mut anime).await;
-                    }
-                }
+        let mut animes = vec![];
+        for anime in all_animes.unwrap() {
+            if !anime.status {
+                continue;
             }
-        });
-        Ok(())
-    }
-
-    async fn init_anime_listener(&self) -> Result<(), Error> {
-        let anime = self
-            .anime_db
-            .get_calenders()
-            .await
-            .map_err(|e| {
-                anyhow::Error::msg(format!("init_anime_listener get_calender failed, {}", e))
-            })?
-            .ok_or(Error::msg("anime list is empty"))?;
-        for i in anime.iter() {
-            if i.status {
-                if let Err(e) = self.start_listener(i.clone()).await {
-                    tracing::error!(
-                        "init_anime_listener start_listener failed, anime: {:?} error: {}",
-                        i,
-                        e
-                    );
-                }
+            if anime.progress >= anime.anime_info.eps as usize {
+                continue;
             }
+            animes.push(anime);
         }
-        Ok(())
-    }
+        if animes.is_empty() {
+            return Ok(());
+        }
 
-    async fn check_update(&self) -> Result<(), Error> {
+        // 获取RSS更新
         let rss_list = self
             .rss_db
             .get_all_rss()
             .await
             .map_err(|e| anyhow::Error::msg(format!("check_update get_all_rules failed, {}", e)))?
             .ok_or(Error::msg("rss list is empty"))?;
-        let anime_list = self
-            .anime_db
-            .get_calenders()
-            .await
-            .map_err(|e| anyhow::Error::msg(format!("check_update get_calender failed, {}", e)))?
-            .ok_or(Error::msg("anime list is empty"))?;
         let rules = self
             .rule_db
             .get_all_rules()
@@ -249,14 +207,15 @@ impl Tasker {
                 }
             }
         }
+
         for item in rss_list.iter() {
             tracing::debug!("check_update get rss: {:?}", item);
             if let Some(url) = item.url.clone() {
                 let r = self.rss_http_client.get_channel(&url).await;
                 if r.is_err() {
                     tracing::error!(
-                        "check_update get_calender {} failed, {}",
-                        &item.url.clone().unwrap(),
+                        "check_update get data from {} failed, {}",
+                        &url,
                         r.unwrap_err()
                     );
                     continue;
@@ -289,9 +248,8 @@ impl Tasker {
                                     pub_date: i.pub_date.clone(),
                                     rule_name: re.name.clone(),
                                 };
-                                tracing::debug!("broadcast rss {:?}", ri);
-                                if let Err(err) = self.anime_rss_broadcast.send(ri.clone()) {
-                                    tracing::error!("broadcast rss item to chan failed, {}", err);
+                                for anime in &animes {
+                                    self.check_anime_rules(ri.clone(), anime).await;
                                 }
                                 break;
                             }
@@ -299,101 +257,77 @@ impl Tasker {
                     }
                 }
             }
-            // 特定番剧的搜索RSS则只给该番发送
-            // 该行为会导致频繁请求RSS，触发nyaa的429，故默认停用
-            if let Some(search_url) = item.search_url.clone() {
-                for anime in anime_list.iter().filter(|anime| anime.is_search) {
-                    for url in anime.anime_info.names().iter().filter_map(|name| {
-                        match formatx!(&search_url, &name) {
-                            Ok(url) => Some(url),
-                            Err(_) => None,
-                        }
-                    }) {
-                        if let Some(chan) = self.rss_send_map.lock().await.get(&anime.anime_info.id)
-                        {
-                            let chan = chan.clone();
-                            let rss_http_client = self.rss_http_client.clone();
-                            tracing::debug!("check_update search_url: {}", url);
-                            let s = self.clone();
-                            spawn(async move {
-                                if let Ok(rsp) = rss_http_client.get_channel(&url).await {
-                                    for item in rsp.items.iter() {
-                                        if item.title.is_none() {
-                                            continue;
-                                        }
-                                        if (item.enclosure().is_none() && item.link().is_none())
-                                            || item.pub_date.is_none()
-                                        {
-                                            continue;
-                                        }
+        }
 
-                                        let url = if let Some(e) = item.enclosure() {
-                                            e.url()
-                                        } else {
-                                            item.link().unwrap()
+        for anime in animes {
+            if !anime.is_search {
+                continue;
+            }
+
+            // 这里是需要搜索全集的番剧
+            for rss in rss_list.iter() {
+                if rss.search_url.is_none() {
+                    continue;
+                }
+                for name in &anime.anime_info.names() {
+                    let url = rss.search_url.clone().unwrap();
+                    if let Ok(url) = formatx!(url, name) {
+                        let r = self.rss_http_client.get_channel(&url).await;
+                        if r.is_err() {
+                            tracing::error!(
+                                "check_update search_url {} failed, {}",
+                                &url,
+                                r.unwrap_err()
+                            );
+                            continue;
+                        }
+                        let rsp = r.unwrap();
+
+                        for i in rsp.items.iter() {
+                            // tracing::debug!("check_update rss: {:?}", i);
+                            if i.title.is_none() {
+                                continue;
+                            }
+
+                            if (i.enclosure().is_none() && i.link().is_none())
+                                || i.pub_date.is_none()
+                            {
+                                continue;
+                            }
+
+                            let url = if let Some(e) = i.enclosure() {
+                                e.url()
+                            } else {
+                                i.link().unwrap()
+                            };
+                            let title = i.title.clone().unwrap();
+                            {
+                                let rules_re = self.rules_re.lock().await;
+                                for re in rules_re.iter() {
+                                    if re.re.is_match(&title) {
+                                        let ri = RssItem {
+                                            title,
+                                            magnet: url.to_string(),
+                                            pub_date: i.pub_date.clone(),
+                                            rule_name: re.name.clone(),
                                         };
-                                        let title = item.title.clone().unwrap();
-                                        {
-                                            let rules_re = s.rules_re.lock().await;
-                                            for re in rules_re.iter() {
-                                                if re.re.is_match(&title) {
-                                                    let ri = RssItem {
-                                                        title,
-                                                        magnet: url.to_string(),
-                                                        pub_date: item.pub_date.clone(),
-                                                        rule_name: re.name.clone(),
-                                                    };
-                                                    // 该错误只会在chan被关闭时抛出，而接收端未启动时chan就是处于关闭状态的，此时允许写入失败，忽略错误
-                                                    let _ = chan.send(ri).await;
-                                                    break;
-                                                }
-                                            }
-                                        }
+                                        self.check_anime_rules(ri.clone(), &anime).await;
+                                        break;
                                     }
                                 }
-                            });
+                            }
                         }
                     }
                 }
             }
         }
+
+        tracing::info!("update anime over");
         Ok(())
     }
 
-    async fn sync_calender(&self) -> Result<(), Error> {
-        tracing::info!("start sync bgm calender");
-        let anime =
-            self.anime.get_calender().await.map_err(|e| {
-                anyhow::Error::msg(format!("sync_calender get_calender failed. {}", e))
-            })?;
-        for i in anime.iter() {
-            // 番剧已经被设置为不追踪，则跳过监听
-            if let Some(anime_status) = self.anime_db.get_calender(i.id).await? {
-                if !anime_status.status {
-                    continue;
-                }
-            }
-            if let Err(e) = self
-                .start_listener(AnimeStatus {
-                    status: true,
-                    rule_name: "".to_string(),
-                    anime_info: i.clone(),
-                    is_search: false,
-                    is_lock: false,
-                    progress: 0,
-                })
-                .await
-            {
-                tracing::error!("sync_calender start_listener failed, error: {}", e);
-            }
-        }
-        self.anime_db
-            .set_calenders(anime)
-            .await
-            .map_err(|e| anyhow::Error::msg(format!("sync_calender set failed, {}", e)))
-    }
-
-    async fn check_anime_rules(&self, msg: RssItem, anime_status: &mut AnimeStatus) {
+    async fn check_anime_rules(&self, msg: RssItem, anime_status: &AnimeStatus) {
+        let mut anime_status = anime_status.clone();
         if let Ok(Some(anime)) = self.anime_db.get_calender(anime_status.anime_info.id).await {
             anime_status.anime_info = anime.anime_info;
         }
@@ -441,7 +375,7 @@ impl Tasker {
                         &msg.title,
                         &msg.rule_name,
                     );
-                    self.handle_rss(&msg.rule_name.clone(), msg, anime_status)
+                    self.handle_rss(&msg.rule_name.clone(), msg, &anime_status)
                         .await;
                     return;
                 }
@@ -496,14 +430,6 @@ impl Tasker {
                                         "handle_rss season over set anime status failed, {}",
                                         e
                                     );
-                                }
-                                if let Err(e) = self.anime_broadcast.send(AnimeTask {
-                                    info: anime.clone(),
-                                    is_canncel: true,
-                                }) {
-                                    tracing::error!( "handle_rss {} is season update over, stop listen failed, error: {}", anime.name, e);
-                                } else {
-                                    tracing::info!("handle_rss stop anime {:?}", &anime);
                                 }
                             } else if progress > status.progress {
                                 status.progress = progress;

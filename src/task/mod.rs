@@ -3,9 +3,8 @@ pub mod tasker;
 #[cfg(test)]
 mod tests {
 
+    use model::rss::AnimeRssRecord;
     use tasker::Tasker;
-
-    use crate::models::rss::AnimeRssRecord;
 
     use super::*;
 

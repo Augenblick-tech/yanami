@@ -450,6 +450,17 @@ impl Anime for SqlxDB {
                 .bind(anime_status.anime_info.id)
                 .execute(&mut *t)
                 .await?;
+        } else {
+            query("INSERT INTO anime (anime_info, is_lock, is_search, status, rule_name, progress, id) VALUES ($1, $2, $3, $4, $5, $6, $7)")
+                .bind(serde_json::to_string(&anime_status.anime_info)?)
+                .bind(anime_status.is_lock)
+                .bind(anime_status.is_search)
+                .bind(anime_status.status)
+                .bind(anime_status.rule_name)
+                .bind(anime_status.progress as i64)
+                .bind(anime_status.anime_info.id)
+                .execute(&mut *t)
+                .await?;
         }
         t.commit().await?;
         Ok(())

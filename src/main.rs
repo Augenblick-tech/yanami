@@ -47,10 +47,6 @@ async fn init(config: Config) {
     auth::init(config.key.clone().unwrap().to_owned());
     tracing::info!("listening on {}", &config.addr.clone().unwrap());
 
-    // let redb = Arc::new(match ReDB::new(config.db_path.unwrap().to_string()) {
-    //     Ok(db) => db,
-    //     Err(err) => panic!("init db failed, {}", err),
-    // });
     let redb = Arc::new(
         match sqlx::SqlxDB::new(config.db_path.expect("failed connect db").as_str()).await {
             Ok(db) => db,
