@@ -80,7 +80,7 @@ pub async fn set_user_password(
 
     service
         .user_db
-        .edit_password(user.id, &req.new_password)
+        .edit_password(user.id, &UserEntity::into_sha256_pwd(req.new_password))
         .await?;
 
     JsonResult::json_ok(None)
