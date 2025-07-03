@@ -24,9 +24,10 @@ use model::{
             ("enable" = Option<bool>, Query, description = "是否启用"),
             ("search" = Option<bool>, Query, description = "是否启用搜索"),
             ("status" = Option<i64>, Query, description = "进度状态, 0: 进度为0, 1: 进度大于0且未满, 2: 进度已满"),
+            ("name" = Option<String>, Query, description = "按名字模糊搜索"),
         ),
         responses(
-            (status = 200, description = "获取所有番剧", body = JsonResultVecAnimeStatus)
+            (status = 200, description = "获取番剧列表", body = JsonResultVecAnimeStatus)
         )
     )]
 #[axum_macros::debug_handler]

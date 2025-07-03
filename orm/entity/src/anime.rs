@@ -1,10 +1,8 @@
-use sea_orm::entity::prelude::*;
 use sqlx::FromRow;
 
-#[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel, FromRow)]
-#[sea_orm(table_name = "anime")]
+#[derive(Clone, Debug, PartialEq, Eq, FromRow)]
 pub struct Model {
-    #[sea_orm(primary_key)]
+    // #[sea_orm(primary_key)]
     pub id: i64,
     pub status: bool,
     pub rule_name: String,
@@ -13,8 +11,3 @@ pub struct Model {
     pub is_lock: bool,
     pub progress: u32,
 }
-
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
-
-impl ActiveModelBehavior for ActiveModel {}

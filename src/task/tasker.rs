@@ -99,32 +99,6 @@ impl Tasker {
         }
     }
 
-    // pub async fn test(&self) -> anyhow::Result<()> {
-    //     let rss_list = self
-    //         .rss_db
-    //         .get_all_rss()
-    //         .await
-    //         .map_err(|e| anyhow::Error::msg(format!("check_update get_all_rules failed, {}", e)))?
-    //         .ok_or(Error::msg("rss list is empty"))?;
-    //     for item in rss_list.iter() {
-    //         tracing::debug!("check_update get rss: {:?}", item);
-    //         if let Some(url) = item.url.clone() {
-    //             let r = self.rss_http_client.get_channel(&url).await;
-    //             if r.is_err() {
-    //                 tracing::error!(
-    //                     "check_update get_calender {} failed, {}",
-    //                     &item.url.clone().unwrap(),
-    //                     r.unwrap_err()
-    //                 );
-    //                 continue;
-    //             }
-    //             let rsp = r.unwrap();
-    //             tracing::debug!("{}, {}", url, rsp.title);
-    //         }
-    //     }
-    //     Ok(())
-    // }
-
     // 更新番剧列表，写入数据库
     pub async fn update_calender(&self) -> anyhow::Result<()> {
         tracing::info!("start sync bgm calender");

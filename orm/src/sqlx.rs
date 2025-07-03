@@ -495,7 +495,7 @@ impl Anime for SqlxDB {
         }
         let query_options = option.unwrap();
 
-        if query_options.enable.is_none() && query_options.search.is_none() && query_options.status.is_none() {
+        if query_options.enable.is_none() && query_options.search.is_none() && query_options.status.is_none() && query_options.name.is_none() {
             if let Some(r) = self.get_calenders().await? {
                 return Ok(r);
             } else {
@@ -509,8 +509,7 @@ impl Anime for SqlxDB {
         // Variables to hold values for binding, in the order they will appear in the query.
         let mut enable_val_bind: Option<bool> = None;
         let mut search_val_bind: Option<bool> = None;
-        let mut status_val_progress_bind: Option<i64> = None; // For progress = 0 or progress > 0
-        let mut status_val_status_bind: Option<bool> = None; // For status = true/false
+        let mut name_val_bind = None;
 
         // Conditionally build the WHERE clause and collect values for binding.
         // The order of these `if let` blocks determines the order of `$N` placeholders
@@ -530,37 +529,32 @@ impl Anime for SqlxDB {
             search_val_bind = Some(search_val);
         }
 
+        // 增加名字模糊搜索
+        if let Some(name_val) = query_options.name {
+            param_index += 1;
+            query_string.push_str(&format!(" AND json_extract(anime_info, '$.alternative_titles') LIKE ${}", param_index));
+            name_val_bind = Some(name_val);
+        }
+
         // 3. Handle `status` condition: Maps to `progress` integer and `status` boolean in DB.
-        //    Interpretation:
-        //    0: `progress = 0` (no progress)
-        //    1: `progress > 0 AND status = false` (some progress, but not yet "full"/completed)
-        //    2: `status = true` ("full"/completed)
         if let Some(status_option_val) = query_options.status {
             match status_option_val {
-                0 => { // Progress is 0
-                    param_index += 1;
-                    query_string.push_str(&format!(" AND progress = ${}", param_index));
-                    status_val_progress_bind = Some(0i64);
+                0 => {
+                    query_string.push_str(" AND progress = 0");
                 },
-                1 => { // Progress > 0 and not full (status = false)
-                    param_index += 1;
-                    query_string.push_str(&format!(" AND progress > ${}", param_index));
-                    status_val_progress_bind = Some(0i64);
-
-                    param_index += 1;
-                    query_string.push_str(&format!(" AND status = ${}", param_index));
-                    status_val_status_bind = Some(false);
+                1 => {
+                    query_string.push_str(" AND progress > 0 AND progress < json_extract(anime_info, '$.eps')");
                 },
-                2 => { // Progress is full (status = true)
-                    param_index += 1;
-                    query_string.push_str(&format!(" AND status = ${}", param_index));
-                    status_val_status_bind = Some(true);
+                2 => {
+                    query_string.push_str(&" AND progress >= json_extract(anime_info, '$.eps')");
                 },
                 _ => {
                     // Ignore unsupported status values as per requirement (do not limit this item)
                 }
             }
         }
+
+        
 
         // Initialize the query builder with the dynamically constructed SQL string.
         let mut query_builder = sqlx::query_as::<_, anime::Model>(&query_string);
@@ -574,13 +568,8 @@ impl Anime for SqlxDB {
         if let Some(val) = search_val_bind {
             query_builder = query_builder.bind(val);
         }
-        // Handle status binding. Note the order matches the `query_string.push_str` order for `status`
-        // (progress first, then status boolean).
-        if let Some(val) = status_val_progress_bind {
-            query_builder = query_builder.bind(val);
-        }
-        if let Some(val) = status_val_status_bind {
-            query_builder = query_builder.bind(val);
+        if let Some(val) = name_val_bind {
+            query_builder = query_builder.bind(format!("%{val}%"));
         }
 
         // Execute the query.

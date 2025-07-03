@@ -1,27 +1,16 @@
-use sea_orm::entity::prelude::*;
 use sqlx::FromRow;
 
-#[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel, FromRow)]
-#[sea_orm(table_name = "config")]
+#[derive(Clone, Debug, PartialEq, Eq, FromRow)]
 pub struct Model {
-    #[sea_orm(primary_key)]
     pub key: ConfigKey,
     pub value: String,
 }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
-#[derive(Debug, Clone, PartialEq, Eq, EnumIter, DeriveActiveEnum)]
-#[sea_orm(rs_type = "String", db_type = "Enum", enum_name = "key")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConfigKey {
-    #[sea_orm(string_value = "download_path")]
     DownloadPath,
-    #[sea_orm(string_value = "qbit_config")]
     QbitConfig,
-    #[sea_orm(string_value = "")]
     None,
 }
 

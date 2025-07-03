@@ -11,6 +11,8 @@ pub struct AnimesQuertOption {
     pub search: Option<bool>,
     // 进度状态，0：进度为0，1：进度大于0且未满，2：进度已满
     pub status: Option<i64>,
+    // 按关键字模糊搜索
+    pub name: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema, IntoParams)]
