@@ -129,6 +129,14 @@ impl Tasker {
             if anime.progress >= anime.anime_info.eps as usize {
                 continue;
             }
+            if anime.is_search {
+                // 因为search逻辑并不完善又不可或缺，所以现在允许搜索，但是只搜一次就不再搜索
+                let mut no_search = anime.clone();
+                no_search.is_search = false;
+                if let Err(e) = self.anime_db.set_calender(no_search).await {
+                    tracing::error!("update_anime set anime no search failed, error: {}", e);
+                }
+            }
             animes.push(anime);
         }
         if animes.is_empty() {
@@ -487,9 +495,11 @@ impl Tasker {
                     .collect::<Vec<f64>>()
             })
             .collect();
-        // 如果下载记录只有两条以下，则不做判断
+        // 如果下载记录只有两条以下，直接获取第一个数字返回
         if anime_list.len() <= 2 {
-            return Ok(Vec::new());
+            return Ok(anime_list.iter().map(|i| {
+                *(i.get(0).unwrap_or(&0.0)) as i64
+            } ).collect());
         }
         let mut eps = Vec::new();
         // 遍历数组的下标，最大下标为长度最短的数组长度
