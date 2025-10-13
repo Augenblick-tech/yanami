@@ -60,9 +60,11 @@ impl AnimeTracker {
         let en_re = Regex::new("[Ss]eason.*?$").context("set re rule failed")?;
         let en_nd_re = Regex::new(r"\d+.*?[Ss]eason.*?$").context("set re rule failed")?;
         let end_number_re = Regex::new(r"\d+$").context("set re rule failed")?;
+        let sp_re = Regex::new(r"第\d+クール$").context("set re rule failed")?;
         for bgm in rsp.iter() {
             let name = re.replace(&bgm.name, "").trim().to_string();
             let name = en_nd_re.replace(&name, "").trim().to_string();
+            let name = sp_re.replace(&name, "").trim().to_string();
             let mut name = en_re.replace(&name, "").trim().to_string();
             let mut search_result = self
                 .tmdb
@@ -77,10 +79,10 @@ impl AnimeTracker {
                     .await
                     .context("search failed")?;
                 if search_result.results.is_empty() {
-                    // println!(
-                    //     "search empty skip, name:{}, search name: {}",
-                    //     &bgm.name, name
-                    // );
+                    tracing::debug!(
+                        "get_calender search empty skip, name:{}, search name: {}",
+                        &bgm.name, name
+                    );
                     continue;
                 }
             }
@@ -103,6 +105,7 @@ impl AnimeTracker {
                 res = Some(search_result.results.first().unwrap().clone());
             }
             if res.is_none() {
+                tracing::debug!("get_calender not found tmdb search results, search name: {}", name);
                 continue;
             }
             let res = res.unwrap();
@@ -112,10 +115,10 @@ impl AnimeTracker {
                 .context("not found original_language")?
                 .eq("ja")
             {
-                // println!(
-                //     "not found jp anime\nres: {:?}\nbgm: {:?},search name: {}",
-                //     &res, &bgm, name
-                // );
+                tracing::debug!(
+                    "get_calender not found jp anime, res: {:?} bgm: {:?} search name: {}",
+                    &res, &bgm, name
+                );
                 continue;
             }
             let series_result = self
@@ -125,9 +128,11 @@ impl AnimeTracker {
                 .context("get series failed")?;
             let season = series_result.seasons.last().context("not found season")?;
             if season.season_number <= 0 {
+                tracing::debug!("get_calender get_series_details not found season number, search name: {}", name);
                 continue;
             }
             if bgm.eps <= 0 && season.episode_count <= 0 {
+                tracing::debug!("get_calender get_series_details not found eps, search name: {}", name);
                 continue;
             }
 

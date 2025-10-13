@@ -4,6 +4,7 @@ use reqwest::{
     Client,
 };
 use serde::{Deserialize, Serialize};
+use tracing::{debug, warn};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BgmCalender {
@@ -73,10 +74,12 @@ impl BGM {
         let mut calender_anime_list = Vec::new();
         for i in list {
             for item in i.items {
+                debug!("get_calender_anime will get {} info, id {}", &item.name, item.id);
                 let info = self.get_anime_info(item.id).await.map_err(|e| {
-                    anyhow::Error::msg(format!("get {} info failed, {}", item.id, e))
+                    anyhow::Error::msg(format!("get {} {} info failed, {}", &item.name, item.id, e))
                 })?;
                 if info.is_none() {
+                    warn!("get_calender_anime anime {} {} get info failed, info is none", &item.name, item.id);
                     continue;
                 }
                 let mut info = info.unwrap();
@@ -84,16 +87,19 @@ impl BGM {
                     if item.air_date.is_some() {
                         info.air_date = item.air_date;
                     } else {
+                        warn!("get_calender_anime anime {} {} air_date is none", &item.name, item.id);
                         continue;
                     }
                 }
-                calender_anime_list.push(CalenderAnime {
-                    id: info.id,
-                    name: info.name,
+                let r = CalenderAnime {
+                    id: item.id,
+                    name: item.name.clone(),
                     weekday: i.weekday.id,
                     eps: info.eps.unwrap_or(0),
                     air_date: info.air_date.unwrap(),
-                });
+                };
+                debug!("get_calender_anime got {} {} info, {:?}", &item.name, item.id, r);
+                calender_anime_list.push(r);
             }
         }
         Ok(calender_anime_list)

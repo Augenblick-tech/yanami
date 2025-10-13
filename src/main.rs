@@ -26,7 +26,8 @@ fn main() {
     tracing::subscriber::set_global_default(
         fmt::Subscriber::builder()
             .with_env_filter(EnvFilter::new(format!(
-                "yanami={}",
+                "yanami={},anna={}",
+                config.mode.clone().unwrap_or_else(|| "info".to_string()),
                 config.mode.clone().unwrap_or_else(|| "info".to_string())
             )))
             // .with_max_level(LevelFilter::TRACE)

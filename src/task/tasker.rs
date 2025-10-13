@@ -11,7 +11,6 @@ use chrono::{DateTime, NaiveDate};
 use formatx::formatx;
 use regex::Regex;
 use reqwest::Url;
-use serde::{Deserialize, Serialize};
 use sha1::{Digest, Sha1};
 use tokio::{select, sync::Mutex, time};
 
@@ -21,12 +20,6 @@ use model::{
     torrent::Torrent,
 };
 use provider::db::{AnimeProvider, RssProvider, RuleProvider, ServiceConfigProvider};
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct AnimeTask {
-    pub info: AnimeInfo,
-    pub is_canncel: bool,
-}
 
 #[derive(Debug, Clone)]
 pub struct RuleRegex {
@@ -230,7 +223,7 @@ impl Tasker {
                                     pub_date: i.pub_date.clone(),
                                     rule_name: re.name.clone(),
                                 };
-                                for anime in &animes {
+                                for anime in &mut animes {
                                     self.check_anime_rules(ri.clone(), anime).await;
                                 }
                                 break;
@@ -241,7 +234,7 @@ impl Tasker {
             }
         }
 
-        for anime in animes {
+        for mut anime in animes {
             if !anime.is_search {
                 continue;
             }
@@ -293,7 +286,7 @@ impl Tasker {
                                             pub_date: i.pub_date.clone(),
                                             rule_name: re.name.clone(),
                                         };
-                                        self.check_anime_rules(ri.clone(), &anime).await;
+                                        self.check_anime_rules(ri.clone(), &mut anime).await;
                                         break;
                                     }
                                 }
@@ -308,8 +301,7 @@ impl Tasker {
         Ok(())
     }
 
-    async fn check_anime_rules(&self, msg: RssItem, anime_status: &AnimeStatus) {
-        let mut anime_status = anime_status.clone();
+    async fn check_anime_rules(&self, msg: RssItem, anime_status: &mut AnimeStatus) {
         if let Ok(Some(anime)) = self.anime_db.get_calender(anime_status.anime_info.id).await {
             anime_status.anime_info = anime.anime_info;
         }
@@ -530,7 +522,8 @@ impl Tasker {
         }
         eps.sort();
         eps.dedup();
-        Ok(eps)
+        // 去掉第0集
+        Ok(eps.into_iter().filter(|&x| x>0).collect())
     }
 
     pub async fn get_info_hash(url: &str) -> Result<String, Error> {

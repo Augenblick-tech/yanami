@@ -15,4 +15,4 @@ FROM debian:stable-slim
 COPY target/release/yanami /server/
 WORKDIR /server
 
-ENTRYPOINT ["/server/yanami", "-c", "/config/config.toml"]
+ENTRYPOINT ["sh", "-c", "echo \"RUST_LOG variable is: $RUST_LOG\" && /server/yanami -c /config/config.toml"]
