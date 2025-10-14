@@ -22,7 +22,7 @@ use utoipa_swagger_ui::SwaggerUi;
 
 use crate::{
     handler::{
-        anime::{anime_records, animes, get_anime, search_anime, set_anime},
+        anime::{anime_records, animes, get_anime, search_anime, set_anime, latest_anime_records},
         config::{get_config, set_config},
         rss::{del_rss, rss_list, set_rss},
         rule::{del_rule, rules, set_rule},
@@ -129,6 +129,7 @@ pub fn route(service: Service) -> Router {
         .route("/config", post(set_config))
         .route("/config", get(get_config))
         .route("/animes", get(animes))
+        .route("/animes/latest", get(latest_anime_records))
         .route("/anime", post(set_anime))
         .route("/anime/:id", get(get_anime))
         .route("/anime/search/:name", get(search_anime))

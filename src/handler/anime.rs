@@ -2,6 +2,8 @@ use axum::{
     extract::{Path, Query},
     Extension, Json,
 };
+use serde::Deserialize;
+use utoipa::{IntoParams, ToSchema};
 
 use crate::route::Service;
 use common::{
@@ -9,7 +11,7 @@ use common::{
     result::JsonResult,
 };
 use model::{
-    anime::{AnimeRecordReq, AnimeStatus, AnimesQuertOption},
+    anime::{AnimeRecordReq, AnimeStatus, AnimesQuertOption, LatestAnimeRecordResponse},
     rss::AnimeRssRecord,
 };
 
@@ -113,4 +115,40 @@ pub async fn search_anime(
     Path(name): Path<String>,
 ) -> ErrorResult<Json<JsonResult<Vec<AnimeStatus>>>> {
     JsonResult::json_ok(service.anime_db.search_calender(name, None).await?)
+}
+
+
+#[derive(Deserialize, IntoParams, ToSchema)]
+pub struct LatestAnimeQuery {
+    n: Option<i64>,
+}
+
+#[utoipa::path(
+    get,
+    path = "/v1/animes/latest",
+    params(
+        LatestAnimeQuery
+    ),
+    security(("api_key" = ["Authorization"])),
+    responses(
+        (status = 200, description = "获取最近更新的剧集", body = JsonResultVecLatestAnimeRecordResponse)
+    )
+)]
+#[axum_macros::debug_handler]
+pub async fn latest_anime_records(
+    Extension(service): Extension<Service>,
+    Query(q): Query<LatestAnimeQuery>,
+) -> ErrorResult<Json<JsonResult<Vec<LatestAnimeRecordResponse>>>> {
+    let n = q.n.unwrap_or(10);
+    let records = service.anime_db.latest_anime_records(n).await?;
+    let mut response = Vec::new();
+    for record in records {
+        if let Some(anime) = service.anime_db.get_calender(record.anime_id).await? {
+            response.push(LatestAnimeRecordResponse {
+                record,
+                anime,
+            });
+        }
+    }
+    JsonResult::json_ok(Some(response))
 }

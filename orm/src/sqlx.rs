@@ -81,7 +81,7 @@ impl SqlxDB {
         // CREATE TABLE IF NOT EXISTS "anime_record" ( "title" varchar NOT NULL PRIMARY KEY, "anime_id" integer NOT NULL, "magnet" varchar NOT NULL, "rule_name" varchar NOT NULL, "info_hash" varchar NOT NULL )
         query(
             r#"CREATE TABLE IF NOT EXISTS "anime_record" (
-                  "title" varchar NOT NULL PRIMARY KEY, "anime_id" integer NOT NULL, "magnet" varchar NOT NULL, "rule_name" varchar NOT NULL, "info_hash" varchar NOT NULL 
+                  "title" varchar NOT NULL PRIMARY KEY, "anime_id" integer NOT NULL, "magnet" varchar NOT NULL, "rule_name" varchar NOT NULL, "info_hash" varchar NOT NULL, "created_time" integer NOT NULL DEFAULT (strftime('%s', 'now'))
                  );"#,
         )
         .execute(&self.conn)
@@ -647,5 +647,15 @@ impl Anime for SqlxDB {
         } else {
             Ok(Some(vm.into_iter().map(|i| i.into()).collect()))
         }
+    }
+
+    async fn latest_anime_records(&self, n: i64) -> Result<Vec<AnimeRssRecord>, Error> {
+        let vm = query_as::<_, anime_record::Model>(
+            "SELECT * FROM anime_record ORDER BY created_time DESC LIMIT $1",
+        )
+        .bind(n)
+        .fetch_all(&self.conn)
+        .await?;
+        Ok(vm.into_iter().map(|i| i.into()).collect())
     }
 }

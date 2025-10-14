@@ -1,4 +1,4 @@
-use model::{anime::AnimeStatus, config::ServiceConfig, rss::{AnimeRssRecord, RSS}, rule::Rule, user::{AuthBody, RegisterCodeRsp, UserEntity}};
+use model::{anime::{AnimeStatus, LatestAnimeRecordResponse}, config::ServiceConfig, rss::{AnimeRssRecord, RSS}, rule::Rule, user::{AuthBody, RegisterCodeRsp, UserEntity}};
 use anna::anime::tracker::AnimeInfo;
 use axum::Json;
 use serde::{Deserialize, Serialize};
@@ -20,6 +20,7 @@ use crate::errors::Error;
     JsonResultVecAnimeStatus = JsonResult<Vec<AnimeStatus>>,
     JsonResultAnimeStatus = JsonResult<AnimeStatus>,
     JsonResultVecAnimeRssRecord = JsonResult<Vec<AnimeRssRecord>>,
+    JsonResultVecLatestAnimeRecordResponse = JsonResult<Vec<LatestAnimeRecordResponse>>,
 )]
 pub struct JsonResult<T> {
     code: i32,

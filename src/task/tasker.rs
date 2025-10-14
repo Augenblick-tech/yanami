@@ -379,10 +379,12 @@ impl Tasker {
                     .set_anime_recode(
                         anime.id,
                         AnimeRssRecord {
+                            anime_id: anime.id,
                             title: msg.title,
                             magnet: msg.magnet,
                             rule_name: rule_name.to_string(),
                             info_hash,
+                            created_time: None,
                         },
                     )
                     .await

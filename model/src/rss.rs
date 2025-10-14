@@ -43,19 +43,23 @@ pub struct RssItem {
 
 #[derive(Debug, Serialize, Deserialize, ToSchema, Clone)]
 pub struct AnimeRssRecord {
+    pub anime_id: i64,
     pub title: String,
     pub magnet: String,
     pub rule_name: String,
     pub info_hash: String,
+    pub created_time: Option<i64>,
 }
 
 impl From<entity::anime_record::Model> for AnimeRssRecord {
     fn from(value: entity::anime_record::Model) -> Self {
         Self {
+            anime_id: value.anime_id,
             title: value.title,
             magnet: value.magnet,
             rule_name: value.rule_name,
             info_hash: value.info_hash,
+            created_time: Some(value.created_time),
         }
     }
 }

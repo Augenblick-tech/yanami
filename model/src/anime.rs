@@ -2,6 +2,8 @@ use anna::anime::tracker::AnimeInfo;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
+use super::rss::AnimeRssRecord;
+
 
 #[derive(Debug, Serialize, Deserialize, ToSchema, IntoParams)]
 pub struct AnimesQuertOption {
@@ -20,7 +22,7 @@ pub struct AnimeRecordReq {
     pub name_id: i64,
 }
 
-#[derive(Debug, Serialize, Deserialize, ToSchema, IntoParams, Clone)]
+#[derive(Debug, Serialize, Deserialize, ToSchema, Clone)]
 pub struct AnimeStatus {
     pub status: bool,
     pub rule_name: String,
@@ -31,6 +33,12 @@ pub struct AnimeStatus {
     pub is_lock: bool,
     #[serde(default)]
     pub progress: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct LatestAnimeRecordResponse {
+    pub record: AnimeRssRecord,
+    pub anime: AnimeStatus,
 }
 
 impl From<entity::anime::Model> for AnimeStatus {

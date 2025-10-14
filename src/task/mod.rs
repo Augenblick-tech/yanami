@@ -37,24 +37,28 @@ mod tests {
                 magnet: "".to_string(),
                 rule_name: "".to_string(),
                 info_hash: "".to_string(),
+                created_time: None,
             },
             AnimeRssRecord {
                 title: "[ANi] Make Heroine ga Oosugiru / 敗北女角太多了！ - 03 [1080P][Baha][WEB-DL][AAC AVC][CHT][MP4]".to_string(),
                 magnet: "".to_string(),
                 rule_name: "".to_string(),
                 info_hash: "".to_string(),
+                created_time: None,
             },
             AnimeRssRecord {
                 title: "[ANi] Make Heroine ga Oosugiru / 敗北女角太多了！ - 04 [1080P][Baha][WEB-DL][AAC AVC][CHT][MP4]v2".to_string(),
                 magnet: "".to_string(),
                 rule_name: "".to_string(),
                 info_hash: "".to_string(),
+                created_time: None,
             },
             AnimeRssRecord {
                 title: "[ANi] Make Heroine ga Oosugiru / 敗北女角太多了！ - 02 [1080P][Baha][WEB-DL][AAC AVC][CHT][MP4]".to_string(),
                 magnet: "".to_string(),
                 rule_name: "".to_string(),
                 info_hash: "".to_string(),
+                created_time: None,
             },
         ];
         let eps = Tasker::get_season_eps(list).unwrap();

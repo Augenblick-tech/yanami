@@ -70,6 +70,7 @@ pub trait Anime {
         &self,
         anime_id: i64,
     ) -> Result<Option<Vec<AnimeRssRecord>>, Error>;
+    async fn latest_anime_records(&self, n: i64) -> Result<Vec<AnimeRssRecord>, Error>;
 }
 
 #[async_trait]

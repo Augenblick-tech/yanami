@@ -11,6 +11,7 @@ pub struct Model {
     pub magnet: String,
     pub rule_name: String,
     pub info_hash: String,
+    pub created_time: i64,
 }
 
 // #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
