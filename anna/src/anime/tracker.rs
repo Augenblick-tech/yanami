@@ -162,6 +162,7 @@ impl AnimeTracker {
                 search_name: name,
                 alternative_titles: Some(names.into_iter().collect()),
             };
+            tracing::debug!("get_calender anime {:?}", &anime_info);
             anime_info_list.push(anime_info);
         }
         Ok(anime_info_list)

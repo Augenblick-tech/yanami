@@ -406,8 +406,16 @@ impl Anime for SqlxDB {
                 if m.is_lock {
                     continue;
                 }
-                query("UPDATE anime SET anime_info = $1 WHERE id = $2")
+                // 检查状态，如果更新的集数变大了，则需要将状态放开
+                let old_record = AnimeStatus::from(m);
+                let status = if !old_record.status && old_record.anime_info.eps < i.eps {
+                    true
+                } else {
+                    old_record.status
+                };
+                query("UPDATE anime SET anime_info = $1, status = $2 WHERE id = $3")
                     .bind(serde_json::to_string(i)?)
+                    .bind(status)
                     .bind(i.id)
                     .execute(&mut *t)
                     .await?;
