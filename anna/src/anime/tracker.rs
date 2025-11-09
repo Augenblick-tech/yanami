@@ -81,7 +81,8 @@ impl AnimeTracker {
                 if search_result.results.is_empty() {
                     tracing::debug!(
                         "get_calender search empty skip, name:{}, search name: {}",
-                        &bgm.name, name
+                        &bgm.name,
+                        name
                     );
                     continue;
                 }
@@ -105,7 +106,10 @@ impl AnimeTracker {
                 res = Some(search_result.results.first().unwrap().clone());
             }
             if res.is_none() {
-                tracing::debug!("get_calender not found tmdb search results, search name: {}", name);
+                tracing::debug!(
+                    "get_calender not found tmdb search results, search name: {}",
+                    name
+                );
                 continue;
             }
             let res = res.unwrap();
@@ -117,7 +121,9 @@ impl AnimeTracker {
             {
                 tracing::debug!(
                     "get_calender not found jp anime, res: {:?} bgm: {:?} search name: {}",
-                    &res, &bgm, name
+                    &res,
+                    &bgm,
+                    name
                 );
                 continue;
             }
@@ -128,11 +134,17 @@ impl AnimeTracker {
                 .context("get series failed")?;
             let season = series_result.seasons.last().context("not found season")?;
             if season.season_number <= 0 {
-                tracing::debug!("get_calender get_series_details not found season number, search name: {}", name);
+                tracing::debug!(
+                    "get_calender get_series_details not found season number, search name: {}",
+                    name
+                );
                 continue;
             }
             if bgm.eps <= 0 && season.episode_count <= 0 {
-                tracing::debug!("get_calender get_series_details not found eps, search name: {}", name);
+                tracing::debug!(
+                    "get_calender get_series_details not found eps, search name: {}",
+                    name
+                );
                 continue;
             }
 
@@ -146,13 +158,32 @@ impl AnimeTracker {
             names.insert(series_result.name.clone().context("not found name cn")?);
             names.insert(res.name.clone().context("not found name tw")?);
 
+            // 发布日期选择谁的日期靠前就用谁
+            let pub_date = if let Some(pub_date) = series_result.first_air_date {
+                if let Ok(date) = NaiveDate::parse_from_str(&pub_date, "%Y-%m-%d") {
+                    if let Ok(bgm_pub_date) = NaiveDate::parse_from_str(&bgm.air_date, "%Y-%m-%d") {
+                        if bgm_pub_date < date {
+                            bgm.air_date.clone()
+                        } else {
+                            pub_date
+                        }
+                    } else {
+                        bgm.air_date.clone()
+                    }
+                } else {
+                    bgm.air_date.clone()
+                }
+            } else {
+                bgm.air_date.clone()
+            };
+
             let anime_info = AnimeInfo {
                 id: bgm.id,
                 name: bgm.name.clone(),
                 name_cn: series_result.name.clone().context("not found name cn")?,
                 name_tw: res.name.context("not found name tw")?,
                 weekday: bgm.weekday,
-                air_date: bgm.air_date.clone(),
+                air_date: pub_date,
                 eps: if bgm.eps > 0 {
                     bgm.eps
                 } else {

@@ -178,7 +178,7 @@ pub struct SeriesResult {
     // pub backdrop_path: Option<String>,
     // pub created_by: Vec<CreatedBy>,
     // pub episode_run_time: Vec<i64>,
-    // pub first_air_date: Option<String>,
+    pub first_air_date: Option<String>,
     // pub genres: Vec<Genre>,
     // pub homepage: Option<String>,
     // pub id: i64,
