@@ -107,6 +107,7 @@ impl Tasker {
 
     // 检查RSS更新番剧剧集
     pub async fn update_anime_rss(&self) -> anyhow::Result<()> {
+        tracing::debug!("开始执行 RSS 更新任务");
         // 读取所有需要检查更新的番剧
         let all_animes = self.anime_db.get_calenders().await?;
 
@@ -203,6 +204,13 @@ impl Tasker {
                         continue;
                     }
 
+                    // 跳过合集
+                    if let Some(title) = &i.title {
+                        if title.contains("合集") {
+                            continue;
+                        }
+                    }
+
                     if (i.enclosure().is_none() && i.link().is_none()) || i.pub_date.is_none() {
                         continue;
                     }
@@ -262,6 +270,13 @@ impl Tasker {
                             // tracing::debug!("check_update rss: {:?}", i);
                             if i.title.is_none() {
                                 continue;
+                            }
+
+                            // 跳过合集
+                            if let Some(title) = &i.title {
+                                if title.contains("合集") {
+                                    continue;
+                                }
                             }
 
                             if (i.enclosure().is_none() && i.link().is_none())
@@ -491,9 +506,10 @@ impl Tasker {
             .collect();
         // 如果下载记录只有两条以下，直接获取第一个数字返回
         if anime_list.len() <= 2 {
-            return Ok(anime_list.iter().map(|i| {
-                *(i.get(0).unwrap_or(&0.0)) as i64
-            } ).collect());
+            return Ok(anime_list
+                .iter()
+                .map(|i| *(i.get(0).unwrap_or(&0.0)) as i64)
+                .collect());
         }
         let mut eps = Vec::new();
         // 遍历数组的下标，最大下标为长度最短的数组长度
@@ -525,7 +541,7 @@ impl Tasker {
         eps.sort();
         eps.dedup();
         // 去掉第0集
-        Ok(eps.into_iter().filter(|&x| x>0).collect())
+        Ok(eps.into_iter().filter(|&x| x > 0).collect())
     }
 
     pub async fn get_info_hash(url: &str) -> Result<String, Error> {
