@@ -1,19 +1,22 @@
 use anyhow::Error;
 use rss::Channel;
+use reqwest::Client as ReqwestClient;
+use std::time::Duration;
 
-pub struct Client {}
+pub struct Client {
+    client: ReqwestClient,
+}
 
 impl Client {
     pub fn new() -> Self {
-        Client {}
+        let client = ReqwestClient::builder()
+            .timeout(Duration::from_secs(30))
+            .build()
+            .expect("build rss client");
+        Client { client }
     }
     pub async fn get_channel(&self, url: &str) -> Result<Channel, Error> {
-        let content = reqwest::Client::new()
-            .get(url)
-            .send()
-            .await?
-            .bytes()
-            .await?;
+        let content = self.client.get(url).send().await?.bytes().await?;
         Ok(Channel::read_from(&content[..])?)
     }
 }

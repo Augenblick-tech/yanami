@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::time::Duration;
 
 use anyhow::Error;
 use reqwest::{multipart::Form, Client, ClientBuilder, StatusCode, Url};
@@ -83,6 +84,7 @@ impl Qbit {
         Qbit {
             client: ClientBuilder::new()
                 .cookie_store(true)
+                .timeout(Duration::from_secs(30))
                 .build()
                 .expect("build client"),
             config: QbitConfig {
