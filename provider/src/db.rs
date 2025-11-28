@@ -6,7 +6,7 @@ use anyhow::Error;
 use async_trait::async_trait;
 use model::{
     anime::{AnimeStatus, AnimesQuertOption},
-    rss::{AnimeRssRecord, RSSReq, RSS},
+    rss::{AnimeRssRecord, RSSReq, RssRecord, RSS},
     rule::Rule,
     user::{RegisterCode, UserEntity},
 };
@@ -42,6 +42,12 @@ pub trait Rss {
     async fn del_rss(&self, id: String) -> Result<(), Error>;
     async fn get_rss(&self, id: String) -> Result<Option<RSS>, Error>;
     async fn get_all_rss(&self) -> Result<Option<Vec<RSS>>, Error>;
+    // insert_or_update_rss_record 插入并更新RSS记录
+    async fn insert_or_update_rss_record(&self, i: &RssRecord) -> Result<(), Error>;
+    // select_latest_rss_records 获取最近三个小时的记录
+    async fn select_latest_rss_records(&self) -> Result<Vec<RssRecord>, Error>;
+    // get_rss_record_by_url 根据URL获取RSS记录
+    async fn get_rss_record_by_url(&self, url: &str) -> Result<Option<RssRecord>, Error>;
 }
 
 #[async_trait]

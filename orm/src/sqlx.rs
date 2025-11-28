@@ -1,10 +1,15 @@
 use anna::{anime::tracker::AnimeInfo, qbit::qbitorrent::QbitConfig};
 use anyhow::{Error, Result};
 use async_trait::async_trait;
-use entity::{anime, anime_record, config, register_code, rss, rule, user};
+
+use entity::{
+    anime, anime_record, config, register_code,
+    rss::{self, RssRecordModel},
+    rule, user,
+};
 use model::{
     anime::{AnimeStatus, AnimesQuertOption},
-    rss::{AnimeRssRecord, RSSReq, RSS},
+    rss::{AnimeRssRecord, RSSReq, RssRecord, RSS},
     rule::Rule,
     user::{RegisterCode, UserEntity},
 };
@@ -12,9 +17,13 @@ use provider::db::{Anime, Db, Rss, Rules, ServiceConfig, User};
 use sqlx::{query, query_as, sqlite::SqlitePoolOptions, Acquire, Pool, Sqlite};
 use uuid::Uuid;
 
+use tokio::sync::Mutex as TokioMutex;
+use std::sync::Arc;
+
 #[derive(Clone)]
 pub struct SqlxDB {
     conn: Pool<Sqlite>,
+    write_lock: Arc<TokioMutex<()>>,
 }
 
 impl SqlxDB {
@@ -23,9 +32,12 @@ impl SqlxDB {
             .max_connections(1)
             .connect(s)
             .await?;
-        Ok(Self { conn })
+        Ok(Self {
+            conn,
+            write_lock: Arc::new(TokioMutex::new(())),
+        })
     }
-
+    
     async fn up(&self) -> Result<()> {
         // CREATE TABLE IF NOT EXISTS "user" ( "id" integer NOT NULL PRIMARY KEY AUTOINCREMENT, "username" varchar NOT NULL, "password" varchar NOT NULL, "chatacter" varchar NOT NULL )
         query(
@@ -86,6 +98,15 @@ impl SqlxDB {
         )
         .execute(&self.conn)
         .await?;
+
+        // CREATE TABLE IF NOT EXISTS "rss_record" ( "id" integer NOT NULL PRIMARY KEY AUTOINCREMENT, "title" varchar NOT NULL, "magnet" varchar NOT NULL, "info_hash" varchar NOT NULL, "created_time" integer, "source" varchar, "info" json_text, "url" varchar )
+        query(
+                    r#"CREATE TABLE IF NOT EXISTS "rss_record" (
+                          "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, "title" VARCHAR NOT NULL, "magnet" VARCHAR NOT NULL, "info_hash" VARCHAR NOT NULL UNIQUE, "created_time" INTEGER NOT NULL DEFAULT (strftime('%s', 'now')), "source" VARCHAR, "info" JSON_TEXT, "url" VARCHAR
+                         );"#,
+                )
+                .execute(&self.conn)
+                .await?;
         Ok(())
     }
 }
@@ -316,6 +337,83 @@ impl Rss for SqlxDB {
             Ok(Some(vm.into_iter().map(|i| i.into()).collect()))
         }
     }
+
+    async fn insert_or_update_rss_record(&self, record: &RssRecord) -> Result<(), Error> {
+        let _guard = self.write_lock.lock().await;
+        let created_time = record
+            .pub_date
+            .unwrap_or_else(|| chrono::Utc::now().timestamp());
+
+        if let Some(mut m) =
+            query_as::<_, RssRecordModel>("SELECT * FROM rss_record WHERE info_hash = $1 LIMIT 1")
+                .bind(&record.info_hash)
+                .fetch_optional(&self.conn)
+                .await?
+        {
+            tracing::debug!(
+                "RSS record with hash {} already exists.",
+                &record.info_hash,
+            );
+            if m.info.is_none() {
+                if record.info.is_some() {
+                    return Ok(());
+                }
+                tracing::debug!(
+                    "Updating existing RSS record info for hash: {}",
+                    &record.info_hash
+                );
+                m.info = record.info.clone();
+                query("UPDATE rss_record SET info = $1, url = $2 WHERE info_hash = $3")
+                    .bind(&m.info)
+                    .bind(&record.url)
+                    .bind(&m.info_hash)
+                    .execute(&self.conn)
+                    .await?;
+                return Ok(());
+            } else {
+                tracing::debug!(
+                    "RSS record already exists and has info, skipping update. Hash: {}",
+                    &record.info_hash
+                );
+            }
+        } else {
+            tracing::debug!(
+                "Inserting new RSS record. Hash: {}, Title: {}",
+                &record.info_hash,
+                &record.title
+            );
+            query("INSERT INTO rss_record (title, magnet, info_hash, created_time, source, info, url) VALUES ($1, $2, $3, $4, $5, $6, $7)")
+                .bind(&record.title)
+                .bind(&record.magnet)
+                .bind(&record.info_hash)
+                .bind(created_time)
+                .bind(&record.source)
+                .bind(&record.info)
+                .bind(&record.url)
+                .execute(&self.conn)
+                .await?;
+        }
+        Ok(())
+    }
+
+    async fn select_latest_rss_records(&self) -> Result<Vec<RssRecord>, Error> {
+        // TODO: 获取最近三个小时的所有记录返回
+        let m = query_as::<_, RssRecordModel>(
+            "SELECT * FROM rss_record WHERE created_time >= (strftime('%s', 'now') - 3 * 3600) ORDER BY created_time DESC",
+        )
+        .fetch_all(&self.conn)
+        .await?;
+
+        Ok(m.into_iter().map(|model| model.into()).collect())
+    }
+
+    async fn get_rss_record_by_url(&self, url: &str) -> Result<Option<RssRecord>, Error> {
+        let m = query_as::<_, RssRecordModel>("SELECT * FROM rss_record WHERE url = $1 LIMIT 1")
+            .bind(url)
+            .fetch_optional(&self.conn)
+            .await?;
+        Ok(m.map(|model| model.into()))
+    }
 }
 
 #[async_trait]
@@ -440,6 +538,7 @@ impl Anime for SqlxDB {
 
     // 忽略is_lock
     async fn set_calender(&self, anime_status: AnimeStatus) -> Result<(), Error> {
+        let _guard = self.write_lock.lock().await;
         let mut conn = self.conn.acquire().await?;
         let mut t = conn.acquire().await?.begin().await?;
         if (query("SELECT * FROM anime WHERE id = $1 LIMIT 1")
@@ -493,8 +592,11 @@ impl Anime for SqlxDB {
         )
     }
 
-    async fn get_calenders_with_query(&self, option: Option<AnimesQuertOption>) -> Result<Vec<AnimeStatus>, Error> {
-        if option.is_none(){
+    async fn get_calenders_with_query(
+        &self,
+        option: Option<AnimesQuertOption>,
+    ) -> Result<Vec<AnimeStatus>, Error> {
+        if option.is_none() {
             if let Some(r) = self.get_calenders().await? {
                 return Ok(r);
             } else {
@@ -503,7 +605,11 @@ impl Anime for SqlxDB {
         }
         let query_options = option.unwrap();
 
-        if query_options.enable.is_none() && query_options.search.is_none() && query_options.status.is_none() && query_options.name.is_none() {
+        if query_options.enable.is_none()
+            && query_options.search.is_none()
+            && query_options.status.is_none()
+            && query_options.name.is_none()
+        {
             if let Some(r) = self.get_calenders().await? {
                 return Ok(r);
             } else {
@@ -540,7 +646,10 @@ impl Anime for SqlxDB {
         // 增加名字模糊搜索
         if let Some(name_val) = query_options.name {
             param_index += 1;
-            query_string.push_str(&format!(" AND json_extract(anime_info, '$.alternative_titles') LIKE ${}", param_index));
+            query_string.push_str(&format!(
+                " AND json_extract(anime_info, '$.alternative_titles') LIKE ${}",
+                param_index
+            ));
             name_val_bind = Some(name_val);
         }
 
@@ -549,20 +658,20 @@ impl Anime for SqlxDB {
             match status_option_val {
                 0 => {
                     query_string.push_str(" AND progress = 0");
-                },
+                }
                 1 => {
-                    query_string.push_str(" AND progress > 0 AND progress < json_extract(anime_info, '$.eps')");
-                },
+                    query_string.push_str(
+                        " AND progress > 0 AND progress < json_extract(anime_info, '$.eps')",
+                    );
+                }
                 2 => {
                     query_string.push_str(&" AND progress >= json_extract(anime_info, '$.eps')");
-                },
+                }
                 _ => {
                     // Ignore unsupported status values as per requirement (do not limit this item)
                 }
             }
         }
-
-        
 
         // Initialize the query builder with the dynamically constructed SQL string.
         let mut query_builder = sqlx::query_as::<_, anime::Model>(&query_string);
@@ -591,7 +700,11 @@ impl Anime for SqlxDB {
         }
     }
 
-    async fn search_calender(&self, name: String, _option: Option<AnimesQuertOption>) -> Result<Option<Vec<AnimeStatus>>, Error> {
+    async fn search_calender(
+        &self,
+        name: String,
+        _option: Option<AnimesQuertOption>,
+    ) -> Result<Option<Vec<AnimeStatus>>, Error> {
         let vm = query_as::<_, anime::Model>(
             "SELECT * FROM anime WHERE json_extract(anime_info, '$.alternative_titles') LIKE $1",
         )
@@ -610,6 +723,7 @@ impl Anime for SqlxDB {
         anime_id: i64,
         anime_rss_record: AnimeRssRecord,
     ) -> Result<(), Error> {
+        let _guard = self.write_lock.lock().await;
         query("INSERT INTO anime_record (anime_id, title, magnet, rule_name, info_hash) VALUES ($1, $2, $3, $4, $5)")
             .bind(anime_id)
             .bind(&anime_rss_record.title)

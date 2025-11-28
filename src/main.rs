@@ -26,7 +26,8 @@ fn main() {
     tracing::subscriber::set_global_default(
         fmt::Subscriber::builder()
             .with_env_filter(EnvFilter::new(format!(
-                "yanami={},anna={}",
+                "yanami={},anna={},orm={}",
+                config.mode.clone().unwrap_or_else(|| "info".to_string()),
                 config.mode.clone().unwrap_or_else(|| "info".to_string()),
                 config.mode.clone().unwrap_or_else(|| "info".to_string())
             )))
