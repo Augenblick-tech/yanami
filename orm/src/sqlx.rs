@@ -355,7 +355,7 @@ impl Rss for SqlxDB {
                 &record.info_hash,
             );
             if m.info.is_none() {
-                if record.info.is_some() {
+                if record.info.is_none() {
                     return Ok(());
                 }
                 tracing::debug!(
@@ -369,6 +369,7 @@ impl Rss for SqlxDB {
                     .bind(&m.info_hash)
                     .execute(&self.conn)
                     .await?;
+                tracing::info!("Updated existing RSS record info for hash: {}", &record.info_hash);
                 return Ok(());
             } else {
                 tracing::debug!(
@@ -392,6 +393,7 @@ impl Rss for SqlxDB {
                 .bind(&record.url)
                 .execute(&self.conn)
                 .await?;
+            tracing::info!("Inserted new RSS record. Hash: {}, Title: {}", &record.info_hash, &record.title);
         }
         Ok(())
     }
@@ -413,6 +415,32 @@ impl Rss for SqlxDB {
             .fetch_optional(&self.conn)
             .await?;
         Ok(m.map(|model| model.into()))
+    }
+
+    async fn search_rss_records_by_keywords(&self, keywords: &[String]) -> Result<Vec<RssRecord>, Error> {
+        if keywords.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut query_string = String::from("SELECT * FROM rss_record WHERE ");
+        let mut conditions = Vec::new();
+
+        for (i, _) in keywords.iter().enumerate() {
+            conditions.push(format!("title LIKE ${}", i + 1));
+        }
+
+        query_string.push_str(&conditions.join(" OR "));
+        query_string.push_str(" ORDER BY created_time DESC");
+
+        let mut query_builder = query_as::<_, RssRecordModel>(&query_string);
+
+        for keyword in keywords {
+            query_builder = query_builder.bind(format!("%{}%", keyword));
+        }
+
+        let m = query_builder.fetch_all(&self.conn).await?;
+
+        Ok(m.into_iter().map(|model| model.into()).collect())
     }
 }
 

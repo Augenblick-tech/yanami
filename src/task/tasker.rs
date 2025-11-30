@@ -8,6 +8,7 @@ use anna::{
 use anyhow::{Context, Error};
 use base32::Alphabet;
 use chrono::{DateTime, NaiveDate};
+use formatx::formatx;
 use regex::Regex;
 use reqwest::Url;
 use sha1::{Digest, Sha1};
@@ -83,6 +84,7 @@ impl Tasker {
                         }
                         _ = check_update_ticker.tick() => {
                             tokio::spawn( async move {
+                                tracing::info!("Task cycle started");
                                 if let Err(e) = s.load_rules().await {
                                     tracing::error!("load_rules failed: {}", e);
                                 }
@@ -92,6 +94,10 @@ impl Tasker {
                                 if let Err(err) = s.check_new_rss().await {
                                     tracing::error!("{}", err);
                                 }
+                                if let Err(err) = s.search_animes().await {
+                                    tracing::error!("search_animes failed: {}", err);
+                                }
+                                tracing::info!("Task cycle finished");
                             });
                         }
             }
@@ -115,6 +121,183 @@ impl Tasker {
             let mut lock = self.rules_re.lock().await;
             *lock = rules_re;
         }
+        Ok(())
+    }
+
+    pub async fn search_animes(&self) -> anyhow::Result<()> {
+        // 1. 获取目标番剧：从数据库获取所有 is_search = true 且未完结的番剧
+        let all_animes = self.anime_db.get_calenders().await?;
+        if all_animes.is_none() {
+            return Ok(());
+        }
+        let mut target_animes = Vec::new();
+        for anime in all_animes.unwrap() {
+            if anime.status && anime.is_search {
+                target_animes.push(anime);
+            }
+        }
+
+        if target_animes.is_empty() {
+            return Ok(());
+        }
+
+        // 2. 立即关闭搜索开关并写入数据库
+        for anime in &mut target_animes {
+            let mut no_search = anime.clone();
+            no_search.is_search = false;
+            if let Err(e) = self.anime_db.set_calender(no_search).await {
+                tracing::error!("search_animes set anime no search failed, error: {}", e);
+            }
+            // 保持 target_animes 中的 is_search 为 true (或者不重要，因为我们已经拿到了内存对象)，
+            // 但重要的是我们用这个对象去搜索。
+        }
+
+        // 3. 准备资源：获取 RSS 源列表
+        let rss_list = self
+            .rss_db
+            .get_all_rss()
+            .await
+            .map_err(|e| anyhow::Error::msg(format!("search_animes get_all_rss failed, {}", e)))?
+            .ok_or(Error::msg("rss list is empty"))?;
+
+        // 4. 遍历番剧处理
+        for mut anime in target_animes {
+            tracing::info!("Processing search for anime: {}", anime.anime_info.name);
+
+            let names = anime.anime_info.names();
+            if names.is_empty() {
+                continue;
+            }
+
+            // 阶段 A：本地历史回扫
+            match self.rss_db.search_rss_records_by_keywords(&names).await {
+                Ok(records) => {
+                    for record in records {
+                        let pub_date = record.pub_date.map(|ts| {
+                            if let Some(dt) = DateTime::from_timestamp(ts, 0) {
+                                dt.to_rfc2822()
+                            } else {
+                                "".to_string()
+                            }
+                        });
+
+                        let item = RssItem {
+                            title: record.title,
+                            magnet: record.magnet,
+                            pub_date,
+                            rule_name: record.source.unwrap_or_default(),
+                        };
+                        self.check_anime_rules(item, &mut anime).await;
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("search_animes search_rss_records_by_keywords failed: {}", e);
+                }
+            }
+
+            // 阶段 B：状态检查
+            // 刷新番剧状态。若 progress >= eps (已满)，break 当前番剧循环
+            if let Ok(Some(latest_anime)) = self.anime_db.get_calender(anime.anime_info.id).await {
+                if latest_anime.progress >= latest_anime.anime_info.eps as usize {
+                    tracing::info!(
+                        "Anime {} download completed during local search, skipping network search.",
+                        anime.anime_info.name
+                    );
+                    continue;
+                }
+                // 更新内存中的 anime 对象，确保后续匹配用到最新的 progress
+                anime = latest_anime;
+            }
+
+            // 阶段 C：网络主动搜索
+            for rss in &rss_list {
+                if let Some(search_url_tmpl) = &rss.search_url {
+                    for name in &names {
+                        let search_url = match formatx!(search_url_tmpl, name) {
+                            Ok(u) => u,
+                            Err(e) => {
+                                tracing::error!("Format search url failed: {}", e);
+                                continue;
+                            }
+                        };
+                        
+                        tracing::debug!("Searching network for anime: {} from source: {} (keyword: {})", anime.anime_info.name, rss.title, name);
+
+                        let r = self.rss_http_client.get_channel(&search_url).await;
+                        if r.is_err() {
+                             tracing::error!(
+                                "search_animes get data from {} failed, {}",
+                                &search_url,
+                                r.unwrap_err()
+                            );
+                            continue;
+                        }
+
+                        let rsp = r.unwrap();
+                        for i in rsp.items.iter() {
+                            if i.title.is_none() {
+                                continue;
+                            }
+                            if let Some(title) = &i.title {
+                                if title.contains("合集") {
+                                    continue;
+                                }
+                            }
+                             if (i.enclosure().is_none() && i.link().is_none()) || i.pub_date.is_none() {
+                                continue;
+                            }
+
+                            let url = if let Some(e) = i.enclosure() {
+                                e.url()
+                            } else {
+                                i.link().unwrap()
+                            };
+                            let title = i.title.clone().unwrap();
+                            let pub_date_str = i.pub_date.clone();
+
+                             // 入库 & 匹配
+                             // 注意：这里是同步等待 hash 计算和入库，因为我们需要立即用来匹配
+                             let info_hash = if let Ok(Some(record)) = self.rss_db.get_rss_record_by_url(url).await {
+                                 Some(record.info_hash)
+                             } else if let Ok(hash) = Tasker::get_info_hash(url).await {
+                                 Some(hash)
+                             } else {
+                                 None
+                             };
+
+                            if let Some(hash) = info_hash {
+                                let parsed_pub_date = pub_date_str.clone().and_then(|date_str| {
+                                    Tasker::parse_pub_date(&date_str)
+                                });
+
+                                let rr = RssRecord {
+                                    title: title.clone(),
+                                    magnet: url.to_string(),
+                                    info_hash: hash.clone(),
+                                    pub_date: parsed_pub_date,
+                                    source: rss.title.clone().into(), // Use RSS source title
+                                    info: None,
+                                    url: Some(url.to_string()),
+                                };
+
+                                if let Err(e) = self.rss_db.insert_or_update_rss_record(&rr).await {
+                                     tracing::error!("search_animes insert record failed: {}", e);
+                                }
+                                
+                                let item = RssItem {
+                                    title,
+                                    magnet: url.to_string(),
+                                    pub_date: pub_date_str,
+                                    rule_name: rss.title.clone(),
+                                };
+                                self.check_anime_rules(item, &mut anime).await;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -313,6 +496,7 @@ impl Tasker {
                 if msg.title.contains(name) {
                     // 遍历正则规则，匹配标题
                     let mut is_matched = false;
+                    let mut matched_rule_name = String::new();
                     for rule in rules.iter() {
                         if rule.re.is_match(&msg.title) {
                             tracing::debug!(
@@ -322,6 +506,7 @@ impl Tasker {
                                 &msg.title
                             );
                             is_matched = true;
+                            matched_rule_name = rule.name.clone();
                             break;
                         }
                     }
@@ -351,14 +536,19 @@ impl Tasker {
                     }
                     // 判断是否已经命中过规则
                     if anime_status.rule_name.is_empty() {
-                        anime_status.rule_name = msg.rule_name.clone();
+                        anime_status.rule_name = matched_rule_name.clone();
                         if let Err(e) = self.anime_db.set_calender(anime_status.clone()).await {
                             tracing::error!("check_anime_rules set set_calender failed, {}", e);
                             continue;
                         }
                     }
 
-                    if !anime_status.rule_name.eq(&msg.rule_name) {
+                    if !anime_status.rule_name.eq(&matched_rule_name) {
+                        tracing::debug!(
+                            "check_anime_rules rule mismatch, anime rule: {}, matched rule: {}",
+                            anime_status.rule_name,
+                            matched_rule_name
+                        );
                         continue;
                     }
 
@@ -366,9 +556,9 @@ impl Tasker {
                         "check_anime_rules anime: {} bt: {} rule: {}",
                         &anime.name,
                         &msg.title,
-                        &msg.rule_name,
+                        &matched_rule_name,
                     );
-                    self.handle_rss(&msg.rule_name.clone(), msg, &anime_status)
+                    self.handle_rss(&matched_rule_name, msg, &anime_status)
                         .await;
                     return;
                 }

@@ -48,6 +48,8 @@ pub trait Rss {
     async fn select_latest_rss_records(&self) -> Result<Vec<RssRecord>, Error>;
     // get_rss_record_by_url 根据URL获取RSS记录
     async fn get_rss_record_by_url(&self, url: &str) -> Result<Option<RssRecord>, Error>;
+    // search_rss_records_by_keywords 根据关键词搜索RSS记录
+    async fn search_rss_records_by_keywords(&self, keywords: &[String]) -> Result<Vec<RssRecord>, Error>;
 }
 
 #[async_trait]
