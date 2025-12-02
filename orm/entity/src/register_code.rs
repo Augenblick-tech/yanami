@@ -1,4 +1,3 @@
-
 use sqlx::FromRow;
 
 #[derive(Clone, Debug, PartialEq, Eq, FromRow)]
@@ -9,4 +8,3 @@ pub struct Model {
     pub now: i64,
     pub code: String,
 }
-

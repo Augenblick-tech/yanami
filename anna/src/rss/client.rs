@@ -1,6 +1,6 @@
 use anyhow::Error;
-use rss::Channel;
 use reqwest::Client as ReqwestClient;
+use rss::Channel;
 use std::time::Duration;
 
 pub struct Client {

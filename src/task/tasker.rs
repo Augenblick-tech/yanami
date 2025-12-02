@@ -220,12 +220,17 @@ impl Tasker {
                                 continue;
                             }
                         };
-                        
-                        tracing::debug!("Searching network for anime: {} from source: {} (keyword: {})", anime.anime_info.name, rss.title, name);
+
+                        tracing::debug!(
+                            "Searching network for anime: {} from source: {} (keyword: {})",
+                            anime.anime_info.name,
+                            rss.title,
+                            name
+                        );
 
                         let r = self.rss_http_client.get_channel(&search_url).await;
                         if r.is_err() {
-                             tracing::error!(
+                            tracing::error!(
                                 "search_animes get data from {} failed, {}",
                                 &search_url,
                                 r.unwrap_err()
@@ -243,7 +248,9 @@ impl Tasker {
                                     continue;
                                 }
                             }
-                             if (i.enclosure().is_none() && i.link().is_none()) || i.pub_date.is_none() {
+                            if (i.enclosure().is_none() && i.link().is_none())
+                                || i.pub_date.is_none()
+                            {
                                 continue;
                             }
 
@@ -255,20 +262,22 @@ impl Tasker {
                             let title = i.title.clone().unwrap();
                             let pub_date_str = i.pub_date.clone();
 
-                             // 入库 & 匹配
-                             // 注意：这里是同步等待 hash 计算和入库，因为我们需要立即用来匹配
-                             let info_hash = if let Ok(Some(record)) = self.rss_db.get_rss_record_by_url(url).await {
-                                 Some(record.info_hash)
-                             } else if let Ok(hash) = Tasker::get_info_hash(url).await {
-                                 Some(hash)
-                             } else {
-                                 None
-                             };
+                            // 入库 & 匹配
+                            // 注意：这里是同步等待 hash 计算和入库，因为我们需要立即用来匹配
+                            let info_hash = if let Ok(Some(record)) =
+                                self.rss_db.get_rss_record_by_url(url).await
+                            {
+                                Some(record.info_hash)
+                            } else if let Ok(hash) = Tasker::get_info_hash(url).await {
+                                Some(hash)
+                            } else {
+                                None
+                            };
 
                             if let Some(hash) = info_hash {
-                                let parsed_pub_date = pub_date_str.clone().and_then(|date_str| {
-                                    Tasker::parse_pub_date(&date_str)
-                                });
+                                let parsed_pub_date = pub_date_str
+                                    .clone()
+                                    .and_then(|date_str| Tasker::parse_pub_date(&date_str));
 
                                 let rr = RssRecord {
                                     title: title.clone(),
@@ -281,9 +290,9 @@ impl Tasker {
                                 };
 
                                 if let Err(e) = self.rss_db.insert_or_update_rss_record(&rr).await {
-                                     tracing::error!("search_animes insert record failed: {}", e);
+                                    tracing::error!("search_animes insert record failed: {}", e);
                                 }
-                                
+
                                 let item = RssItem {
                                     title,
                                     magnet: url.to_string(),

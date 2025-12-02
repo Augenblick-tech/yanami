@@ -1,18 +1,32 @@
 use crate::handler::anime::LatestAnimeQuery;
 use anna::{anime::tracker::AnimeInfo, qbit::qbitorrent::QbitConfig};
-use utoipa::{openapi::security::{ApiKey, ApiKeyValue, SecurityScheme}, Modify, OpenApi};
+use utoipa::{
+    openapi::security::{ApiKey, ApiKeyValue, SecurityScheme},
+    Modify, OpenApi,
+};
 
-   use  common::{
-        errors::Error,
-        result::{JsonResultAnimeStatus, JsonResultAuthBody, JsonResultDownloadPath, JsonResultRSS, JsonResultVecAnimeInfo, JsonResultVecAnimeRssRecord, JsonResultVecAnimeStatus, JsonResultVecLatestAnimeRecordResponse, JsonResultVecRSS, JsonResultVecRule, JsonResultVecUserEntity, JsonResulti32},
-    };
-    use model::{
-        anime::{AnimeRecordReq, AnimeStatus, AnimesQuertOption, LatestAnimeRecordResponse}, config::ServiceConfig, rss::{AnimeRssRecord, DelRSS, RSSReq, RSS}, rule::{DelRule, Rule}, user::{AuthBody, LoginReq, RegisterCodeReq, RegisterCodeRsp, RegisterReq, SetUserPassword, UserCharacter, UserEntity}
-    };
+use common::{
+    errors::Error,
+    result::{
+        JsonResultAnimeStatus, JsonResultAuthBody, JsonResultDownloadPath, JsonResultRSS,
+        JsonResultVecAnimeInfo, JsonResultVecAnimeRssRecord, JsonResultVecAnimeStatus,
+        JsonResultVecLatestAnimeRecordResponse, JsonResultVecRSS, JsonResultVecRule,
+        JsonResultVecUserEntity, JsonResulti32,
+    },
+};
+use model::{
+    anime::{AnimeRecordReq, AnimeStatus, AnimesQuertOption, LatestAnimeRecordResponse},
+    config::ServiceConfig,
+    rss::{AnimeRssRecord, DelRSS, RSSReq, RSS},
+    rule::{DelRule, Rule},
+    user::{
+        AuthBody, LoginReq, RegisterCodeReq, RegisterCodeRsp, RegisterReq, SetUserPassword,
+        UserCharacter, UserEntity,
+    },
+};
 
-
-    #[derive(OpenApi)]
-    #[openapi(
+#[derive(OpenApi)]
+#[openapi(
         modifiers(&SecurityAddon),
         paths(
             crate::handler::user::login,
@@ -38,10 +52,10 @@ use utoipa::{openapi::security::{ApiKey, ApiKeyValue, SecurityScheme}, Modify, O
         components(
             schemas(
                 UserCharacter,
-                UserEntity, 
-                Error, 
-                AuthBody, 
-                RSS, 
+                UserEntity,
+                Error,
+                AuthBody,
+                RSS,
                 RSSReq,
                 DelRSS,
                 JsonResultAuthBody,
@@ -75,17 +89,17 @@ use utoipa::{openapi::security::{ApiKey, ApiKeyValue, SecurityScheme}, Modify, O
             )
         ),
     )]
-    pub struct ApiDoc;
+pub struct ApiDoc;
 
-    struct SecurityAddon;
+struct SecurityAddon;
 
-    impl Modify for SecurityAddon {
-        fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
-            if let Some(components) = openapi.components.as_mut() {
-                components.add_security_scheme(
-                    "api_key",
-                    SecurityScheme::ApiKey(ApiKey::Header(ApiKeyValue::new("Authorization"))),
-                )
-            }
+impl Modify for SecurityAddon {
+    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        if let Some(components) = openapi.components.as_mut() {
+            components.add_security_scheme(
+                "api_key",
+                SecurityScheme::ApiKey(ApiKey::Header(ApiKeyValue::new("Authorization"))),
+            )
         }
     }
+}

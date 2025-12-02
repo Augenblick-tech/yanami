@@ -37,7 +37,9 @@ pub async fn animes(
     Extension(service): Extension<Service>,
     Query(q): Query<AnimesQuertOption>,
 ) -> ErrorResult<Json<JsonResult<Vec<AnimeStatus>>>> {
-    JsonResult::json_ok(Some(service.anime_db.get_calenders_with_query(Some(q)).await?))
+    JsonResult::json_ok(Some(
+        service.anime_db.get_calenders_with_query(Some(q)).await?,
+    ))
 }
 
 #[utoipa::path(
@@ -117,7 +119,6 @@ pub async fn search_anime(
     JsonResult::json_ok(service.anime_db.search_calender(name, None).await?)
 }
 
-
 #[derive(Deserialize, IntoParams, ToSchema)]
 pub struct LatestAnimeQuery {
     n: Option<i64>,
@@ -144,10 +145,7 @@ pub async fn latest_anime_records(
     let mut response = Vec::new();
     for record in records {
         if let Some(anime) = service.anime_db.get_calender(record.anime_id).await? {
-            response.push(LatestAnimeRecordResponse {
-                record,
-                anime,
-            });
+            response.push(LatestAnimeRecordResponse { record, anime });
         }
     }
     JsonResult::json_ok(Some(response))

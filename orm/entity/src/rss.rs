@@ -8,7 +8,6 @@ pub struct Model {
     pub search_url: Option<String>,
 }
 
-
 #[derive(Debug, Clone, FromRow)]
 pub struct RssRecordModel {
     pub title: String,
@@ -19,4 +18,3 @@ pub struct RssRecordModel {
     pub info: Option<String>,
     pub url: Option<String>,
 }
-

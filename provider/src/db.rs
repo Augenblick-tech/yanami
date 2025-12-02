@@ -49,7 +49,10 @@ pub trait Rss {
     // get_rss_record_by_url 根据URL获取RSS记录
     async fn get_rss_record_by_url(&self, url: &str) -> Result<Option<RssRecord>, Error>;
     // search_rss_records_by_keywords 根据关键词搜索RSS记录
-    async fn search_rss_records_by_keywords(&self, keywords: &[String]) -> Result<Vec<RssRecord>, Error>;
+    async fn search_rss_records_by_keywords(
+        &self,
+        keywords: &[String],
+    ) -> Result<Vec<RssRecord>, Error>;
 }
 
 #[async_trait]
@@ -61,8 +64,15 @@ pub trait Anime {
     async fn set_calender(&self, anime_status: AnimeStatus) -> Result<(), Error>;
     async fn get_calenders(&self) -> Result<Option<Vec<AnimeStatus>>, Error>;
     async fn get_calender(&self, id: i64) -> Result<Option<AnimeStatus>, Error>;
-    async fn search_calender(&self, name: String, option: Option<AnimesQuertOption>) -> Result<Option<Vec<AnimeStatus>>, Error>;
-    async fn get_calenders_with_query(&self, option: Option<AnimesQuertOption>) -> Result<Vec<AnimeStatus>, Error>;
+    async fn search_calender(
+        &self,
+        name: String,
+        option: Option<AnimesQuertOption>,
+    ) -> Result<Option<Vec<AnimeStatus>>, Error>;
+    async fn get_calenders_with_query(
+        &self,
+        option: Option<AnimesQuertOption>,
+    ) -> Result<Vec<AnimeStatus>, Error>;
 
     async fn set_anime_recode(
         &self,

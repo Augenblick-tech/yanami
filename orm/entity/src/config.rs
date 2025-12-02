@@ -6,7 +6,6 @@ pub struct Model {
     pub value: String,
 }
 
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConfigKey {
     DownloadPath,

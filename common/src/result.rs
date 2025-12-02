@@ -1,6 +1,12 @@
-use model::{anime::{AnimeStatus, LatestAnimeRecordResponse}, config::ServiceConfig, rss::{AnimeRssRecord, RSS}, rule::Rule, user::{AuthBody, RegisterCodeRsp, UserEntity}};
 use anna::anime::tracker::AnimeInfo;
 use axum::Json;
+use model::{
+    anime::{AnimeStatus, LatestAnimeRecordResponse},
+    config::ServiceConfig,
+    rss::{AnimeRssRecord, RSS},
+    rule::Rule,
+    user::{AuthBody, RegisterCodeRsp, UserEntity},
+};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -8,9 +14,9 @@ use crate::errors::Error;
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 #[aliases(
-    JsonResultAuthBody = JsonResult<AuthBody>, 
-    JsonResultVecUserEntity = JsonResult<Vec<UserEntity>>, 
-    JsonResulti32 = JsonResult<i32>, 
+    JsonResultAuthBody = JsonResult<AuthBody>,
+    JsonResultVecUserEntity = JsonResult<Vec<UserEntity>>,
+    JsonResulti32 = JsonResult<i32>,
     JsonResultRegisterCodeRsp = JsonResult<RegisterCodeRsp>,
     JsonResultVecRSS = JsonResult<Vec<RSS>>,
     JsonResultRSS = JsonResult<RSS>,

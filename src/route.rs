@@ -22,7 +22,7 @@ use utoipa_swagger_ui::SwaggerUi;
 
 use crate::{
     handler::{
-        anime::{anime_records, animes, get_anime, search_anime, set_anime, latest_anime_records},
+        anime::{anime_records, animes, get_anime, latest_anime_records, search_anime, set_anime},
         config::{get_config, set_config},
         rss::{del_rss, rss_list, set_rss},
         rule::{del_rule, rules, set_rule},

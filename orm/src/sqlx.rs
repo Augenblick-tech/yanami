@@ -17,8 +17,8 @@ use provider::db::{Anime, Db, Rss, Rules, ServiceConfig, User};
 use sqlx::{query, query_as, sqlite::SqlitePoolOptions, Acquire, Pool, Sqlite};
 use uuid::Uuid;
 
-use tokio::sync::Mutex as TokioMutex;
 use std::sync::Arc;
+use tokio::sync::Mutex as TokioMutex;
 
 #[derive(Clone)]
 pub struct SqlxDB {
@@ -37,7 +37,7 @@ impl SqlxDB {
             write_lock: Arc::new(TokioMutex::new(())),
         })
     }
-    
+
     async fn up(&self) -> Result<()> {
         // CREATE TABLE IF NOT EXISTS "user" ( "id" integer NOT NULL PRIMARY KEY AUTOINCREMENT, "username" varchar NOT NULL, "password" varchar NOT NULL, "chatacter" varchar NOT NULL )
         query(
@@ -350,10 +350,7 @@ impl Rss for SqlxDB {
                 .fetch_optional(&self.conn)
                 .await?
         {
-            tracing::debug!(
-                "RSS record with hash {} already exists.",
-                &record.info_hash,
-            );
+            tracing::debug!("RSS record with hash {} already exists.", &record.info_hash,);
             if m.info.is_none() {
                 if record.info.is_none() {
                     return Ok(());
@@ -369,7 +366,10 @@ impl Rss for SqlxDB {
                     .bind(&m.info_hash)
                     .execute(&self.conn)
                     .await?;
-                tracing::info!("Updated existing RSS record info for hash: {}", &record.info_hash);
+                tracing::info!(
+                    "Updated existing RSS record info for hash: {}",
+                    &record.info_hash
+                );
                 return Ok(());
             } else {
                 tracing::debug!(
@@ -393,7 +393,11 @@ impl Rss for SqlxDB {
                 .bind(&record.url)
                 .execute(&self.conn)
                 .await?;
-            tracing::info!("Inserted new RSS record. Hash: {}, Title: {}", &record.info_hash, &record.title);
+            tracing::info!(
+                "Inserted new RSS record. Hash: {}, Title: {}",
+                &record.info_hash,
+                &record.title
+            );
         }
         Ok(())
     }
@@ -417,7 +421,10 @@ impl Rss for SqlxDB {
         Ok(m.map(|model| model.into()))
     }
 
-    async fn search_rss_records_by_keywords(&self, keywords: &[String]) -> Result<Vec<RssRecord>, Error> {
+    async fn search_rss_records_by_keywords(
+        &self,
+        keywords: &[String],
+    ) -> Result<Vec<RssRecord>, Error> {
         if keywords.is_empty() {
             return Ok(Vec::new());
         }

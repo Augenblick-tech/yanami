@@ -4,7 +4,6 @@ use utoipa::{IntoParams, ToSchema};
 
 use super::rss::AnimeRssRecord;
 
-
 #[derive(Debug, Serialize, Deserialize, ToSchema, IntoParams)]
 pub struct AnimesQuertOption {
     // 是否启用

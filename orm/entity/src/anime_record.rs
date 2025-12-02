@@ -2,7 +2,7 @@
 use sqlx::FromRow;
 
 // #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel, FromRow)]
-#[derive(Clone, Debug, PartialEq, Eq,  FromRow)]
+#[derive(Clone, Debug, PartialEq, Eq, FromRow)]
 // #[sea_orm(table_name = "anime_record")]
 pub struct Model {
     // #[sea_orm(primary_key)]
