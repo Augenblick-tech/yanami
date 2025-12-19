@@ -700,7 +700,7 @@ impl Anime for SqlxDB {
                     );
                 }
                 2 => {
-                    query_string.push_str(&" AND progress >= json_extract(anime_info, '$.eps')");
+                    query_string.push_str(" AND progress >= json_extract(anime_info, '$.eps')");
                 }
                 _ => {
                     // Ignore unsupported status values as per requirement (do not limit this item)

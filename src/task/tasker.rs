@@ -268,10 +268,8 @@ impl Tasker {
                                 self.rss_db.get_rss_record_by_url(url).await
                             {
                                 Some(record.info_hash)
-                            } else if let Ok(hash) = Tasker::get_info_hash(url).await {
-                                Some(hash)
                             } else {
-                                None
+                                (Tasker::get_info_hash(url).await).ok()
                             };
 
                             if let Some(hash) = info_hash {
@@ -432,10 +430,8 @@ impl Tasker {
                                 record.info_hash
                             );
                                 Some(record.info_hash)
-                            } else if let Ok(hash) = Tasker::get_info_hash(&url).await {
-                                Some(hash)
                             } else {
-                                None
+                                (Tasker::get_info_hash(&url).await).ok()
                             };
 
                         if let Some(hash) = info_hash {
@@ -567,8 +563,7 @@ impl Tasker {
                         &msg.title,
                         &matched_rule_name,
                     );
-                    self.handle_rss(&matched_rule_name, msg, &anime_status)
-                        .await;
+                    self.handle_rss(&matched_rule_name, msg, anime_status).await;
                     return;
                 }
             }
@@ -714,7 +709,7 @@ impl Tasker {
         if anime_list.len() <= 2 {
             return Ok(anime_list
                 .iter()
-                .map(|i| *(i.get(0).unwrap_or(&0.0)) as i64)
+                .map(|i| *(i.first().unwrap_or(&0.0)) as i64)
                 .collect());
         }
         let mut eps = Vec::new();
