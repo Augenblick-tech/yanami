@@ -431,9 +431,32 @@ impl Rss for SqlxDB {
 
         let mut query_string = String::from("SELECT * FROM rss_record WHERE ");
         let mut conditions = Vec::new();
+        let mut bind_count = 1;
+        let mut keyword_tokens_flat = Vec::new();
 
-        for (i, _) in keywords.iter().enumerate() {
-            conditions.push(format!("title LIKE ${}", i + 1));
+        for keyword in keywords {
+            // Use is_alphanumeric to filter out punctuation, while keeping CJK characters
+            let tokens: Vec<&str> = keyword
+                .split(|c: char| !c.is_alphanumeric())
+                .filter(|s| !s.is_empty())
+                .collect();
+
+            if tokens.is_empty() {
+                continue;
+            }
+
+            let mut token_conditions = Vec::new();
+            for token in &tokens {
+                token_conditions.push(format!("title LIKE '%' || ${} || '%'", bind_count));
+                bind_count += 1;
+                keyword_tokens_flat.push(token.to_string());
+            }
+
+            conditions.push(format!("({})", token_conditions.join(" AND ")));
+        }
+
+        if conditions.is_empty() {
+            return Ok(Vec::new());
         }
 
         query_string.push_str(&conditions.join(" OR "));
@@ -441,8 +464,8 @@ impl Rss for SqlxDB {
 
         let mut query_builder = query_as::<_, RssRecordModel>(&query_string);
 
-        for keyword in keywords {
-            query_builder = query_builder.bind(format!("%{}%", keyword));
+        for token in keyword_tokens_flat {
+            query_builder = query_builder.bind(token);
         }
 
         let m = query_builder.fetch_all(&self.conn).await?;

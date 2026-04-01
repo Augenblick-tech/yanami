@@ -1,4 +1,5 @@
 use std::{fmt::Write, path::Path, sync::Arc, time::Duration};
+use unicode_normalization::UnicodeNormalization;
 
 use anna::{
     anime::tracker::{AnimeInfo, AnimeTracker},
@@ -117,7 +118,7 @@ impl Tasker {
                     });
                 }
             }
-            rules_re.sort_by(|a, b| a.cost.cmp(&b.cost));
+            rules_re.sort_by_key(|a| a.cost);
             let mut lock = self.rules_re.lock().await;
             *lock = rules_re;
         }
@@ -229,11 +230,11 @@ impl Tasker {
                         );
 
                         let r = self.rss_http_client.get_channel(&search_url).await;
-                        if r.is_err() {
+                        if let Err(e) = r {
                             tracing::error!(
                                 "search_animes get data from {} failed, {}",
                                 &search_url,
-                                r.unwrap_err()
+                                e
                             );
                             continue;
                         }
@@ -384,11 +385,11 @@ impl Tasker {
             tracing::debug!("check_update get rss: {:?}", item);
             if let Some(url) = item.url.clone() {
                 let r = self.rss_http_client.get_channel(&url).await;
-                if r.is_err() {
+                if let Err(e) = r {
                     tracing::error!(
                         "check_update get data from {} failed, {}",
                         &url,
-                        r.unwrap_err()
+                        e
                     );
                     continue;
                 }
@@ -498,7 +499,10 @@ impl Tasker {
         if !rules.is_empty() {
             let anime = &anime_status.anime_info;
             for name in anime.names().iter() {
-                if msg.title.contains(name) {
+                let title_normalized = msg.title.nfkc().collect::<String>().replace(" ", "");
+                let name_normalized = name.nfkc().collect::<String>().replace(" ", "");
+
+                if title_normalized.contains(&name_normalized) {
                     // 遍历正则规则，匹配标题
                     let mut is_matched = false;
                     let mut matched_rule_name = String::new();
@@ -516,28 +520,18 @@ impl Tasker {
                         }
                     }
                     if !is_matched {
+                        tracing::debug!(
+                            "check_anime_rules match anime: {}, but no rule matched, skip, title: {}",
+                            &anime.name,
+                            &msg.title
+                        );
                         continue;
                     }
 
                     // 判断当前种子的上传时间是否大于该番剧季度的开始更新时间
-                    if let Some(pub_date) = &msg.pub_date {
-                        if let Ok(pub_date) = DateTime::parse_from_rfc2822(pub_date) {
-                            if let Ok(date) = NaiveDate::parse_from_str(
-                                &anime_status.anime_info.air_date,
-                                "%Y-%m-%d",
-                            ) {
-                                if pub_date
-                                    .date_naive()
-                                    // 兼容一周加一天的误差，防止第一集提前放映无法通过检查
-                                    .checked_add_days(chrono::Days::new(8))
-                                    .unwrap_or(pub_date.date_naive())
-                                    < date
-                                {
-                                    tracing::debug!("check_anime_rules check {} success, pub_date < date, skip, pub_date: {:?}, bgm_date: {}",&msg.title,&msg.pub_date,&anime_status.anime_info.air_date);
-                                    continue;
-                                }
-                            }
-                        }
+                    if !Self::check_pub_date(&msg.pub_date, &anime_status.anime_info.air_date) {
+                        tracing::debug!("check_anime_rules check {} success, pub_date < date, skip, pub_date: {:?}, bgm_date: {}",&msg.title,&msg.pub_date,&anime_status.anime_info.air_date);
+                        continue;
                     }
                     // 判断是否已经命中过规则
                     if anime_status.rule_name.is_empty() {
@@ -777,5 +771,50 @@ impl Tasker {
         let info_hash = xt_param.1.strip_prefix("urn:btih:")?;
 
         Some(info_hash.to_string())
+    }
+
+    fn check_pub_date(pub_date: &Option<String>, air_date: &str) -> bool {
+        if let Some(pub_date_str) = pub_date {
+            if let Ok(pub_date) = DateTime::parse_from_rfc2822(pub_date_str) {
+                if let Ok(date) = NaiveDate::parse_from_str(air_date, "%Y-%m-%d") {
+                    if pub_date
+                        .date_naive()
+                        .checked_add_days(chrono::Days::new(30))
+                        .unwrap_or(pub_date.date_naive())
+                        < date
+                    {
+                        return false;
+                    }
+                }
+            }
+        }
+        true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_check_pub_date() {
+        let pub_date = Some("Tue, 25 Mar 2025 19:37:12 +0800".to_string());
+        let air_date = "2025-04-05";
+        
+        // 3月25日 + 30天 = 4月24日。 4月24日 < 4月5日 是 False。
+        // 所以应该返回 true (不跳过)
+        assert!(Tasker::check_pub_date(&pub_date, air_date));
+
+        // 模拟一个确实太早的案例 (2024年的种子)
+        let old_pub_date = Some("Mon, 25 Mar 2024 19:37:12 +0800".to_string());
+        // 2024年 + 30天 依然 < 2025年。
+        // 所以应该返回 false (跳过)
+        assert!(!Tasker::check_pub_date(&old_pub_date, air_date));
+
+        // 模拟发布日期刚好比开播日期早 31 天的情况
+        // 比如开播是 4月5日，发布是 3月4日 (假设3月31天)
+        // 3月5日 + 30天 = 4月4日 < 4月5日 -> Skip
+        let early_pub_date = Some("Tue, 04 Mar 2025 19:37:12 +0800".to_string());
+        assert!(!Tasker::check_pub_date(&early_pub_date, air_date));
     }
 }
