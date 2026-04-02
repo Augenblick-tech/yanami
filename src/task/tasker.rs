@@ -72,6 +72,8 @@ impl Tasker {
         let mut sync_calender_ticker = time::interval(Duration::from_secs(12 * 60 * 60));
         // RSS轮询间隔5分钟
         let mut check_update_ticker = time::interval(Duration::from_secs(5 * 60));
+        // 漏集自检时间间隔24小时
+        let mut check_missing_eps_ticker = time::interval(Duration::from_secs(24 * 60 * 60));
 
         loop {
             let s = self.clone();
@@ -99,6 +101,13 @@ impl Tasker {
                                     tracing::error!("search_animes failed: {}", err);
                                 }
                                 tracing::info!("Task cycle finished");
+                            });
+                        }
+                        _ = check_missing_eps_ticker.tick() => {
+                            tokio::spawn(async move {
+                                if let Err(err) = s.check_and_fix_missing_eps().await {
+                                    tracing::error!("check_and_fix_missing_eps failed: {}", err);
+                                }
                             });
                         }
             }
@@ -686,6 +695,69 @@ impl Tasker {
         Ok(eps.len())
     }
 
+    // 核心漏集检查逻辑，提取为纯函数便于测试。返回 (missing_count, actual_len, min_ep, max_ep)
+    pub fn check_missing_eps_status(eps: &[i64]) -> Option<(i64, i64, i64, i64)> {
+        if eps.len() > 2 {
+            let min_ep = *eps.first().unwrap();
+            let max_ep = *eps.last().unwrap();
+            let actual_len = eps.len() as i64;
+
+            // 使用最大减最小计算预期长度，兼容从非第一集开播的第二季
+            let expected_len = max_ep - min_ep + 1;
+            let missing_count = expected_len - actual_len;
+
+            Some((missing_count, actual_len, min_ep, max_ep))
+        } else {
+            None
+        }
+    }
+
+    async fn check_and_fix_missing_eps(&self) -> Result<(), Error> {
+        let option = model::anime::AnimesQuertOption {
+            enable: Some(true),
+            search: None,
+            status: None,
+            name: None,
+        };
+        let anime_list = self.anime_db.get_calenders_with_query(Some(option)).await?;
+        for anime in anime_list {
+            if anime.is_search {
+                continue;
+            } // 如果已经处于搜索状态，跳过
+
+            if let Ok(Some(records)) = self
+                .anime_db
+                .get_anime_rss_recodes(anime.anime_info.id)
+                .await
+            {
+                if let Ok(eps) = Self::get_season_eps(records) {
+                    if let Some((missing_count, actual_len, min_ep, max_ep)) = Self::check_missing_eps_status(&eps) {
+                        // 发现漏集，且漏集数量在容错范围内 (<= 5集)
+                        if missing_count > 0 && missing_count <= 5 {
+                            tracing::info!(
+                                "Auto-healing: Detected missing eps for anime '{}' (has: {}, range: {}-{}), automatically enabling search!",
+                                anime.anime_info.name, actual_len, min_ep, max_ep
+                            );
+                            if let Err(e) = self
+                                .anime_db
+                                .update_search_status(anime.anime_info.id, true)
+                                .await
+                            {
+                                tracing::error!("Failed to set is_search for missing eps: {}", e);
+                            }
+                        } else if missing_count > 5 {
+                            tracing::debug!(
+                                "Anime '{}' has a large eps gap (missing {} eps), suspected OVA/parsing issue, ignoring auto-search",
+                                anime.anime_info.name, missing_count
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub fn get_season_eps(anime_list: Vec<AnimeRssRecord>) -> Result<Vec<i64>, Error> {
         let anime_list: Vec<Vec<f64>> = anime_list
             .iter()
@@ -816,5 +888,33 @@ mod tests {
         // 3月5日 + 30天 = 4月4日 < 4月5日 -> Skip
         let early_pub_date = Some("Tue, 04 Mar 2025 19:37:12 +0800".to_string());
         assert!(!Tasker::check_pub_date(&early_pub_date, air_date));
+    }
+
+    #[test]
+    fn test_check_missing_eps_status() {
+        // 测试少于或等于2集：不进行检测
+        assert_eq!(Tasker::check_missing_eps_status(&[1]), None);
+        assert_eq!(Tasker::check_missing_eps_status(&[1, 2]), None);
+
+        // 测试正常连续：无漏集
+        // expected: 1..3 => 3, actual: 3 => missing: 0
+        assert_eq!(Tasker::check_missing_eps_status(&[1, 2, 3]), Some((0, 3, 1, 3)));
+
+        // 测试存在合理漏集：缺第3集
+        // expected: 1..4 => 4, actual: 3 => missing: 1
+        assert_eq!(Tasker::check_missing_eps_status(&[1, 2, 4]), Some((1, 3, 1, 4)));
+
+        // 测试第二季非第1集开播：比如从13集开始
+        // 缺第15集
+        // expected: 13..16 => 4, actual: 3 => missing: 1
+        assert_eq!(Tasker::check_missing_eps_status(&[13, 14, 16]), Some((1, 3, 13, 16)));
+
+        // 测试不连续但刚好在容错边界内 (5集内)
+        // expected: 1..8 => 8, actual: 3 => missing: 5
+        assert_eq!(Tasker::check_missing_eps_status(&[1, 2, 8]), Some((5, 3, 1, 8)));
+
+        // 测试疑似 OVA 或解析异常：跨度极大
+        // expected: 1..1080 => 1080, actual: 4 => missing: 1076
+        assert_eq!(Tasker::check_missing_eps_status(&[1, 2, 3, 1080]), Some((1076, 4, 1, 1080)));
     }
 }

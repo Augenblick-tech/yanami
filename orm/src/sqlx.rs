@@ -594,6 +594,16 @@ impl Anime for SqlxDB {
         Ok(())
     }
 
+    async fn update_search_status(&self, id: i64, is_search: bool) -> Result<(), Error> {
+        let _guard = self.write_lock.lock().await;
+        query("UPDATE anime SET is_search = $1 WHERE id = $2 AND is_search != $1")
+            .bind(is_search)
+            .bind(id)
+            .execute(&self.conn)
+            .await?;
+        Ok(())
+    }
+
     // 忽略is_lock
     async fn set_calender(&self, anime_status: AnimeStatus) -> Result<(), Error> {
         let _guard = self.write_lock.lock().await;

@@ -62,6 +62,10 @@ pub trait Anime {
 
     // 忽略is_lock
     async fn set_calender(&self, anime_status: AnimeStatus) -> Result<(), Error>;
+    
+    // 只更新搜索状态
+    async fn update_search_status(&self, id: i64, is_search: bool) -> Result<(), Error>;
+    
     async fn get_calenders(&self) -> Result<Option<Vec<AnimeStatus>>, Error>;
     async fn get_calender(&self, id: i64) -> Result<Option<AnimeStatus>, Error>;
     async fn search_calender(
