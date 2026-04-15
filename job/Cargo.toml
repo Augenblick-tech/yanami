@@ -1,0 +1,15 @@
+[package]
+name = "job"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+service = { path = "../service" }
+async-trait = "0.1.81"
+domain = { path = "../domain" }
+thiserror = "1.0.69"
+tokio = { version = "1.39.2", features = ["sync", "time", "rt"] }
+tracing = "0.1.40"
+
+[dev-dependencies]
+tokio = { version = "1.39.2", features = ["macros", "rt-multi-thread", "sync", "time"] }

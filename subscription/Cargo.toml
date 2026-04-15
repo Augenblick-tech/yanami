@@ -1,0 +1,20 @@
+[package]
+name = "subscription"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.86"
+async-trait = "0.1.81"
+chrono = "0.4.38"
+regex = "1.10.6"
+thiserror = "1.0.69"
+unicode-normalization = "0.1.25"
+domain = { path = "../domain" }
+anime = { path = "../anime" }
+feed = { path = "../feed" }
+rule = { path = "../rule" }
+user = { path = "../user" }
+
+[dev-dependencies]
+tokio = { version = "1.39.2", features = ["macros", "rt-multi-thread"] }

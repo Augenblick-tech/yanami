@@ -1,0 +1,35 @@
+use std::sync::Arc;
+
+use domain::space::SpaceId;
+use space::Spaces;
+
+use crate::shared::error::ApplicationError;
+
+pub struct SpaceService {
+    spaces: Arc<Spaces>,
+}
+
+impl SpaceService {
+    pub fn new(spaces: Arc<Spaces>) -> Self {
+        Self { spaces }
+    }
+
+    pub async fn get_auto_subscribe(
+        &self,
+        space_id: SpaceId,
+    ) -> Result<bool, ApplicationError> {
+        let space = self.spaces.load(space_id).await?;
+        Ok(space.read_data().auto_subscribe)
+    }
+
+    pub async fn set_auto_subscribe(
+        &self,
+        space_id: SpaceId,
+        enabled: bool,
+    ) -> Result<bool, ApplicationError> {
+        let mut space = self.spaces.load(space_id).await?;
+        space.set_auto_subscribe(enabled);
+        self.spaces.save(&space).await?;
+        Ok(enabled)
+    }
+}
