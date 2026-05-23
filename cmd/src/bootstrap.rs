@@ -147,7 +147,7 @@ fn init_tracing(mode: &str) -> Result<()> {
 
 fn normalize_log_mode(mode: &str) -> &str {
     match mode {
-        "debug" | "warn" | "info" => mode,
+        "trace" | "debug" | "warn" | "info" => mode,
         _ => "info",
     }
 }
