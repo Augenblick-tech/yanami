@@ -256,7 +256,7 @@ impl AnimeService {
             .list(SubscriptionAnimeListQuery {
                 space_id,
                 anime_ids: None,
-                enabled: Some(true),
+                enabled: None,
                 search_state: None,
             })
             .await?;
