@@ -65,6 +65,7 @@ mod tests {
                     immediate: false,
                 },
             },
+            log_file: None,
         }
     }
 

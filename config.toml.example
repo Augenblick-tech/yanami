@@ -1,0 +1,42 @@
+# yanami 配置文件模板
+# 复制本文件为 config.toml，按需修改后启动程序
+
+# HTTP 监听地址
+# addr = "127.0.0.1:1234"
+
+# 日志级别: trace | debug | info | warn | error
+# mode = "info"
+
+# 认证密钥
+# key = "your-secret-key"
+
+# 数据库路径（sqlite）
+# db_path = "sqlite://yanami.db?mode=rwc"
+
+# TMDB API Token（必填，用于获取番剧元数据）
+# tmdb_token = "your-tmdb-token"
+#
+# 番剧元数据来源
+# sources = ["yuc", "bangumi"]
+
+# 日志文件路径（可选，设置后同时输出到 stdout 和文件，追加模式）
+# log_file = "/var/log/yanami.log"
+
+# [download]
+# noop_enabled = false
+
+# [jobs.sync_anime_calendar]
+# enabled = true
+# interval_seconds = 43200
+
+# [jobs.check_missing_episodes]
+# enabled = true
+# interval_seconds = 86400
+
+# [jobs.fetch_resources]
+# enabled = true
+# interval_seconds = 300
+
+# [jobs.search_resources]
+# enabled = true
+# interval_seconds = 300

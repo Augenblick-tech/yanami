@@ -289,10 +289,20 @@ fn validate_record(
 
 fn title_matches_subscription(title: &str, anime_title_names: &[String]) -> bool {
     let normalized_title = normalize_text(title);
-    anime_title_names
+    let candidates: Vec<String> = anime_title_names
         .iter()
         .map(|candidate| normalize_text(candidate))
-        .any(|candidate| !candidate.is_empty() && normalized_title.contains(&candidate))
+        .collect();
+    let matched = candidates
+        .iter()
+        .any(|candidate| !candidate.is_empty() && normalized_title.contains(candidate));
+    tracing::debug!(
+        %normalized_title,
+        ?candidates,
+        matched,
+        "title_matches_subscription"
+    );
+    matched
 }
 
 fn normalize_text(value: &str) -> String {
@@ -316,10 +326,17 @@ fn is_release_date_valid(published_at: Option<i64>, air_date: &str) -> Result<bo
         return Ok(false);
     };
 
-    Ok(published_at
+    let valid = published_at
         .date_naive()
         .checked_add_days(Days::new(30))
-        .is_some_and(|deadline| deadline >= air_date))
+        .is_some_and(|deadline| deadline >= air_date);
+    tracing::debug!(
+        ?published_at,
+        %air_date,
+        valid,
+        "is_release_date_valid"
+    );
+    Ok(valid)
 }
 
 fn derive_progress_from_titles(titles: &[String]) -> i64 {

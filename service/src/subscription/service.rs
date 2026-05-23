@@ -190,7 +190,14 @@ impl SubscriptionService {
                     .await
                 {
                     Ok(true) => matched_count += 1,
-                    Ok(false) => {}
+                    Ok(false) => {
+                        tracing::debug!(
+                            resource_id = %resource.read_data().id.0,
+                            resource_title = %resource.read_data().title,
+                            anime_id = %anime_id.0,
+                            "found_pool_resources: resource not matched to any subscription"
+                        );
+                    }
                     Err(error) => {
                         tracing::error!(
                             resource_id = %resource.read_data().id.0,
@@ -353,7 +360,7 @@ impl SubscriptionService {
                 }
             };
             let Some(assessment) = assessed else {
-            tracing::trace!(
+            tracing::debug!(
                 anime_id = %subscription_data.anime_id.0,
                 "check_missing_episodes: no missing episodes, skipping"
             );
@@ -596,7 +603,7 @@ impl SubscriptionService {
                 }
                 self.subscriptions.save(&entity).await?;
 
-                tracing::debug!(
+                tracing::info!(
                     anime_id = %subscription.anime_id.0,
                     resource_id = %resource.id.0,
                     resource_title = %resource.title,
@@ -607,7 +614,7 @@ impl SubscriptionService {
                 Ok(true)
             }
             MatchDecision::Skip(reason) => {
-                tracing::trace!(
+                tracing::debug!(
                     %reason,
                     resource_id = %resource.id.0,
                     resource_title = %resource.title,
@@ -678,8 +685,14 @@ impl SubscriptionService {
         else {
             return Ok(None);
         };
-        rule.match_title(self.rules.regex_provider(), title)
-            .map_err(Into::into)
+        let matched = rule.match_title(self.rules.regex_provider(), title)?;
+        tracing::debug!(
+            bound_rule = %subscription.bound_rule_name.as_deref().unwrap_or("none"),
+            %title,
+            matched = matched.is_some(),
+            "match_subscription_rule"
+        );
+        Ok(matched)
     }
 
     /// 为所有启用了自动订阅的空间，批量创建指定番剧的订阅（如尚未订阅）。

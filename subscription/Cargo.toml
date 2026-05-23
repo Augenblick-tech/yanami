@@ -10,6 +10,7 @@ chrono = "0.4.38"
 regex = "1.10.6"
 thiserror = "1.0.69"
 unicode-normalization = "0.1.25"
+tracing = "0.1"
 domain = { path = "../domain" }
 anime = { path = "../anime" }
 feed = { path = "../feed" }

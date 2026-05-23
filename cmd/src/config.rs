@@ -35,6 +35,8 @@ pub struct SchedulerArgs {
     search_resources_interval_seconds: Option<u64>,
     #[clap(long)]
     noop_download_driver: Option<bool>,
+    #[clap(long)]
+    log_file: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -49,6 +51,7 @@ struct SchedulerFileConfig {
     sources: Option<Vec<MetadataSourceKind>>,
     download: Option<DownloadFileConfig>,
     jobs: Option<SchedulerJobsFileConfig>,
+    log_file: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -81,6 +84,7 @@ pub struct SchedulerConfig {
     pub sources: Vec<MetadataSourceKind>,
     pub download: DownloadConfig,
     pub jobs: SchedulerJobsConfig,
+    pub log_file: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -122,7 +126,7 @@ impl SchedulerConfig {
             .mode
             .or(file_config.mode)
             .unwrap_or_else(|| "info".to_string());
-        let mode = if matches!(mode.as_str(), "debug" | "warn" | "info") {
+        let mode = if matches!(mode.as_str(), "trace" | "debug" | "warn" | "info") {
             mode
         } else {
             "info".to_string()
@@ -185,6 +189,7 @@ impl SchedulerConfig {
                     false,
                 )?,
             },
+            log_file: args.log_file.or(file_config.log_file),
         })
     }
 }
@@ -264,6 +269,7 @@ interval_seconds = 600
                 token_ttl_seconds: 3600,
                 sources: vec![MetadataSourceKind::Yuc],
                 download: DownloadConfig { noop_enabled: true },
+                log_file: None,
                 jobs: SchedulerJobsConfig {
                     sync_anime_calendar: ScheduledJobConfig {
                         enabled: true,
@@ -335,6 +341,7 @@ interval_seconds = 600
             fetch_resources_interval_seconds: Some(42),
             search_resources_interval_seconds: Some(12),
             noop_download_driver: None,
+            log_file: None,
         })
         .expect_err("interval too small must fail");
     }
@@ -382,6 +389,7 @@ interval_seconds = 600
             fetch_resources_interval_seconds: Some(300),
             search_resources_interval_seconds: Some(600),
             noop_download_driver: Some(true),
+            log_file: None,
         })
         .expect("load config");
 

@@ -59,7 +59,7 @@ use crate::{
 };
 
 pub async fn run(config: SchedulerConfig) -> Result<()> {
-    init_tracing(&config.mode)?;
+    init_tracing(&config.mode, config.log_file.as_deref())?;
 
     let database = Arc::new(
         SqliteDb::connect(
@@ -133,15 +133,45 @@ async fn shutdown_signal() {
     }
 }
 
-fn init_tracing(mode: &str) -> Result<()> {
+fn init_tracing(mode: &str, log_file: Option<&str>) -> Result<()> {
+    use std::sync::Arc;
+    use tracing_subscriber::Layer;
+    use tracing_subscriber::layer::SubscriberExt;
+
     let level = normalize_log_mode(mode);
-    tracing::subscriber::set_global_default(
-        fmt::Subscriber::builder()
-            .with_env_filter(EnvFilter::new(format!(
-                "cmd={level},service={level},job={level},anime={level},infra={level},domain={level}"
-            )))
-            .finish(),
-    )?;
+    let filter_spec = format!(
+        "cmd={level},service={level},anime={level},infra={level},feed={level},subscription={level}"
+    );
+
+    if let Some(path) = log_file {
+        let file = Arc::new(
+            std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path)?,
+        );
+        let file_clone = file.clone();
+
+        tracing::subscriber::set_global_default(
+            tracing_subscriber::registry()
+                .with(
+                    fmt::layer()
+                        .with_writer(std::io::stdout)
+                        .with_filter(EnvFilter::new(&filter_spec)),
+                )
+                .with(
+                    fmt::layer()
+                        .with_writer(move || file_clone.try_clone().expect("log file clone"))
+                        .with_filter(EnvFilter::new(&filter_spec)),
+                ),
+        )?;
+    } else {
+        tracing::subscriber::set_global_default(
+            fmt::Subscriber::builder()
+                .with_env_filter(EnvFilter::new(&filter_spec))
+                .finish(),
+        )?;
+    }
     Ok(())
 }
 
