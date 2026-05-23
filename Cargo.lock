@@ -1496,6 +1496,7 @@ dependencies = [
  "chrono",
  "domain",
  "feed",
+ "futures-executor",
  "jsonwebtoken",
  "regex",
  "reqwest",

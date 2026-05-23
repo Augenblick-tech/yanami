@@ -84,22 +84,56 @@ impl SubscriptionAnimeRepository for NoopSubscriptions {
             .collect())
     }
 
-    async fn list_pending_search_subscriptions(
+    async fn pick_one_pending(
         &self,
-    ) -> Result<Vec<SubscriptionAnime>, DomainError> {
+    ) -> Result<Option<SubscriptionAnime>, DomainError> {
         Ok(self
             .state
             .lock()
             .expect("state")
             .subscriptions
             .values()
-            .filter(|subscription| {
-                subscription.enabled
-                    && subscription.search_state
-                        == domain::subscription::SubscriptionSearchState::Pending
+            .find(|subscription| {
+                subscription.search_state == SubscriptionSearchState::Pending && subscription.enabled
             })
-            .cloned()
-            .collect())
+            .cloned())
+    }
+
+    async fn pick_one_localmatch(
+        &self,
+    ) -> Result<Option<SubscriptionAnime>, DomainError> {
+        Ok(self
+            .state
+            .lock()
+            .expect("state")
+            .subscriptions
+            .values()
+            .find(|subscription| {
+                subscription.search_state == SubscriptionSearchState::LocalMatch
+            })
+            .cloned())
+    }
+
+    async fn pick_one_pending_or_localmatch(
+        &self,
+    ) -> Result<Option<SubscriptionAnime>, DomainError> {
+        let state = self.state.lock().expect("state");
+        // 优先 LocalMatch
+        if let Some(sub) = state
+            .subscriptions
+            .values()
+            .find(|s| s.search_state == SubscriptionSearchState::LocalMatch)
+        {
+            return Ok(Some(sub.clone()));
+        }
+        // 回退 Pending + enabled
+        Ok(state
+            .subscriptions
+            .values()
+            .find(|s| {
+                s.search_state == SubscriptionSearchState::Pending && s.enabled
+            })
+            .cloned())
     }
 
     async fn list_subscriptions_by_anime(
@@ -296,4 +330,58 @@ async fn constructs_collection_and_exposes_runtime() {
         .expect("subscription");
 
     assert!(loaded.read_data().enabled);
+}
+
+#[tokio::test]
+async fn pick_one_pending_skips_disabled_subscription() {
+    let state = Arc::new(Mutex::new(State::default()));
+    let caps = SubscriptionCaps {
+        toggle: Arc::new(NoopToggle),
+        match_writer: Arc::new(NoopMatch),
+        search: Arc::new(NoopSearch),
+    };
+    let collection = SubscriptionAnimes::new(
+        caps,
+        Arc::new(NoopSubscriptions {
+            state: state.clone(),
+        }),
+        Arc::new(NoopRecords { state: state.clone() }),
+    );
+
+    // insert disabled pending + enabled pending subscriptions directly in repo
+    {
+        let mut s = state.lock().expect("state");
+        s.subscriptions.insert(
+            (UserId(1), SpaceId(1), AnimeId(1)),
+            SubscriptionAnime {
+                user_id: UserId(1),
+                space_id: SpaceId(1),
+                anime_id: AnimeId(1),
+                enabled: false,
+                bound_rule_name: None,
+                search_state: SubscriptionSearchState::Pending,
+                progress: 0,
+            },
+        );
+        s.subscriptions.insert(
+            (UserId(2), SpaceId(2), AnimeId(2)),
+            SubscriptionAnime {
+                user_id: UserId(2),
+                space_id: SpaceId(2),
+                anime_id: AnimeId(2),
+                enabled: true,
+                bound_rule_name: None,
+                search_state: SubscriptionSearchState::Pending,
+                progress: 0,
+            },
+        );
+    }
+
+    // pick_one_pending should only find the enabled one
+    let picked = collection
+        .pick_one_pending()
+        .await
+        .expect("pick_one_pending");
+    assert!(picked.is_some());
+    assert_eq!(picked.unwrap().read_data().anime_id, AnimeId(2));
 }

@@ -403,7 +403,7 @@ mod tests {
     #[async_trait]
     impl BizFactory for RecordingBizFactory {
         async fn open_biz(&self) -> Result<BizContext, DomainError> {
-            Ok(BizContext::new(Arc::new(RecordingBizProvider {
+            Ok(BizContext::new(0, Arc::new(RecordingBizProvider {
                 stats: self.stats.clone(),
             })))
         }

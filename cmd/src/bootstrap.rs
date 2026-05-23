@@ -107,6 +107,10 @@ pub async fn run(config: SchedulerConfig) -> Result<()> {
         vec![pool_handler],
     );
 
+    crate::local_match_runner::spawn_local_match_runner(
+        runtime.subscription_service.clone(),
+    );
+
     let app_state = Arc::new(build_http_state(runtime, config.key.as_str()));
     let router = build_router(app_state);
     let listener = tokio::net::TcpListener::bind(&config.addr).await?;

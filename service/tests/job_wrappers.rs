@@ -73,16 +73,6 @@ fn full_site_source() -> FeedSource {
     }
 }
 
-fn search_source() -> FeedSource {
-    FeedSource {
-        id: FeedSourceId("dmhy-search".to_string()),
-        title: "DMHY Search".to_string(),
-        site_url: None,
-        search_url: Some("https://share.dmhy.org/topics/rss/rss.xml?keyword={}".to_string()),
-        source_key: Some("dmhy-source".to_string()),
-    }
-}
-
 fn matching_rule(id: &str, name: &str, active: bool) -> MatchingRule {
     MatchingRule {
         id: MatchingRuleId(id.to_string()),
@@ -177,30 +167,6 @@ impl AnimeStateRepository for NoopAnimeStateRepository {
     }
 }
 
-struct NoopToggle;
-#[async_trait]
-impl SubscriptionToggleCap for NoopToggle {
-    async fn write_enabled(
-        &self,
-        _pk: (UserId, SpaceId, AnimeId),
-        _enabled: bool,
-    ) -> Result<(), DomainError> { Ok(()) }
-}
-
-struct NoopMatch;
-#[async_trait]
-impl SubscriptionMatchCap for NoopMatch {
-    async fn write_match_result(
-        &self,
-        _pk: (UserId, SpaceId, AnimeId),
-        _progress: i64,
-        _bound_rule: Option<String>,
-        _enabled: bool,
-    ) -> Result<(), DomainError> { Ok(()) }
-}
-
-struct NoopSearch;
-
 struct NoopRuleWriter;
 #[async_trait]
 impl RuleWriterCap for NoopRuleWriter {
@@ -212,21 +178,6 @@ impl RuleWriterCap for NoopRuleWriter {
         _order: u32,
         _pattern: &str,
         _active: bool,
-    ) -> Result<(), DomainError> { Ok(()) }
-}
-
-#[async_trait]
-impl SubscriptionSearchCap for NoopSearch {
-    async fn write_search_state(
-        &self,
-        _pk: (UserId, SpaceId, AnimeId),
-        _state: SubscriptionSearchState,
-    ) -> Result<(), DomainError> { Ok(()) }
-
-    async fn batch_write_search_state(
-        &self,
-        _pks: &[(UserId, SpaceId, AnimeId)],
-        _state: SubscriptionSearchState,
     ) -> Result<(), DomainError> { Ok(()) }
 }
 
@@ -463,20 +414,50 @@ impl SubscriptionAnimeRepository for InMemorySubscriptions {
             .collect())
     }
 
-    async fn list_pending_search_subscriptions(
+    async fn pick_one_pending(
         &self,
-    ) -> Result<Vec<SubscriptionAnime>, DomainError> {
+    ) -> Result<Option<SubscriptionAnime>, DomainError> {
         Ok(self
             .items
             .lock()
             .expect("subscriptions")
             .values()
-            .filter(|subscription| {
-                subscription.enabled
-                    && subscription.search_state == SubscriptionSearchState::Pending
+            .find(|subscription| subscription.search_state == SubscriptionSearchState::Pending && subscription.enabled)
+            .cloned())
+    }
+
+    async fn pick_one_localmatch(
+        &self,
+    ) -> Result<Option<SubscriptionAnime>, DomainError> {
+        Ok(self
+            .items
+            .lock()
+            .expect("subscriptions")
+            .values()
+            .find(|subscription| {
+                subscription.search_state == SubscriptionSearchState::LocalMatch
             })
-            .cloned()
-            .collect())
+            .cloned())
+    }
+
+    async fn pick_one_pending_or_localmatch(
+        &self,
+    ) -> Result<Option<SubscriptionAnime>, DomainError> {
+        let items = self.items.lock().expect("subscriptions");
+        // 优先 LocalMatch
+        if let Some(sub) = items
+            .values()
+            .find(|s| s.search_state == SubscriptionSearchState::LocalMatch)
+        {
+            return Ok(Some(sub.clone()));
+        }
+        // 回退 Pending + enabled
+        Ok(items
+            .values()
+            .find(|s| {
+                s.search_state == SubscriptionSearchState::Pending && s.enabled
+            })
+            .cloned())
     }
 
     async fn list_subscriptions_by_anime(

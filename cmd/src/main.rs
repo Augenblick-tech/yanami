@@ -3,6 +3,7 @@ mod config;
 mod http;
 mod matched_resource_action;
 mod metadata;
+mod local_match_runner;
 mod pool_consumer;
 
 use anyhow::Result;

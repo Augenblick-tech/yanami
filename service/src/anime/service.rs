@@ -400,7 +400,7 @@ impl AnimeService {
             .create(user_id, space_id, anime_id, true)
             .await?;
         self.subscription_service
-            .ensure_anime_search_pool(user_id, space_id, anime_id)
+            .start_anime_search(user_id, space_id, anime_id)
             .await?;
         Ok(())
     }
@@ -445,14 +445,13 @@ impl AnimeService {
         enabled: bool,
     ) -> Result<UpdateAnimeSearchEnabledOutcome, ApplicationError> {
         self.animes.load(anime_id).await?;
-        if self.subscriptions.load(user_id, space_id, anime_id).await?.is_none() {
-            self.subscriptions
-                .create(user_id, space_id, anime_id, false)
-                .await?;
-        }
+        self.subscriptions
+            .load(user_id, space_id, anime_id)
+            .await?
+            .ok_or(DomainError::InvariantViolation("not subscribed"))?;
         if enabled {
             self.subscription_service
-                .ensure_anime_search_pool(user_id, space_id, anime_id)
+                .start_anime_search(user_id, space_id, anime_id)
                 .await?;
         } else {
             self.subscription_service

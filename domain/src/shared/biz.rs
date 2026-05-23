@@ -20,12 +20,17 @@ pub trait BizFactory: Send + Sync {
 
 #[derive(Clone)]
 pub struct BizContext {
+    id: u64,
     provider: Arc<dyn InfraTxProvider>,
 }
 
 impl BizContext {
-    pub fn new(provider: Arc<dyn InfraTxProvider>) -> Self {
-        Self { provider }
+    pub fn new(id: u64, provider: Arc<dyn InfraTxProvider>) -> Self {
+        Self { id, provider }
+    }
+
+    pub fn id(&self) -> u64 {
+        self.id
     }
 
     pub fn provider(&self) -> &dyn InfraTxProvider {

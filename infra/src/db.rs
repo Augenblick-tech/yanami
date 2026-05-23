@@ -1,4 +1,10 @@
-use std::{any::Any, sync::Arc};
+use std::{
+    any::Any,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+};
 
 use anime::repository::{AnimeRepository, AnimeSnapshot};
 use async_trait::async_trait;
@@ -53,6 +59,7 @@ pub struct SqliteDb {
     secret_protector: Arc<SecretProtector>,
     user_id_counter: Arc<Mutex<Option<i64>>>,
     subscription_space_id_counter: Arc<Mutex<Option<i64>>>,
+    next_biz_id: Arc<AtomicU64>,
 }
 
 #[derive(Clone)]
@@ -61,8 +68,21 @@ pub(crate) struct SqliteBizProvider {
 }
 
 struct SqliteBizState {
+    id: u64,
     connection: PoolConnection<Sqlite>,
     committed: bool,
+}
+
+impl Drop for SqliteBizState {
+    fn drop(&mut self) {
+        if self.committed {
+            return;
+        }
+        tracing::trace!("biz #{} dropped without commit, auto-rolling back", self.id);
+        let _ = futures_executor::block_on(
+            sqlx::query("ROLLBACK").execute(&mut *self.connection),
+        );
+    }
 }
 
 struct SqliteBizDb {
@@ -121,6 +141,7 @@ impl InfraTxProvider for SqliteBizProvider {
             .await
             .map_err(|error| DomainError::external("biz context commit failed", error))?;
         state.committed = true;
+        tracing::trace!("biz #{} committed", state.id);
         Ok(())
     }
 
@@ -134,6 +155,7 @@ impl InfraTxProvider for SqliteBizProvider {
             .await
             .map_err(|error| DomainError::external("biz context rollback failed", error))?;
         state.committed = true;
+        tracing::trace!("biz #{} rolled back", state.id);
         Ok(())
     }
 }
@@ -152,6 +174,7 @@ impl SqliteDb {
             secret_protector: Arc::new(SecretProtector::new(application_key)?),
             user_id_counter: Arc::new(Mutex::new(None)),
             subscription_space_id_counter: Arc::new(Mutex::new(None)),
+            next_biz_id: Arc::new(AtomicU64::new(1)),
         })
     }
 
@@ -1361,6 +1384,7 @@ impl SystemInfrastructureInitializer for SqliteDb {
 #[async_trait]
 impl BizFactory for SqliteDb {
     async fn open_biz(&self) -> Result<BizContext, DomainError> {
+        let id = self.next_biz_id.fetch_add(1, Ordering::Relaxed);
         let mut connection = self
             .pool
             .acquire()
@@ -1370,8 +1394,10 @@ impl BizFactory for SqliteDb {
             .execute(&mut *connection)
             .await
             .map_err(|error| DomainError::external("biz context begin failed", error))?;
-        Ok(BizContext::new(Arc::new(SqliteBizProvider {
+        tracing::trace!("biz #{id} opened");
+        Ok(BizContext::new(id, Arc::new(SqliteBizProvider {
             state: Arc::new(Mutex::new(SqliteBizState {
+                id,
                 connection,
                 committed: false,
             })),
@@ -1466,6 +1492,95 @@ impl SubscriptionAnimeRepository for SqliteDb {
         row.map(TryInto::try_into).transpose()
     }
 
+    async fn pick_one_pending(
+        &self,
+    ) -> Result<Option<SubscriptionAnime>, DomainError> {
+        let row = query_as::<_, StoredSubscriptionAnimeRow>(
+            r#"SELECT user_id, space_id, anime_id, enabled, bound_rule_name, search_state, progress
+               FROM "anime_subscription"
+               WHERE search_state = $1 AND enabled = 1
+               LIMIT 1"#,
+        )
+        .bind(encode_subscription_search_state(
+            domain::subscription::SubscriptionSearchState::Pending,
+        ))
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|error| {
+            DomainError::external("pick one pending subscription failed", error)
+        })?;
+
+        row.map(TryInto::try_into).transpose()
+    }
+
+    async fn pick_one_localmatch(
+        &self,
+    ) -> Result<Option<SubscriptionAnime>, DomainError> {
+        let row = query_as::<_, StoredSubscriptionAnimeRow>(
+            r#"SELECT user_id, space_id, anime_id, enabled, bound_rule_name, search_state, progress
+               FROM "anime_subscription"
+               WHERE search_state = $1
+               LIMIT 1"#,
+        )
+        .bind(encode_subscription_search_state(
+            domain::subscription::SubscriptionSearchState::LocalMatch,
+        ))
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|error| {
+            DomainError::external("pick one localmatch subscription failed", error)
+        })?;
+
+        row.map(TryInto::try_into).transpose()
+    }
+
+    async fn pick_one_pending_or_localmatch(
+        &self,
+    ) -> Result<Option<SubscriptionAnime>, DomainError> {
+        let local_match = encode_subscription_search_state(
+            domain::subscription::SubscriptionSearchState::LocalMatch,
+        );
+        let pending = encode_subscription_search_state(
+            domain::subscription::SubscriptionSearchState::Pending,
+        );
+        let row = query_as::<_, StoredSubscriptionAnimeRow>(
+            r#"SELECT user_id, space_id, anime_id, enabled, bound_rule_name, search_state, progress
+               FROM "anime_subscription"
+               WHERE (search_state = $1) OR (search_state = $2 AND enabled = 1)
+               ORDER BY CASE search_state WHEN $1 THEN 0 ELSE 1 END
+               LIMIT 1"#,
+        )
+        .bind(local_match)
+        .bind(pending)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|error| {
+            DomainError::external("pick one pending or localmatch subscription failed", error)
+        })?;
+
+        row.map(TryInto::try_into).transpose()
+    }
+
+    async fn list_subscriptions_by_anime(
+        &self,
+        anime_id: AnimeId,
+    ) -> Result<Vec<SubscriptionAnime>, DomainError> {
+        let rows = query_as::<_, StoredSubscriptionAnimeRow>(
+            r#"SELECT user_id, space_id, anime_id, enabled, bound_rule_name, search_state, progress
+               FROM "anime_subscription"
+               WHERE anime_id = $1
+               ORDER BY user_id ASC, space_id ASC"#,
+        )
+        .bind(anime_id.0)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|error| DomainError::external("anime subscription list by anime failed", error))?;
+
+        rows.into_iter()
+            .map(TryInto::try_into)
+            .collect::<Result<Vec<_>, _>>()
+    }
+
     async fn list_subscriptions(
         &self,
         space_id: SpaceId,
@@ -1496,7 +1611,9 @@ impl SubscriptionAnimeRepository for SqliteDb {
         .bind(space_id.0)
         .fetch_all(&self.pool)
         .await
-        .map_err(|error| DomainError::external("list subscription anime ids by space failed", error))?;
+        .map_err(|error| {
+            DomainError::external("list subscription anime ids by space failed", error)
+        })?;
         Ok(rows.into_iter().map(|(id,)| AnimeId(id)).collect())
     }
 
@@ -1513,7 +1630,9 @@ impl SubscriptionAnimeRepository for SqliteDb {
         .bind(space_id.0)
         .fetch_all(&self.pool)
         .await
-        .map_err(|error| DomainError::external("enabled anime subscription list failed", error))?;
+        .map_err(|error| {
+            DomainError::external("enabled anime subscription list failed", error)
+        })?;
 
         rows.into_iter()
             .map(TryInto::try_into)
@@ -1532,49 +1651,6 @@ impl SubscriptionAnimeRepository for SqliteDb {
         .map_err(|error| {
             DomainError::external("all enabled anime subscription list failed", error)
         })?;
-
-        rows.into_iter()
-            .map(TryInto::try_into)
-            .collect::<Result<Vec<_>, _>>()
-    }
-
-    async fn list_pending_search_subscriptions(
-        &self,
-    ) -> Result<Vec<SubscriptionAnime>, DomainError> {
-        let rows = query_as::<_, StoredSubscriptionAnimeRow>(
-            r#"SELECT user_id, space_id, anime_id, enabled, bound_rule_name, search_state, progress
-               FROM "anime_subscription"
-               WHERE enabled = 1 AND search_state = $1
-               ORDER BY space_id ASC, user_id ASC, anime_id ASC"#,
-        )
-        .bind(encode_subscription_search_state(
-            domain::subscription::SubscriptionSearchState::Pending,
-        ))
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|error| {
-            DomainError::external("pending search anime subscription list failed", error)
-        })?;
-
-        rows.into_iter()
-            .map(TryInto::try_into)
-            .collect::<Result<Vec<_>, _>>()
-    }
-
-    async fn list_subscriptions_by_anime(
-        &self,
-        anime_id: AnimeId,
-    ) -> Result<Vec<SubscriptionAnime>, DomainError> {
-        let rows = query_as::<_, StoredSubscriptionAnimeRow>(
-            r#"SELECT user_id, space_id, anime_id, enabled, bound_rule_name, search_state, progress
-               FROM "anime_subscription"
-               WHERE anime_id = $1
-               ORDER BY user_id ASC, space_id ASC"#,
-        )
-        .bind(anime_id.0)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|error| DomainError::external("anime subscription list by anime failed", error))?;
 
         rows.into_iter()
             .map(TryInto::try_into)
@@ -1933,28 +2009,76 @@ impl SubscriptionAnimeRepository for SqliteBizDb {
             .collect::<Result<Vec<_>, _>>()
     }
 
-    async fn list_pending_search_subscriptions(
+    async fn pick_one_pending(
         &self,
-    ) -> Result<Vec<SubscriptionAnime>, DomainError> {
+    ) -> Result<Option<SubscriptionAnime>, DomainError> {
         let mut state = self.biz.state.lock().await;
-        let rows = query_as::<_, StoredSubscriptionAnimeRow>(
+        let row = query_as::<_, StoredSubscriptionAnimeRow>(
             r#"SELECT user_id, space_id, anime_id, enabled, bound_rule_name, search_state, progress
                FROM "anime_subscription"
-               WHERE enabled = 1 AND search_state = $1
-               ORDER BY space_id ASC, user_id ASC, anime_id ASC"#,
+               WHERE search_state = $1 AND enabled = 1
+               LIMIT 1"#,
         )
         .bind(encode_subscription_search_state(
             domain::subscription::SubscriptionSearchState::Pending,
         ))
-        .fetch_all(&mut *state.connection)
+        .fetch_optional(&mut *state.connection)
         .await
         .map_err(|error| {
-            DomainError::external("biz pending search anime subscription list failed", error)
+            DomainError::external("biz pick one pending subscription failed", error)
         })?;
 
-        rows.into_iter()
-            .map(TryInto::try_into)
-            .collect::<Result<Vec<_>, _>>()
+        row.map(TryInto::try_into).transpose()
+    }
+
+    async fn pick_one_localmatch(
+        &self,
+    ) -> Result<Option<SubscriptionAnime>, DomainError> {
+        let mut state = self.biz.state.lock().await;
+        let row = query_as::<_, StoredSubscriptionAnimeRow>(
+            r#"SELECT user_id, space_id, anime_id, enabled, bound_rule_name, search_state, progress
+               FROM "anime_subscription"
+               WHERE search_state = $1
+               LIMIT 1"#,
+        )
+        .bind(encode_subscription_search_state(
+            domain::subscription::SubscriptionSearchState::LocalMatch,
+        ))
+        .fetch_optional(&mut *state.connection)
+        .await
+        .map_err(|error| {
+            DomainError::external("biz pick one localmatch subscription failed", error)
+        })?;
+
+        row.map(TryInto::try_into).transpose()
+    }
+
+    async fn pick_one_pending_or_localmatch(
+        &self,
+    ) -> Result<Option<SubscriptionAnime>, DomainError> {
+        let mut state = self.biz.state.lock().await;
+        let local_match = encode_subscription_search_state(
+            domain::subscription::SubscriptionSearchState::LocalMatch,
+        );
+        let pending = encode_subscription_search_state(
+            domain::subscription::SubscriptionSearchState::Pending,
+        );
+        let row = query_as::<_, StoredSubscriptionAnimeRow>(
+            r#"SELECT user_id, space_id, anime_id, enabled, bound_rule_name, search_state, progress
+               FROM "anime_subscription"
+               WHERE (search_state = $1) OR (search_state = $2 AND enabled = 1)
+               ORDER BY CASE search_state WHEN $1 THEN 0 ELSE 1 END
+               LIMIT 1"#,
+        )
+        .bind(local_match)
+        .bind(pending)
+        .fetch_optional(&mut *state.connection)
+        .await
+        .map_err(|error| {
+            DomainError::external("biz pick one pending or localmatch subscription failed", error)
+        })?;
+
+        row.map(TryInto::try_into).transpose()
     }
 
     async fn list_subscriptions_by_anime(
@@ -2549,7 +2673,7 @@ impl SearchPoolRepository for SqliteBizDb {
         let mut state = self.biz.state.lock().await;
         for link in links {
             query(
-                r#"INSERT INTO "search_pool_sub" ("pool_id", "user_id", "space_id", "anime_id")
+                r#"INSERT OR IGNORE INTO "search_pool_sub" ("pool_id", "user_id", "space_id", "anime_id")
                    VALUES ($1, $2, $3, $4)"#,
             )
             .bind(link.pool_id)
@@ -4800,6 +4924,7 @@ fn decode_subscription_search_state(value: i64) -> Result<SubscriptionSearchStat
         0 => Ok(SubscriptionSearchState::Stopped),
         1 => Ok(SubscriptionSearchState::Pending),
         2 => Ok(SubscriptionSearchState::Running),
+        3 => Ok(SubscriptionSearchState::LocalMatch),
         _ => Err(DomainError::InvariantViolation(
             "invalid subscription search state",
         )),
@@ -4811,6 +4936,7 @@ fn encode_subscription_search_state(value: SubscriptionSearchState) -> i64 {
         SubscriptionSearchState::Stopped => 0,
         SubscriptionSearchState::Pending => 1,
         SubscriptionSearchState::Running => 2,
+        SubscriptionSearchState::LocalMatch => 3,
     }
 }
 
@@ -5087,5 +5213,37 @@ mod db_tests {
             .expect("inactive rule");
         assert_eq!(stored.id.0, "ani");
         assert!(!stored.active);
+    }
+
+    #[tokio::test]
+    async fn biz_context_drop_auto_rollbacks_without_panic() {
+        let db_file = NamedTempFile::new().expect("temp db");
+        let db_url = format!("sqlite://{}", db_file.path().display());
+        let database = SqliteDb::connect(&db_url, "test-key")
+            .await
+            .expect("connect database");
+
+        // Drop biz without commit — should auto-rollback, not panic
+        {
+            let _biz = database.open_biz().await.expect("first biz");
+        }
+
+        // Second biz after auto-rollback
+        {
+            let biz = database.open_biz().await.expect("second biz after auto-rollback");
+            biz.commit().await.expect("commit after auto-rollback");
+        }
+
+        // With explicit rollback
+        {
+            let biz = database.open_biz().await.expect("third biz");
+            biz.rollback().await.expect("explicit rollback");
+        }
+
+        // Fourth biz after explicit rollback
+        {
+            let biz = database.open_biz().await.expect("fourth biz after explicit rollback");
+            biz.commit().await.expect("commit after explicit rollback");
+        }
     }
 }

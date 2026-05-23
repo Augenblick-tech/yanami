@@ -38,6 +38,7 @@ pub enum SubscriptionSearchState {
     Stopped,
     Pending,
     Running,
+    LocalMatch,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -135,9 +136,15 @@ pub trait SubscriptionAnimeRepository: Send + Sync {
 
     async fn list_all_enabled_subscriptions(&self) -> Result<Vec<SubscriptionAnime>, DomainError>;
 
-    async fn list_pending_search_subscriptions(
+    async fn pick_one_pending(&self) -> Result<Option<SubscriptionAnime>, DomainError>;
+
+    async fn pick_one_localmatch(&self) -> Result<Option<SubscriptionAnime>, DomainError>;
+
+    /// 优先 LocalMatch（任何 enabled），回退 Pending + enabled=1。
+    /// 用于后台 local_match_runner 的单一入口查询。
+    async fn pick_one_pending_or_localmatch(
         &self,
-    ) -> Result<Vec<SubscriptionAnime>, DomainError>;
+    ) -> Result<Option<SubscriptionAnime>, DomainError>;
 
     async fn list_subscriptions_by_anime(
         &self,

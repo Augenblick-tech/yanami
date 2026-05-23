@@ -652,6 +652,7 @@ impl AnimeViewResponse {
                 domain::subscription::SubscriptionSearchState::Stopped => "stopped",
                 domain::subscription::SubscriptionSearchState::Pending => "pending",
                 domain::subscription::SubscriptionSearchState::Running => "running",
+                domain::subscription::SubscriptionSearchState::LocalMatch => "local_match",
             }
             .to_string(),
             metadata_locked: item.anime.metadata_locked,

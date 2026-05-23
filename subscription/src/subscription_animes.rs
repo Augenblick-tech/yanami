@@ -186,15 +186,35 @@ impl SubscriptionAnimes {
             .collect()
     }
 
-    pub async fn list_pending_search(
+    pub async fn pick_one_pending(
         &self,
-    ) -> Result<Vec<SubscriptionAnimeEntity>, ApplicationError> {
-        self.subscription_repository
-            .list_pending_search_subscriptions()
+    ) -> Result<Option<SubscriptionAnimeEntity>, ApplicationError> {
+        let Some(subscription) = self.subscription_repository.pick_one_pending().await? else {
+            return Ok(None);
+        };
+        Ok(Some(self.build_entity(subscription, vec![])?))
+    }
+
+    pub async fn pick_one_localmatch(
+        &self,
+    ) -> Result<Option<SubscriptionAnimeEntity>, ApplicationError> {
+        let Some(subscription) = self.subscription_repository.pick_one_localmatch().await? else {
+            return Ok(None);
+        };
+        Ok(Some(self.build_entity(subscription, vec![])?))
+    }
+
+    pub async fn pick_one_pending_or_localmatch(
+        &self,
+    ) -> Result<Option<SubscriptionAnimeEntity>, ApplicationError> {
+        let Some(subscription) = self
+            .subscription_repository
+            .pick_one_pending_or_localmatch()
             .await?
-            .into_iter()
-            .map(|subscription| self.build_entity(subscription, vec![]).map_err(Into::into))
-            .collect()
+        else {
+            return Ok(None);
+        };
+        Ok(Some(self.build_entity(subscription, vec![])?))
     }
 
     pub async fn list_by_anime(

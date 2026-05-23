@@ -124,6 +124,35 @@ impl SubscriptionAnimeEntity {
         Ok(())
     }
 
+    pub async fn mark_search_local_match(
+        &mut self,
+        search: &dyn SubscriptionSearchCap,
+    ) -> Result<(), DomainError> {
+        if self.subscription.search_state != SubscriptionSearchState::Pending {
+            return Ok(());
+        }
+        let pk = self.pk();
+        search.write_search_state(pk, SubscriptionSearchState::LocalMatch).await?;
+        self.subscription.search_state = SubscriptionSearchState::LocalMatch;
+        Ok(())
+    }
+
+    pub async fn complete_local_match(
+        &mut self,
+        planned_episode_count: i64,
+        search: &dyn SubscriptionSearchCap,
+    ) -> Result<bool, DomainError> {
+        if !self.needs_search(planned_episode_count) {
+            self.stop_search(search).await?;
+            Ok(false)
+        } else {
+            let pk = self.pk();
+            search.write_search_state(pk, SubscriptionSearchState::Running).await?;
+            self.subscription.search_state = SubscriptionSearchState::Running;
+            Ok(true)
+        }
+    }
+
     pub async fn resume_search(
         &mut self,
         search: &dyn SubscriptionSearchCap,
@@ -607,6 +636,41 @@ mod tests {
         let mut entity = make_subscription(true);
         entity.resume_search(&NoopSearch, -1).await.expect("resume_search");
         assert_eq!(entity.read_data().search_state, SubscriptionSearchState::Stopped);
+    }
+
+    #[tokio::test]
+    async fn mark_search_local_match_transitions_pending_to_local_match() {
+        let mut entity = make_subscription(true);
+        entity.start_search(&NoopSearch).await.expect("start_search");
+        entity.mark_search_local_match(&NoopSearch).await.expect("mark_local_match");
+        assert_eq!(entity.read_data().search_state, SubscriptionSearchState::LocalMatch);
+    }
+
+    #[tokio::test]
+    async fn mark_search_local_match_from_stopped_is_idempotent() {
+        let mut entity = make_subscription(true);
+        entity.mark_search_local_match(&NoopSearch).await.expect("mark_local_match");
+        assert_eq!(entity.read_data().search_state, SubscriptionSearchState::Stopped);
+    }
+
+    #[tokio::test]
+    async fn complete_local_match_when_completed_stops_search() {
+        let mut entity = make_subscription_with_progress(true, 12);
+        entity.start_search(&NoopSearch).await.expect("start_search");
+        entity.mark_search_local_match(&NoopSearch).await.expect("mark_local_match");
+        let needs_network = entity.complete_local_match(12, &NoopSearch).await.expect("complete");
+        assert!(!needs_network);
+        assert_eq!(entity.read_data().search_state, SubscriptionSearchState::Stopped);
+    }
+
+    #[tokio::test]
+    async fn complete_local_match_when_incomplete_switches_to_running() {
+        let mut entity = make_subscription_with_progress(true, 5);
+        entity.start_search(&NoopSearch).await.expect("start_search");
+        entity.mark_search_local_match(&NoopSearch).await.expect("mark_local_match");
+        let needs_network = entity.complete_local_match(12, &NoopSearch).await.expect("complete");
+        assert!(needs_network);
+        assert_eq!(entity.read_data().search_state, SubscriptionSearchState::Running);
     }
 
     #[tokio::test]

@@ -212,14 +212,39 @@ impl SubscriptionService {
         Ok((saved_count, matched_count))
     }
 
-    /// 为该 anime 创建搜索池条目并关联订阅，设状态为 Pending。
-    /// 流程：先匹配本地已存在资源 → 检查是否已补全 → 需要时再创建搜索池。
-    pub async fn ensure_anime_search_pool(
+    /// 入口：仅将搜索状态从 Stopped 改为 Pending，立即返回。重活在后台处理。
+    pub async fn start_anime_search(
         &self,
         user_id: UserId,
         space_id: SpaceId,
         anime_id: AnimeId,
     ) -> Result<(), ApplicationError> {
+        let mut entity = self
+            .subscriptions
+            .load(user_id, space_id, anime_id)
+            .await?
+            .ok_or(DomainError::InvariantViolation("subscription not found"))?;
+        entity.start_search(&*self.subscriptions.caps.search).await?;
+        Ok(())
+    }
+
+    /// 后台轮询入口：取一条 Pending/LocalMatch 订阅，执行本地匹配 + entity 决策 + 建池。
+    /// 返回 true 表示处理了一条，false 表示无等待处理的条目。
+    /// runner 调用此方法，无实体接触，无根关联对象调用。
+    pub async fn process_one_local_match(&self) -> Result<bool, ApplicationError> {
+        let mut entity = match self.subscriptions.pick_one_pending_or_localmatch().await? {
+            Some(e) => e,
+            None => return Ok(false),
+        };
+        let subscription = entity.read_data().clone();
+        let user_id = subscription.user_id;
+        let space_id = subscription.space_id;
+        let anime_id = subscription.anime_id;
+
+        entity
+            .mark_search_local_match(&*self.subscriptions.caps.search)
+            .await?;
+
         let metadata = self.animes.load(anime_id).await?.into_snapshot().metadata;
         let keywords = subscription_keywords(&metadata);
         let planned = metadata.planned_episode_count.0;
@@ -234,11 +259,8 @@ impl SubscriptionService {
             .await?;
         let mut matched_local = 0usize;
         for resource in &resources {
-            let Some(entity) = self.subscriptions.load(user_id, space_id, anime_id).await? else {
-                return Err(DomainError::InvariantViolation("subscription not found").into());
-            };
             match self
-                .apply_resource_to_subscription(entity.into_snapshot(), resource.read_data())
+                .apply_resource_to_subscription(subscription.clone(), resource.read_data())
                 .await
             {
                 Ok(true) => matched_local += 1,
@@ -248,37 +270,50 @@ impl SubscriptionService {
                         anime_id = %anime_id.0,
                         resource_id = %resource.read_data().id.0,
                         ?error,
-                        "ensure_anime_search_pool: local match failed, skipping resource"
+                        "process_one_local_match: local match failed, skipping resource"
                     );
                 }
             }
         }
 
-        // Step 2: 检查是否已补全，无需网络搜索
-        let mut entity = self
-            .subscriptions
-            .load(user_id, space_id, anime_id)
-            .await?
-            .ok_or(DomainError::InvariantViolation("subscription not found"))?;
-        if !entity.needs_search(planned) {
-            entity.stop_search(&*self.subscriptions.caps.search).await?;
-            tracing::info!(
-                anime_id = %anime_id.0,
-                matched_local,
-                progress = %entity.read_data().progress,
-                planned,
-                "ensure_anime_search_pool: completed by local resources, search stopped"
-            );
-            return Ok(());
-        }
-
-        // Step 3: 本地不足，仍需网络搜索
+        // Step 2: 加载 sources（前缀读，不需要 biz）
         let sources = self.search_sources_for_space(space_id).await?;
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs() as i64)
             .unwrap_or(0);
 
+        // Step 3: 开 biz，entity 决策 + 建池同事务
+        let biz = self.biz_factory.open_biz().await?;
+        let biz_id = biz.id();
+        let pool_repo = self.search_pool.with_biz(&biz)?;
+        let subscriptions = self.subscriptions.with_biz(&biz).await?;
+
+        tracing::trace!("biz #{biz_id}: subscriptions.load");
+        let mut entity = subscriptions
+            .load(user_id, space_id, anime_id)
+            .await?
+            .ok_or(DomainError::InvariantViolation("subscription not found"))?;
+
+        tracing::trace!("biz #{biz_id}: complete_local_match");
+        let needs_network = entity
+            .complete_local_match(planned, &*subscriptions.caps.search)
+            .await?;
+
+        if !needs_network {
+            tracing::trace!("biz #{biz_id}: commit (no network needed)");
+            biz.commit().await?;
+            tracing::info!(
+                anime_id = %anime_id.0,
+                matched_local,
+                progress = %entity.read_data().progress,
+                planned,
+                "process_one_local_match: completed by local resources"
+            );
+            return Ok(true);
+        }
+
+        // 需创建搜索池
         let mut all_entries: Vec<(FeedSourceId, Vec<SearchPoolEntryData>)> = Vec::new();
         for source in &sources {
             let source_data = source.read_data();
@@ -299,12 +334,9 @@ impl SubscriptionService {
             all_entries.push((feed_id, entries));
         }
 
-        let biz = self.biz_factory.open_biz().await?;
-        let pool_repo = self.search_pool.with_biz(&biz)?;
-        let subscriptions = self.subscriptions.with_biz(&biz).await?;
-
         let mut pool_ids = Vec::new();
         for (_feed_id, entries) in &all_entries {
+            tracing::trace!("biz #{biz_id}: insert_pool_entries");
             let ids = pool_repo.insert_pool_entries(entries).await?;
             pool_ids.extend(ids);
         }
@@ -318,14 +350,10 @@ impl SubscriptionService {
                 anime_id,
             })
             .collect();
+        tracing::trace!("biz #{biz_id}: insert_sub_links");
         pool_repo.insert_sub_links(&links).await?;
 
-        let mut entity = subscriptions
-            .load(user_id, space_id, anime_id)
-            .await?
-            .ok_or(DomainError::InvariantViolation("subscription not found"))?;
-        entity.start_search(&*subscriptions.caps.search).await?;
-
+        tracing::trace!("biz #{biz_id}: commit");
         biz.commit().await?;
 
         tracing::info!(
@@ -334,9 +362,9 @@ impl SubscriptionService {
             progress = %entity.read_data().progress,
             planned,
             pool_entries = all_entries.iter().map(|(_, e)| e.len()).sum::<usize>(),
-            "ensure_anime_search_pool: local resources insufficient, search pool created"
+            "process_one_local_match: local insufficient, search pool created"
         );
-        Ok(())
+        Ok(true)
     }
 
     /// 清理该订阅的池条目和孤儿条目，设状态为 Stopped。
@@ -723,7 +751,7 @@ impl SubscriptionService {
                 .collect();
             self.subscriptions.save_list(&entities).await?;
             for anime_id in &to_create {
-                self.ensure_anime_search_pool(user_id, space_id, *anime_id)
+                self.start_anime_search(user_id, space_id, *anime_id)
                     .await?;
             }
         }
