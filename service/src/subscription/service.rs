@@ -213,7 +213,7 @@ impl SubscriptionService {
     }
 
     /// 为该 anime 创建搜索池条目并关联订阅，设状态为 Pending。
-    /// 所有 DB 操作在同一个 biz 事务中。
+    /// 流程：先匹配本地已存在资源 → 检查是否已补全 → 需要时再创建搜索池。
     pub async fn ensure_anime_search_pool(
         &self,
         user_id: UserId,
@@ -222,8 +222,58 @@ impl SubscriptionService {
     ) -> Result<(), ApplicationError> {
         let metadata = self.animes.load(anime_id).await?.into_snapshot().metadata;
         let keywords = subscription_keywords(&metadata);
-        let sources = self.search_sources_for_space(space_id).await?;
+        let planned = metadata.planned_episode_count.0;
 
+        // Step 1: 匹配本地已有资源
+        let resources = self
+            .resources
+            .list(ResourceListQuery {
+                since: None,
+                keywords: Some(keywords.clone()),
+            })
+            .await?;
+        let mut matched_local = 0usize;
+        for resource in &resources {
+            let Some(entity) = self.subscriptions.load(user_id, space_id, anime_id).await? else {
+                return Err(DomainError::InvariantViolation("subscription not found").into());
+            };
+            match self
+                .apply_resource_to_subscription(entity.into_snapshot(), resource.read_data())
+                .await
+            {
+                Ok(true) => matched_local += 1,
+                Ok(false) => {}
+                Err(error) => {
+                    tracing::error!(
+                        anime_id = %anime_id.0,
+                        resource_id = %resource.read_data().id.0,
+                        ?error,
+                        "ensure_anime_search_pool: local match failed, skipping resource"
+                    );
+                }
+            }
+        }
+
+        // Step 2: 检查是否已补全，无需网络搜索
+        let mut entity = self
+            .subscriptions
+            .load(user_id, space_id, anime_id)
+            .await?
+            .ok_or(DomainError::InvariantViolation("subscription not found"))?;
+        if !entity.needs_search(planned) {
+            entity.stop_search(&*self.subscriptions.caps.search).await?;
+            tracing::info!(
+                anime_id = %anime_id.0,
+                matched_local,
+                progress = %entity.read_data().progress,
+                planned,
+                "ensure_anime_search_pool: completed by local resources, search stopped"
+            );
+            return Ok(());
+        }
+
+        // Step 3: 本地不足，仍需网络搜索
+        let sources = self.search_sources_for_space(space_id).await?;
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs() as i64)
@@ -275,9 +325,17 @@ impl SubscriptionService {
             .await?
             .ok_or(DomainError::InvariantViolation("subscription not found"))?;
         entity.start_search(&*subscriptions.caps.search).await?;
-        subscriptions.save(&entity).await?;
 
         biz.commit().await?;
+
+        tracing::info!(
+            anime_id = %anime_id.0,
+            matched_local,
+            progress = %entity.read_data().progress,
+            planned,
+            pool_entries = all_entries.iter().map(|(_, e)| e.len()).sum::<usize>(),
+            "ensure_anime_search_pool: local resources insufficient, search pool created"
+        );
         Ok(())
     }
 
@@ -301,7 +359,6 @@ impl SubscriptionService {
             .await?
             .ok_or(DomainError::InvariantViolation("subscription not found"))?;
         entity.stop_search(&*subscriptions.caps.search).await?;
-        subscriptions.save(&entity).await?;
 
         biz.commit().await?;
         Ok(())
@@ -385,91 +442,6 @@ impl SubscriptionService {
             checked_subscription_count,
             resumed_anime_count: resumed_anime_ids.len(),
         })
-    }
-
-    pub async fn match_local_resources(
-        &self,
-        user_id: domain::user::UserId,
-        space_id: SpaceId,
-        anime_id: AnimeId,
-    ) -> Result<usize, ApplicationError> {
-        let metadata = self.animes.load(anime_id).await?.into_snapshot().metadata;
-        let keywords = subscription_keywords(&metadata);
-        let resources = self
-            .resources
-            .list(ResourceListQuery {
-                since: None,
-                keywords: Some(keywords),
-            })
-            .await?;
-        let mut matched_count = 0usize;
-
-        for resource in resources {
-            let loaded = match self.subscriptions.load(user_id, space_id, anime_id).await {
-                Ok(entity) => entity,
-                Err(error) => {
-                    tracing::error!(
-                        anime_id = %anime_id.0,
-                        resource_id = %resource.read_data().id.0,
-                        ?error,
-                        "match_local_resources: load subscription failed, skipping resource"
-                    );
-                    continue;
-                }
-            };
-            let Some(entity) = loaded else {
-                return Ok(matched_count);
-            };
-            match self
-                .apply_resource_to_subscription(entity.into_snapshot(), resource.read_data())
-                .await
-            {
-                Ok(true) => matched_count += 1,
-                Ok(false) => {}
-                Err(error) => {
-                    tracing::error!(
-                        anime_id = %anime_id.0,
-                        resource_id = %resource.read_data().id.0,
-                        resource_title = %resource.read_data().title,
-                        ?error,
-                        "match_local_resources: apply failed, skipping resource"
-                    );
-                }
-            }
-        }
-
-        Ok(matched_count)
-    }
-
-    pub async fn match_unbound_resources(&self) -> Result<usize, ApplicationError> {
-        let subscriptions = self.subscriptions.list_enabled().await?;
-        let mut matched_count = 0usize;
-
-        for subscription in subscriptions {
-            let subscription_data = subscription.read_data();
-            if subscription_data.bound_rule_name.is_some() {
-                continue;
-            }
-            match self
-                .match_local_resources(
-                    subscription_data.user_id,
-                    subscription_data.space_id,
-                    subscription_data.anime_id,
-                )
-                .await
-            {
-                Ok(count) => matched_count += count,
-                Err(error) => {
-                    tracing::error!(
-                        anime_id = %subscription_data.anime_id.0,
-                        ?error,
-                        "match_unbound_resources: match_local_resources failed, skipping subscription"
-                    );
-                }
-            }
-        }
-
-        Ok(matched_count)
     }
 
     async fn apply_resource_to_all_subscriptions(

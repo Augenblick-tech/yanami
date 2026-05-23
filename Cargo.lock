@@ -3114,6 +3114,7 @@ dependencies = [
  "rule",
  "thiserror 1.0.69",
  "tokio",
+ "tracing",
  "unicode-normalization",
  "user",
 ]

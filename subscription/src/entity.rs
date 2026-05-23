@@ -44,6 +44,10 @@ impl SubscriptionAnimeEntity {
         self.subscription
     }
 
+    pub fn needs_search(&self, planned_episode_count: i64) -> bool {
+        self.subscription.progress < planned_episode_count
+    }
+
     pub async fn disable(&mut self, toggle: &dyn SubscriptionToggleCap) -> Result<(), DomainError> {
         if !self.subscription.enabled {
             return Ok(());
