@@ -263,7 +263,6 @@ pub trait SearchPoolRepository: Send + Sync {
         space_id: SpaceId,
         anime_id: AnimeId,
     ) -> Result<(), DomainError>;
-    async fn cleanup_orphans(&self) -> Result<(), DomainError>;
     async fn count_by_anime(&self, anime_id: AnimeId) -> Result<i64, DomainError>;
     async fn count_distinct_anime(&self) -> Result<i64, DomainError>;
     async fn count_pending_links(&self) -> Result<i64, DomainError>;

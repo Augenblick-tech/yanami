@@ -7,7 +7,7 @@ use domain::{
     subscription::{
         capability::{SubscriptionMatchCap, SubscriptionSearchCap, SubscriptionToggleCap},
         AnimeMatchingContext, AnimeProgressState, MatchDecision, MatchRecord, MatchResourceId,
-        SkipReason, SubscriptionAnime, SubscriptionSearchState,
+        SearchPoolRepository, SkipReason, SubscriptionAnime, SubscriptionSearchState,
     },
 };
 use unicode_normalization::UnicodeNormalization;
@@ -48,13 +48,21 @@ impl SubscriptionAnimeEntity {
         self.subscription.progress < planned_episode_count
     }
 
-    pub async fn disable(&mut self, toggle: &dyn SubscriptionToggleCap) -> Result<(), DomainError> {
+    pub async fn disable(
+        &mut self,
+        toggle: &dyn SubscriptionToggleCap,
+        search: &dyn SubscriptionSearchCap,
+        pool: &dyn SearchPoolRepository,
+    ) -> Result<(), DomainError> {
         if !self.subscription.enabled {
             return Ok(());
         }
         let pk = self.pk();
+        pool.cleanup_by_subscription(pk.0, pk.1, pk.2).await?;
         toggle.write_enabled(pk, false).await?;
+        search.write_search_state(pk, SubscriptionSearchState::Stopped).await?;
         self.subscription.enabled = false;
+        self.subscription.search_state = SubscriptionSearchState::Stopped;
         Ok(())
     }
 
@@ -389,6 +397,13 @@ mod tests {
         user::UserId,
     };
 
+    use std::sync::Arc;
+
+    use domain::{
+        feed::FeedSourceId,
+        subscription::{PoolSubLink, SearchPoolEntry, SearchPoolEntryData},
+    };
+
     use super::*;
 
     struct NoopToggle;
@@ -415,6 +430,84 @@ mod tests {
         ) -> Result<(), DomainError> {
             Ok(())
         }
+    }
+
+    struct NoopPool;
+    #[async_trait]
+    impl SearchPoolRepository for NoopPool {
+        async fn insert_pool_entries(&self, _: &[SearchPoolEntryData]) -> Result<Vec<i64>, DomainError> { Ok(vec![]) }
+        async fn insert_sub_links(&self, _: &[PoolSubLink]) -> Result<(), DomainError> { Ok(()) }
+        async fn list_distinct_feed_ids(&self) -> Result<Vec<FeedSourceId>, DomainError> { Ok(vec![]) }
+        async fn pick_random(&self, _: &FeedSourceId) -> Result<Option<SearchPoolEntry>, DomainError> { Ok(None) }
+        async fn delete_entry(&self, _: i64) -> Result<(), DomainError> { Ok(()) }
+        async fn delete_sub_links_by_pool(&self, _: i64) -> Result<(), DomainError> { Ok(()) }
+        async fn cleanup_by_subscription(&self, _: UserId, _: SpaceId, _: AnimeId) -> Result<(), DomainError> { Ok(()) }
+        async fn count_by_anime(&self, _: AnimeId) -> Result<i64, DomainError> { Ok(0) }
+        async fn count_distinct_anime(&self) -> Result<i64, DomainError> { Ok(0) }
+        async fn count_pending_links(&self) -> Result<i64, DomainError> { Ok(0) }
+    }
+
+    struct RecordingSearch {
+        state_written: Arc<std::sync::Mutex<Option<SubscriptionSearchState>>>,
+    }
+    impl RecordingSearch {
+        fn new() -> Self {
+            RecordingSearch {
+                state_written: Arc::new(std::sync::Mutex::new(None)),
+            }
+        }
+        fn last_written_state(&self) -> Option<SubscriptionSearchState> {
+            *self.state_written.lock().unwrap()
+        }
+    }
+    #[async_trait]
+    impl SubscriptionSearchCap for RecordingSearch {
+        async fn write_search_state(
+            &self,
+            _pk: (UserId, SpaceId, AnimeId),
+            state: SubscriptionSearchState,
+        ) -> Result<(), DomainError> {
+            *self.state_written.lock().unwrap() = Some(state);
+            Ok(())
+        }
+
+        async fn batch_write_search_state(
+            &self,
+            _pks: &[(UserId, SpaceId, AnimeId)],
+            _state: SubscriptionSearchState,
+        ) -> Result<(), DomainError> {
+            Ok(())
+        }
+    }
+
+    struct RecordingPool {
+        cleanup_called: Arc<std::sync::atomic::AtomicBool>,
+    }
+    impl RecordingPool {
+        fn new() -> Self {
+            RecordingPool {
+                cleanup_called: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            }
+        }
+        fn cleanup_was_called(&self) -> bool {
+            self.cleanup_called.load(std::sync::atomic::Ordering::SeqCst)
+        }
+    }
+    #[async_trait]
+    impl SearchPoolRepository for RecordingPool {
+        async fn insert_pool_entries(&self, _: &[SearchPoolEntryData]) -> Result<Vec<i64>, DomainError> { Ok(vec![]) }
+        async fn insert_sub_links(&self, _: &[PoolSubLink]) -> Result<(), DomainError> { Ok(()) }
+        async fn list_distinct_feed_ids(&self) -> Result<Vec<FeedSourceId>, DomainError> { Ok(vec![]) }
+        async fn pick_random(&self, _: &FeedSourceId) -> Result<Option<SearchPoolEntry>, DomainError> { Ok(None) }
+        async fn delete_entry(&self, _: i64) -> Result<(), DomainError> { Ok(()) }
+        async fn delete_sub_links_by_pool(&self, _: i64) -> Result<(), DomainError> { Ok(()) }
+        async fn cleanup_by_subscription(&self, _: UserId, _: SpaceId, _: AnimeId) -> Result<(), DomainError> {
+            self.cleanup_called.store(true, std::sync::atomic::Ordering::SeqCst);
+            Ok(())
+        }
+        async fn count_by_anime(&self, _: AnimeId) -> Result<i64, DomainError> { Ok(0) }
+        async fn count_distinct_anime(&self) -> Result<i64, DomainError> { Ok(0) }
+        async fn count_pending_links(&self) -> Result<i64, DomainError> { Ok(0) }
     }
 
     struct NoopSearch;
@@ -507,7 +600,7 @@ mod tests {
     #[tokio::test]
     async fn disable_changes_enabled_to_disabled() {
         let mut entity = make_subscription(true);
-        entity.disable(&NoopToggle).await.expect("disable");
+        entity.disable(&NoopToggle, &NoopSearch, &NoopPool).await.expect("disable");
         assert!(!entity.read_data().enabled);
     }
 
@@ -521,8 +614,38 @@ mod tests {
     #[tokio::test]
     async fn disable_on_already_disabled_is_idempotent() {
         let mut entity = make_subscription(false);
-        entity.disable(&NoopToggle).await.expect("disable");
+        entity.disable(&NoopToggle, &NoopSearch, &NoopPool).await.expect("disable");
         assert!(!entity.read_data().enabled);
+    }
+
+    #[tokio::test]
+    async fn disable_cleans_pool_and_stops_search() {
+        let search = RecordingSearch::new();
+        let pool = RecordingPool::new();
+        let mut entity = make_subscription(true);
+        entity.start_search(&NoopSearch).await.expect("start_search");
+        entity.disable(&NoopToggle, &search, &pool).await.expect("disable");
+        assert!(!entity.read_data().enabled);
+        assert_eq!(
+            entity.read_data().search_state,
+            SubscriptionSearchState::Stopped
+        );
+        assert!(pool.cleanup_was_called());
+        assert_eq!(
+            search.last_written_state(),
+            Some(SubscriptionSearchState::Stopped)
+        );
+    }
+
+    #[tokio::test]
+    async fn disable_already_disabled_does_not_call_pool_or_search() {
+        let search = RecordingSearch::new();
+        let pool = RecordingPool::new();
+        let mut entity = make_subscription(false);
+        entity.disable(&NoopToggle, &search, &pool).await.expect("disable");
+        assert!(!entity.read_data().enabled);
+        assert!(!pool.cleanup_was_called());
+        assert_eq!(search.last_written_state(), None);
     }
 
     #[tokio::test]

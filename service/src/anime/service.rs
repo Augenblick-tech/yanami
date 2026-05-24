@@ -424,15 +424,29 @@ impl AnimeService {
         enabled: bool,
     ) -> Result<UpdateAnimeFlagOutcome, ApplicationError> {
         self.animes.load(anime_id).await?;
-        let mut subscription = self
-            .subscriptions
-            .load(user_id, space_id, anime_id)
-            .await?
-            .ok_or(DomainError::InvariantViolation("not subscribed"))?;
         if enabled {
-            subscription.enable(&*self.subscriptions.caps.toggle).await?;
+            let mut entity = self
+                .subscriptions
+                .load(user_id, space_id, anime_id)
+                .await?
+                .ok_or(DomainError::InvariantViolation("not subscribed"))?;
+            entity.enable(&*self.subscriptions.caps.toggle).await?;
         } else {
-            subscription.disable(&*self.subscriptions.caps.toggle).await?;
+            let biz = self.subscription_service.biz_factory.open_biz().await?;
+            let subscriptions = self.subscriptions.with_biz(&biz).await?;
+            let pool = self.subscription_service.search_pool.with_biz(&biz)?;
+            let mut entity = subscriptions
+                .load(user_id, space_id, anime_id)
+                .await?
+                .ok_or(DomainError::InvariantViolation("not subscribed"))?;
+            entity
+                .disable(
+                    &*subscriptions.caps.toggle,
+                    &*subscriptions.caps.search,
+                    &*pool,
+                )
+                .await?;
+            biz.commit().await?;
         }
         Ok(UpdateAnimeFlagOutcome { anime_id, enabled })
     }

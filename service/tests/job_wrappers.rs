@@ -191,7 +191,6 @@ impl SearchPoolRepository for NoopSearchPool {
     async fn delete_entry(&self, _id: i64) -> Result<(), DomainError> { Ok(()) }
     async fn delete_sub_links_by_pool(&self, _pool_id: i64) -> Result<(), DomainError> { Ok(()) }
     async fn cleanup_by_subscription(&self, _user_id: UserId, _space_id: SpaceId, _anime_id: AnimeId) -> Result<(), DomainError> { Ok(()) }
-    async fn cleanup_orphans(&self) -> Result<(), DomainError> { Ok(()) }
     async fn count_by_anime(&self, _anime_id: AnimeId) -> Result<i64, DomainError> { Ok(0) }
     async fn count_distinct_anime(&self) -> Result<i64, DomainError> { Ok(0) }
     async fn count_pending_links(&self) -> Result<i64, DomainError> { Ok(0) }

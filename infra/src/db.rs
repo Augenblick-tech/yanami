@@ -2591,17 +2591,6 @@ impl SearchPoolRepository for SqliteDb {
         Ok(())
     }
 
-    async fn cleanup_orphans(&self) -> Result<(), DomainError> {
-        query(
-            r#"DELETE FROM "search_pool"
-               WHERE "id" NOT IN (SELECT DISTINCT "pool_id" FROM "search_pool_sub")"#,
-        )
-        .execute(&self.pool)
-        .await
-        .map_err(|error| DomainError::external("search_pool orphan cleanup failed", error))?;
-        Ok(())
-    }
-
     async fn count_by_anime(&self, anime_id: AnimeId) -> Result<i64, DomainError> {
         let (count,) = query_as::<_, (i64,)>(
             r#"SELECT COUNT(*) FROM "search_pool" WHERE "anime_id" = $1"#,
@@ -2759,17 +2748,6 @@ impl SearchPoolRepository for SqliteBizDb {
         .execute(&mut *state.connection)
         .await
         .map_err(|error| DomainError::external("biz search_pool_sub cleanup failed", error))?;
-        query(
-            r#"DELETE FROM "search_pool" WHERE "id" NOT IN (SELECT DISTINCT "pool_id" FROM "search_pool_sub")"#,
-        )
-        .execute(&mut *state.connection)
-        .await
-        .map_err(|error| DomainError::external("biz search_pool orphans cleanup failed", error))?;
-        Ok(())
-    }
-
-    async fn cleanup_orphans(&self) -> Result<(), DomainError> {
-        let mut state = self.biz.state.lock().await;
         query(
             r#"DELETE FROM "search_pool" WHERE "id" NOT IN (SELECT DISTINCT "pool_id" FROM "search_pool_sub")"#,
         )
@@ -5245,5 +5223,341 @@ mod db_tests {
             let biz = database.open_biz().await.expect("fourth biz after explicit rollback");
             biz.commit().await.expect("commit after explicit rollback");
         }
+    }
+
+    use domain::subscription::capability::{SubscriptionSearchCap, SubscriptionToggleCap};
+
+    #[tokio::test]
+    async fn biz_disable_cleans_pool_and_writes_enabled_and_stops_search_in_one_tx() -> Result<(), DomainError> {
+        let db_file = NamedTempFile::new().expect("temp db");
+        let db_url = format!("sqlite://{}", db_file.path().display());
+        let database = SqliteDb::new(&db_url, "test-key")
+            .await
+            .expect("initialize database");
+
+        database
+            .create_anime_metadata(&AnimeMetadata {
+                id: AnimeId(1),
+                titles: AnimeTitleSet {
+                    original_ja: "Test".to_string(),
+                    localized_zh_cn: "测试".to_string(),
+                    localized_zh_tw: "測試".to_string(),
+                    search_name: "test".to_string(),
+                    aliases: vec![],
+                },
+                broadcast_weekday: BroadcastWeekday(1),
+                planned_episode_count: PlannedEpisodeCount(12),
+                air_date: AirDate("2026-04-01".to_string()),
+                season: SeasonNumber(1),
+            })
+            .await
+            .expect("create anime");
+
+        let sub = SubscriptionAnime {
+            user_id: UserId(1),
+            space_id: SpaceId(1),
+            anime_id: AnimeId(1),
+            enabled: true,
+            bound_rule_name: None,
+            search_state: SubscriptionSearchState::Pending,
+            progress: 0,
+        };
+        database.save_subscription(&sub).await.expect("save subscription");
+
+        // insert pool entries + sub_links directly via SQL
+        query(
+            r#"INSERT INTO "search_pool" ("anime_id", "feed_id", "keyword", "search_url", "created_at")
+               VALUES (1, 'test-feed', 'keyword', 'http://example.com', 1000)"#,
+        )
+        .execute(&database.pool)
+        .await
+        .expect("insert pool entry");
+        query(
+            r#"INSERT INTO "search_pool_sub" ("pool_id", "user_id", "space_id", "anime_id")
+               VALUES (1, 1, 1, 1)"#,
+        )
+        .execute(&database.pool)
+        .await
+        .expect("insert sub link");
+
+        // verify initial state
+        let pool_count: (i64,) = query_as(
+            r#"SELECT COUNT(*) FROM "search_pool" WHERE "anime_id" = 1"#,
+        )
+        .fetch_one(&database.pool)
+        .await
+        .expect("count pool by anime");
+        assert_eq!(pool_count.0, 1, "should have 1 pool entry before disable");
+
+        // biz: cleanup + disable + stop_search
+        {
+            let biz = database.open_biz().await.expect("open biz");
+            let biz_db = database.bind_biz(&biz).expect("bind biz");
+            biz_db
+                .cleanup_by_subscription(UserId(1), SpaceId(1), AnimeId(1))
+                .await
+                .expect("cleanup pool");
+            biz_db
+                .write_enabled((UserId(1), SpaceId(1), AnimeId(1)), false)
+                .await
+                .expect("write enabled");
+            biz_db
+                .write_search_state((UserId(1), SpaceId(1), AnimeId(1)), SubscriptionSearchState::Stopped)
+                .await
+                .expect("write search state");
+            biz.commit().await.expect("commit biz");
+        }
+
+        // verify pool entries cleaned
+        let pool_count: (i64,) = query_as(
+            r#"SELECT COUNT(*) FROM "search_pool" WHERE "anime_id" = 1"#,
+        )
+        .fetch_one(&database.pool)
+        .await
+        .expect("count pool by anime");
+        assert_eq!(pool_count.0, 0, "pool entries should be cleaned");
+
+        // verify sub_links cleaned
+        let link_count: (i64,) = query_as(
+            r#"SELECT COUNT(*) FROM "search_pool_sub" WHERE "anime_id" = 1"#,
+        )
+        .fetch_one(&database.pool)
+        .await
+        .expect("count sub links");
+        assert_eq!(link_count.0, 0, "sub links should be cleaned");
+
+        // verify subscription state
+        let row = query_as::<_, (bool, i64)>(
+            r#"SELECT "enabled", "search_state" FROM "anime_subscription"
+               WHERE "anime_id" = 1 LIMIT 1"#,
+        )
+        .fetch_one(&database.pool)
+        .await
+        .expect("fetch subscription");
+        assert!(!row.0, "enabled should be false");
+        assert_eq!(row.1, 0, "search_state should be Stopped(0)");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn delete_subscription_removes_all_related_records() -> Result<(), DomainError> {
+        let db_file = NamedTempFile::new().expect("temp db");
+        let db_url = format!("sqlite://{}", db_file.path().display());
+        let database = SqliteDb::new(&db_url, "test-key")
+            .await
+            .expect("initialize database");
+
+        database
+            .create_anime_metadata(&AnimeMetadata {
+                id: AnimeId(2),
+                titles: AnimeTitleSet {
+                    original_ja: "Test2".to_string(),
+                    localized_zh_cn: "测试2".to_string(),
+                    localized_zh_tw: "測試2".to_string(),
+                    search_name: "test2".to_string(),
+                    aliases: vec![],
+                },
+                broadcast_weekday: BroadcastWeekday(2),
+                planned_episode_count: PlannedEpisodeCount(24),
+                air_date: AirDate("2026-07-01".to_string()),
+                season: SeasonNumber(1),
+            })
+            .await
+            .expect("create anime");
+
+        let sub = SubscriptionAnime {
+            user_id: UserId(2),
+            space_id: SpaceId(2),
+            anime_id: AnimeId(2),
+            enabled: true,
+            bound_rule_name: None,
+            search_state: SubscriptionSearchState::Running,
+            progress: 5,
+        };
+        database.save_subscription(&sub).await.expect("save subscription");
+
+        query(
+            r#"INSERT INTO "download_record"
+               ("user_id", "space_id", "anime_id", "resource_id", "title", "source_url",
+                "matched_rule_name", "published_at", "created_at")
+               VALUES (2, 2, 2, 'res-1', 'ep 5', 'url', 'rule1', 1000, 1000)"#,
+        )
+        .execute(&database.pool)
+        .await
+        .expect("insert download record");
+
+        query(
+            r#"INSERT INTO "search_pool" ("anime_id", "feed_id", "keyword", "search_url", "created_at")
+               VALUES (2, 'feed-2', 'kw', 'http://example.com/2', 1000)"#,
+        )
+        .execute(&database.pool)
+        .await
+        .expect("insert pool entry");
+        query(
+            r#"INSERT INTO "search_pool_sub" ("pool_id", "user_id", "space_id", "anime_id")
+               VALUES (1, 2, 2, 2)"#,
+        )
+        .execute(&database.pool)
+        .await
+        .expect("insert sub link");
+
+        database
+            .delete_subscription(UserId(2), SpaceId(2), AnimeId(2))
+            .await
+            .expect("delete subscription");
+
+        let sub_exists: (i64,) = query_as(
+            r#"SELECT COUNT(*) FROM "anime_subscription"
+               WHERE "user_id" = 2 AND "space_id" = 2 AND "anime_id" = 2"#,
+        )
+        .fetch_one(&database.pool)
+        .await
+        .expect("count subscription");
+        assert_eq!(sub_exists.0, 0, "subscription should be deleted");
+
+        let dr_count: (i64,) = query_as(
+            r#"SELECT COUNT(*) FROM "download_record"
+               WHERE "user_id" = 2 AND "space_id" = 2 AND "anime_id" = 2"#,
+        )
+        .fetch_one(&database.pool)
+        .await
+        .expect("count download records");
+        assert_eq!(dr_count.0, 0, "download records should be deleted");
+
+        let sub_link_count: (i64,) = query_as(
+            r#"SELECT COUNT(*) FROM "search_pool_sub"
+               WHERE "user_id" = 2 AND "space_id" = 2 AND "anime_id" = 2"#,
+        )
+        .fetch_one(&database.pool)
+        .await
+        .expect("count sub links");
+        assert_eq!(sub_link_count.0, 0, "sub links should be deleted");
+
+        // pool entry should also be deleted (orphaned after sub_link removal)
+        let pool_count: (i64,) = query_as(
+            r#"SELECT COUNT(*) FROM "search_pool"
+               WHERE "anime_id" = 2"#,
+        )
+        .fetch_one(&database.pool)
+        .await
+        .expect("count pool entries");
+        assert_eq!(pool_count.0, 0, "orphan pool entries should be deleted");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn biz_stop_search_cleans_pool_and_stops_search_in_one_tx() -> Result<(), DomainError> {
+        let db_file = NamedTempFile::new().expect("temp db");
+        let db_url = format!("sqlite://{}", db_file.path().display());
+        let database = SqliteDb::new(&db_url, "test-key")
+            .await
+            .expect("initialize database");
+
+        database
+            .create_anime_metadata(&AnimeMetadata {
+                id: AnimeId(3),
+                titles: AnimeTitleSet {
+                    original_ja: "Test3".to_string(),
+                    localized_zh_cn: "测试3".to_string(),
+                    localized_zh_tw: "測試3".to_string(),
+                    search_name: "test3".to_string(),
+                    aliases: vec![],
+                },
+                broadcast_weekday: BroadcastWeekday(3),
+                planned_episode_count: PlannedEpisodeCount(12),
+                air_date: AirDate("2026-10-01".to_string()),
+                season: SeasonNumber(1),
+            })
+            .await
+            .expect("create anime");
+
+        let sub = SubscriptionAnime {
+            user_id: UserId(3),
+            space_id: SpaceId(3),
+            anime_id: AnimeId(3),
+            enabled: true,
+            bound_rule_name: None,
+            search_state: SubscriptionSearchState::Running,
+            progress: 3,
+        };
+        database.save_subscription(&sub).await.expect("save subscription");
+
+        query(
+            r#"INSERT INTO "search_pool" ("anime_id", "feed_id", "keyword", "search_url", "created_at")
+               VALUES (3, 'feed-3', 'k', 'http://example.com/3', 1000)"#,
+        )
+        .execute(&database.pool)
+        .await
+        .expect("insert pool entry");
+        let pool_id = query_as::<_, (i64,)>(
+            r#"SELECT "id" FROM "search_pool" WHERE "anime_id" = 3 LIMIT 1"#,
+        )
+        .fetch_one(&database.pool)
+        .await
+        .expect("get pool id")
+        .0;
+
+        query(
+            r#"INSERT INTO "search_pool_sub" ("pool_id", "user_id", "space_id", "anime_id")
+               VALUES ($1, 3, 3, 3)"#,
+        )
+        .bind(pool_id)
+        .execute(&database.pool)
+        .await
+        .expect("insert sub link");
+
+        // verify initial pool exists
+        let pool_count: (i64,) = query_as(
+            r#"SELECT COUNT(*) FROM "search_pool" WHERE "anime_id" = 3"#,
+        )
+        .fetch_one(&database.pool)
+        .await
+        .expect("count pool before");
+        assert_eq!(pool_count.0, 1, "should have 1 pool entry before stop");
+
+        // biz: cleanup + stop_search (equivalent of clean_anime_search_pool)
+        {
+            let biz = database.open_biz().await.expect("open biz");
+            let biz_db = database.bind_biz(&biz).expect("bind biz");
+            biz_db
+                .cleanup_by_subscription(UserId(3), SpaceId(3), AnimeId(3))
+                .await
+                .expect("cleanup pool");
+            biz_db
+                .write_search_state((UserId(3), SpaceId(3), AnimeId(3)), SubscriptionSearchState::Stopped)
+                .await
+                .expect("write search state");
+            biz.commit().await.expect("commit biz");
+        }
+
+        // verify pool cleaned
+        let pool_count: (i64,) = query_as(
+            r#"SELECT COUNT(*) FROM "search_pool" WHERE "anime_id" = 3"#,
+        )
+        .fetch_one(&database.pool)
+        .await
+        .expect("count pool after");
+        assert_eq!(pool_count.0, 0, "pool entries should be cleaned");
+
+        // verify sub_links cleaned
+        let link_count: (i64,) = query_as(
+            r#"SELECT COUNT(*) FROM "search_pool_sub" WHERE "anime_id" = 3"#,
+        )
+        .fetch_one(&database.pool)
+        .await
+        .expect("count sub links");
+        assert_eq!(link_count.0, 0, "sub links should be cleaned");
+
+        // verify enabled unchanged, search_state Stopped
+        let row = query_as::<_, (bool, i64)>(
+            r#"SELECT "enabled", "search_state" FROM "anime_subscription"
+               WHERE "anime_id" = 3 LIMIT 1"#,
+        )
+        .fetch_one(&database.pool)
+        .await
+        .expect("fetch subscription");
+        assert!(row.0, "enabled should remain true");
+        assert_eq!(row.1, 0, "search_state should be Stopped(0)");
+        Ok(())
     }
 }

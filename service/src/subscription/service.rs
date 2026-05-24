@@ -48,8 +48,8 @@ pub struct CheckMissingEpisodesOutcome {
 
 pub struct SubscriptionService {
     pub search_pool: Arc<dyn SearchPoolRepository>,
-    biz_factory: Arc<dyn BizFactory>,
-    subscriptions: Arc<SubscriptionAnimes>,
+    pub(crate) biz_factory: Arc<dyn BizFactory>,
+    pub(crate) subscriptions: Arc<SubscriptionAnimes>,
     spaces: Arc<Spaces>,
     animes: Arc<Animes>,
     feeds: Arc<Feeds>,
