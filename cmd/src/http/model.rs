@@ -555,7 +555,12 @@ pub struct AnimeViewResponse {
     pub id: i64,
     /// 番剧标题
     pub title: String,
-    /// 搜索状态
+    /// 搜索状态。
+    ///
+    /// - `stopped` — 未在搜索，无待处理任务
+    /// - `pending` — 等待本地匹配处理
+    /// - `local_match` — 正在执行本地资源匹配
+    /// - `running` — 搜索池中仍有待处理链接（正在执行网络搜索或排队中）
     pub search_state: String,
     /// 元数据是否锁定
     pub metadata_locked: bool,

@@ -201,12 +201,12 @@ impl SubscriptionAnimeEntity {
     }
 
     /// 搜索池耗尽后决定目标状态。
-    /// remaining == 0 → Stopped，否则 Pending。
+    /// remaining == 0 → Stopped，否则维持 Running（由 pool_consumer 继续消费）。
     pub fn decide_search_target_state(remaining: i64) -> SubscriptionSearchState {
         if remaining == 0 {
             SubscriptionSearchState::Stopped
         } else {
-            SubscriptionSearchState::Pending
+            SubscriptionSearchState::Running
         }
     }
 
