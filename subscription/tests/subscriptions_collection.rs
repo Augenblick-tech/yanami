@@ -84,9 +84,7 @@ impl SubscriptionAnimeRepository for NoopSubscriptions {
             .collect())
     }
 
-    async fn pick_one_pending(
-        &self,
-    ) -> Result<Option<SubscriptionAnime>, DomainError> {
+    async fn pick_one_pending(&self) -> Result<Option<SubscriptionAnime>, DomainError> {
         Ok(self
             .state
             .lock()
@@ -94,23 +92,20 @@ impl SubscriptionAnimeRepository for NoopSubscriptions {
             .subscriptions
             .values()
             .find(|subscription| {
-                subscription.search_state == SubscriptionSearchState::Pending && subscription.enabled
+                subscription.search_state == SubscriptionSearchState::Pending
+                    && subscription.enabled
             })
             .cloned())
     }
 
-    async fn pick_one_localmatch(
-        &self,
-    ) -> Result<Option<SubscriptionAnime>, DomainError> {
+    async fn pick_one_localmatch(&self) -> Result<Option<SubscriptionAnime>, DomainError> {
         Ok(self
             .state
             .lock()
             .expect("state")
             .subscriptions
             .values()
-            .find(|subscription| {
-                subscription.search_state == SubscriptionSearchState::LocalMatch
-            })
+            .find(|subscription| subscription.search_state == SubscriptionSearchState::LocalMatch)
             .cloned())
     }
 
@@ -130,9 +125,7 @@ impl SubscriptionAnimeRepository for NoopSubscriptions {
         Ok(state
             .subscriptions
             .values()
-            .find(|s| {
-                s.search_state == SubscriptionSearchState::Pending && s.enabled
-            })
+            .find(|s| s.search_state == SubscriptionSearchState::Pending && s.enabled)
             .cloned())
     }
 
@@ -173,11 +166,18 @@ impl SubscriptionAnimeRepository for NoopSubscriptions {
         Ok(())
     }
 
-    async fn save_subscription_batch(&self, subscriptions: &[&SubscriptionAnime]) -> Result<(), DomainError> {
+    async fn save_subscription_batch(
+        &self,
+        subscriptions: &[&SubscriptionAnime],
+    ) -> Result<(), DomainError> {
         let mut state = self.state.lock().expect("state");
         for subscription in subscriptions {
             state.subscriptions.insert(
-                (subscription.user_id, subscription.space_id, subscription.anime_id),
+                (
+                    subscription.user_id,
+                    subscription.space_id,
+                    subscription.anime_id,
+                ),
                 (*subscription).clone(),
             );
         }
@@ -272,7 +272,9 @@ impl SubscriptionToggleCap for NoopToggle {
         &self,
         _pk: (UserId, SpaceId, AnimeId),
         _enabled: bool,
-    ) -> Result<(), DomainError> { Ok(()) }
+    ) -> Result<(), DomainError> {
+        Ok(())
+    }
 }
 
 struct NoopMatch;
@@ -284,7 +286,9 @@ impl SubscriptionMatchCap for NoopMatch {
         _progress: i64,
         _bound_rule: Option<String>,
         _enabled: bool,
-    ) -> Result<(), DomainError> { Ok(()) }
+    ) -> Result<(), DomainError> {
+        Ok(())
+    }
 }
 
 struct NoopSearch;
@@ -294,13 +298,17 @@ impl SubscriptionSearchCap for NoopSearch {
         &self,
         _pk: (UserId, SpaceId, AnimeId),
         _state: SubscriptionSearchState,
-    ) -> Result<(), DomainError> { Ok(()) }
+    ) -> Result<(), DomainError> {
+        Ok(())
+    }
 
     async fn batch_write_search_state(
         &self,
         _pks: &[(UserId, SpaceId, AnimeId)],
         _state: SubscriptionSearchState,
-    ) -> Result<(), DomainError> { Ok(()) }
+    ) -> Result<(), DomainError> {
+        Ok(())
+    }
 }
 
 #[tokio::test]
@@ -345,7 +353,9 @@ async fn pick_one_pending_skips_disabled_subscription() {
         Arc::new(NoopSubscriptions {
             state: state.clone(),
         }),
-        Arc::new(NoopRecords { state: state.clone() }),
+        Arc::new(NoopRecords {
+            state: state.clone(),
+        }),
     );
 
     // insert disabled pending + enabled pending subscriptions directly in repo

@@ -10,7 +10,11 @@ mod tests {
     struct NoopLocker;
     #[async_trait]
     impl AnimeLockCap for NoopLocker {
-        async fn write_lock_status(&self, _anime_id: AnimeId, _locked: bool) -> Result<(), DomainError> {
+        async fn write_lock_status(
+            &self,
+            _anime_id: AnimeId,
+            _locked: bool,
+        ) -> Result<(), DomainError> {
             Ok(())
         }
     }

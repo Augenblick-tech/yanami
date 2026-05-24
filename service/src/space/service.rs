@@ -14,10 +14,7 @@ impl SpaceService {
         Self { spaces }
     }
 
-    pub async fn get_auto_subscribe(
-        &self,
-        space_id: SpaceId,
-    ) -> Result<bool, ApplicationError> {
+    pub async fn get_auto_subscribe(&self, space_id: SpaceId) -> Result<bool, ApplicationError> {
         let space = self.spaces.load(space_id).await?;
         Ok(space.read_data().auto_subscribe)
     }

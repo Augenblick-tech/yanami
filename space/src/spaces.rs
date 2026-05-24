@@ -85,7 +85,10 @@ impl SpaceAccess {
         &self,
         space_ids: &[SpaceId],
     ) -> Result<HashMap<SpaceId, UserId>, DomainError> {
-        let pairs = self.space_repository.find_personal_space_user_ids(space_ids).await?;
+        let pairs = self
+            .space_repository
+            .find_personal_space_user_ids(space_ids)
+            .await?;
         Ok(pairs.into_iter().collect())
     }
 }
@@ -218,7 +221,11 @@ mod tests {
 
         async fn list_auto_subscribing_spaces(&self) -> Result<Vec<Space>, DomainError> {
             let spaces = self.spaces.lock().expect("lock spaces");
-            Ok(spaces.values().filter(|s| s.auto_subscribe).cloned().collect())
+            Ok(spaces
+                .values()
+                .filter(|s| s.auto_subscribe)
+                .cloned()
+                .collect())
         }
 
         async fn find_personal_space_user_ids(

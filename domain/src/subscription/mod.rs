@@ -161,7 +161,10 @@ pub trait SubscriptionAnimeRepository: Send + Sync {
 
     async fn save_subscription(&self, subscription: &SubscriptionAnime) -> Result<(), DomainError>;
 
-    async fn save_subscription_batch(&self, subscriptions: &[&SubscriptionAnime]) -> Result<(), DomainError>;
+    async fn save_subscription_batch(
+        &self,
+        subscriptions: &[&SubscriptionAnime],
+    ) -> Result<(), DomainError>;
 
     async fn delete_subscription(
         &self,
@@ -267,10 +270,7 @@ pub trait SearchPoolRepository: Send + Sync {
     async fn count_distinct_anime(&self) -> Result<i64, DomainError>;
     async fn count_pending_links(&self) -> Result<i64, DomainError>;
 
-    fn with_biz(
-        &self,
-        _: &BizContext,
-    ) -> Result<Arc<dyn SearchPoolRepository>, DomainError> {
+    fn with_biz(&self, _: &BizContext) -> Result<Arc<dyn SearchPoolRepository>, DomainError> {
         Err(DomainError::InvariantViolation(
             "search pool repository does not support biz context",
         ))

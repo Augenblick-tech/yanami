@@ -393,7 +393,12 @@ impl AnimeService {
         anime_id: AnimeId,
     ) -> Result<(), ApplicationError> {
         self.animes.load(anime_id).await?;
-        if self.subscriptions.load(user_id, space_id, anime_id).await?.is_some() {
+        if self
+            .subscriptions
+            .load(user_id, space_id, anime_id)
+            .await?
+            .is_some()
+        {
             return Ok(());
         }
         self.subscriptions
@@ -412,7 +417,9 @@ impl AnimeService {
         anime_id: AnimeId,
     ) -> Result<(), ApplicationError> {
         self.animes.load(anime_id).await?;
-        self.subscriptions.remove(user_id, space_id, anime_id).await?;
+        self.subscriptions
+            .remove(user_id, space_id, anime_id)
+            .await?;
         Ok(())
     }
 
@@ -481,7 +488,9 @@ impl AnimeService {
         enabled: bool,
     ) -> Result<UpdateAnimeFlagOutcome, ApplicationError> {
         let mut anime = self.animes.load(anime_id).await?;
-        anime.set_metadata_locked(&*self.animes.caps.locker, enabled).await?;
+        anime
+            .set_metadata_locked(&*self.animes.caps.locker, enabled)
+            .await?;
         let enabled = anime.read_data().metadata_locked;
         Ok(UpdateAnimeFlagOutcome { anime_id, enabled })
     }
@@ -551,7 +560,6 @@ impl AnimeService {
         }
         Ok(id)
     }
-
 }
 
 impl<'a>

@@ -1,7 +1,4 @@
-use domain::{
-    shared::error::DomainError,
-    subscription::MissingEpisodeAssessment,
-};
+use domain::{shared::error::DomainError, subscription::MissingEpisodeAssessment};
 
 use crate::episode_extractor::extract_episode_numbers;
 

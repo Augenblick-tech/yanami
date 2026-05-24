@@ -6,10 +6,13 @@ use anime::{
     repository::{AnimeRepository, AnimeSnapshot},
     AnimeCaps,
 };
+use async_trait::async_trait;
 use domain::anime::capability::{AnimeLockCap, AnimeMetadataUpdateCap};
 use domain::rule::capability::RuleWriterCap;
-use async_trait::async_trait;
 use domain::shared::biz::{BizContext, BizFactory};
+use domain::subscription::capability::{
+    SubscriptionMatchCap, SubscriptionSearchCap, SubscriptionToggleCap,
+};
 use domain::{
     anime::{
         AirDate, AnimeId, AnimeListQuery, AnimeMetadata, AnimeMetadataRepository,
@@ -39,7 +42,6 @@ use service::{
     subscription::service::{SubscriptionService, SubscriptionServiceDependencies},
 };
 use space::Spaces;
-use domain::subscription::capability::{SubscriptionMatchCap, SubscriptionSearchCap, SubscriptionToggleCap};
 use subscription::{
     action::{MatchedResource, RunMatchedResource},
     missing_episodes::MissingEpisodeChecker,
@@ -139,7 +141,11 @@ struct NoopAnimeStateRepository;
 struct NoopLocker;
 #[async_trait]
 impl AnimeLockCap for NoopLocker {
-    async fn write_lock_status(&self, _anime_id: AnimeId, _locked: bool) -> Result<(), DomainError> {
+    async fn write_lock_status(
+        &self,
+        _anime_id: AnimeId,
+        _locked: bool,
+    ) -> Result<(), DomainError> {
         Ok(())
     }
 }
@@ -178,22 +184,55 @@ impl RuleWriterCap for NoopRuleWriter {
         _order: u32,
         _pattern: &str,
         _active: bool,
-    ) -> Result<(), DomainError> { Ok(()) }
+    ) -> Result<(), DomainError> {
+        Ok(())
+    }
 }
 
 struct NoopSearchPool;
 #[async_trait]
 impl SearchPoolRepository for NoopSearchPool {
-    async fn insert_pool_entries(&self, _entries: &[SearchPoolEntryData]) -> Result<Vec<i64>, DomainError> { Ok(vec![]) }
-    async fn insert_sub_links(&self, _links: &[PoolSubLink]) -> Result<(), DomainError> { Ok(()) }
-    async fn list_distinct_feed_ids(&self) -> Result<Vec<FeedSourceId>, DomainError> { Ok(vec![]) }
-    async fn pick_random(&self, _feed_id: &FeedSourceId) -> Result<Option<SearchPoolEntry>, DomainError> { Ok(None) }
-    async fn delete_entry(&self, _id: i64) -> Result<(), DomainError> { Ok(()) }
-    async fn delete_sub_links_by_pool(&self, _pool_id: i64) -> Result<(), DomainError> { Ok(()) }
-    async fn cleanup_by_subscription(&self, _user_id: UserId, _space_id: SpaceId, _anime_id: AnimeId) -> Result<(), DomainError> { Ok(()) }
-    async fn count_by_anime(&self, _anime_id: AnimeId) -> Result<i64, DomainError> { Ok(0) }
-    async fn count_distinct_anime(&self) -> Result<i64, DomainError> { Ok(0) }
-    async fn count_pending_links(&self) -> Result<i64, DomainError> { Ok(0) }
+    async fn insert_pool_entries(
+        &self,
+        _entries: &[SearchPoolEntryData],
+    ) -> Result<Vec<i64>, DomainError> {
+        Ok(vec![])
+    }
+    async fn insert_sub_links(&self, _links: &[PoolSubLink]) -> Result<(), DomainError> {
+        Ok(())
+    }
+    async fn list_distinct_feed_ids(&self) -> Result<Vec<FeedSourceId>, DomainError> {
+        Ok(vec![])
+    }
+    async fn pick_random(
+        &self,
+        _feed_id: &FeedSourceId,
+    ) -> Result<Option<SearchPoolEntry>, DomainError> {
+        Ok(None)
+    }
+    async fn delete_entry(&self, _id: i64) -> Result<(), DomainError> {
+        Ok(())
+    }
+    async fn delete_sub_links_by_pool(&self, _pool_id: i64) -> Result<(), DomainError> {
+        Ok(())
+    }
+    async fn cleanup_by_subscription(
+        &self,
+        _user_id: UserId,
+        _space_id: SpaceId,
+        _anime_id: AnimeId,
+    ) -> Result<(), DomainError> {
+        Ok(())
+    }
+    async fn count_by_anime(&self, _anime_id: AnimeId) -> Result<i64, DomainError> {
+        Ok(0)
+    }
+    async fn count_distinct_anime(&self) -> Result<i64, DomainError> {
+        Ok(0)
+    }
+    async fn count_pending_links(&self) -> Result<i64, DomainError> {
+        Ok(0)
+    }
 }
 
 #[derive(Default)]
@@ -413,29 +452,26 @@ impl SubscriptionAnimeRepository for InMemorySubscriptions {
             .collect())
     }
 
-    async fn pick_one_pending(
-        &self,
-    ) -> Result<Option<SubscriptionAnime>, DomainError> {
-        Ok(self
-            .items
-            .lock()
-            .expect("subscriptions")
-            .values()
-            .find(|subscription| subscription.search_state == SubscriptionSearchState::Pending && subscription.enabled)
-            .cloned())
-    }
-
-    async fn pick_one_localmatch(
-        &self,
-    ) -> Result<Option<SubscriptionAnime>, DomainError> {
+    async fn pick_one_pending(&self) -> Result<Option<SubscriptionAnime>, DomainError> {
         Ok(self
             .items
             .lock()
             .expect("subscriptions")
             .values()
             .find(|subscription| {
-                subscription.search_state == SubscriptionSearchState::LocalMatch
+                subscription.search_state == SubscriptionSearchState::Pending
+                    && subscription.enabled
             })
+            .cloned())
+    }
+
+    async fn pick_one_localmatch(&self) -> Result<Option<SubscriptionAnime>, DomainError> {
+        Ok(self
+            .items
+            .lock()
+            .expect("subscriptions")
+            .values()
+            .find(|subscription| subscription.search_state == SubscriptionSearchState::LocalMatch)
             .cloned())
     }
 
@@ -453,9 +489,7 @@ impl SubscriptionAnimeRepository for InMemorySubscriptions {
         // 回退 Pending + enabled
         Ok(items
             .values()
-            .find(|s| {
-                s.search_state == SubscriptionSearchState::Pending && s.enabled
-            })
+            .find(|s| s.search_state == SubscriptionSearchState::Pending && s.enabled)
             .cloned())
     }
 
@@ -494,11 +528,18 @@ impl SubscriptionAnimeRepository for InMemorySubscriptions {
         Ok(())
     }
 
-    async fn save_subscription_batch(&self, subscriptions: &[&SubscriptionAnime]) -> Result<(), DomainError> {
+    async fn save_subscription_batch(
+        &self,
+        subscriptions: &[&SubscriptionAnime],
+    ) -> Result<(), DomainError> {
         let mut items = self.items.lock().expect("subscriptions");
         for subscription in subscriptions {
             items.insert(
-                (subscription.user_id, subscription.space_id, subscription.anime_id),
+                (
+                    subscription.user_id,
+                    subscription.space_id,
+                    subscription.anime_id,
+                ),
                 (*subscription).clone(),
             );
         }
@@ -848,19 +889,32 @@ impl SpaceRepository for NoopSpaces {
     async fn save_subscription_space(&self, _space: &Space) -> Result<(), DomainError> {
         Ok(())
     }
-    async fn find_subscription_space(&self, _space_id: SpaceId) -> Result<Option<Space>, DomainError> {
+    async fn find_subscription_space(
+        &self,
+        _space_id: SpaceId,
+    ) -> Result<Option<Space>, DomainError> {
         Ok(None)
     }
-    async fn find_personal_space_binding(&self, _user_id: UserId) -> Result<Option<PersonalSpaceBinding>, DomainError> {
+    async fn find_personal_space_binding(
+        &self,
+        _user_id: UserId,
+    ) -> Result<Option<PersonalSpaceBinding>, DomainError> {
         Ok(None)
     }
-    async fn save_personal_space_binding(&self, _user_id: UserId, _binding: &PersonalSpaceBinding) -> Result<(), DomainError> {
+    async fn save_personal_space_binding(
+        &self,
+        _user_id: UserId,
+        _binding: &PersonalSpaceBinding,
+    ) -> Result<(), DomainError> {
         Ok(())
     }
     async fn list_auto_subscribing_spaces(&self) -> Result<Vec<Space>, DomainError> {
         Ok(Vec::new())
     }
-    async fn find_personal_space_user_ids(&self, _space_ids: &[SpaceId]) -> Result<Vec<(SpaceId, UserId)>, DomainError> {
+    async fn find_personal_space_user_ids(
+        &self,
+        _space_ids: &[SpaceId],
+    ) -> Result<Vec<(SpaceId, UserId)>, DomainError> {
         Ok(Vec::new())
     }
 }
@@ -870,7 +924,10 @@ struct NoopSpaceIdSequence;
 
 #[async_trait]
 impl IdSequence for NoopSpaceIdSequence {
-    fn with_biz(&self, _: &domain::shared::biz::BizContext) -> Result<Arc<dyn IdSequence>, DomainError> {
+    fn with_biz(
+        &self,
+        _: &domain::shared::biz::BizContext,
+    ) -> Result<Arc<dyn IdSequence>, DomainError> {
         Ok(Arc::new(self.clone()))
     }
     async fn next_subscription_space_id(&self) -> Result<SpaceId, DomainError> {
@@ -928,7 +985,10 @@ fn build_service_with_rules_action_and_records(
     run_matched_resource: Arc<RunMatchedResource>,
     match_records: Arc<dyn MatchRecordRepository>,
 ) -> Arc<SubscriptionService> {
-    let anime_caps = AnimeCaps { locker: Arc::new(NoopLocker), metadata_updater: Arc::new(NoopMetadataUpdater) };
+    let anime_caps = AnimeCaps {
+        locker: Arc::new(NoopLocker),
+        metadata_updater: Arc::new(NoopMetadataUpdater),
+    };
     let animes = Arc::new(Animes::new(
         anime_caps,
         Arc::new(NoopMetadataRepository),
@@ -944,7 +1004,11 @@ fn build_service_with_rules_action_and_records(
     let rule_caps = rule::RuleCaps {
         writer: Arc::new(NoopRuleWriter),
     };
-    let rules = Arc::new(rule::Rules::new(rule_caps, space_rules, Arc::new(StubRegexProvider)));
+    let rules = Arc::new(rule::Rules::new(
+        rule_caps,
+        space_rules,
+        Arc::new(StubRegexProvider),
+    ));
     let resources = Arc::new(Resources::new(
         resources_repo,
         Arc::new(StubClock),
@@ -955,7 +1019,11 @@ fn build_service_with_rules_action_and_records(
         match_writer: subscriptions_repo.clone(),
         search: subscriptions_repo.clone(),
     };
-    let subscriptions = Arc::new(SubscriptionAnimes::new(sub_caps, subscriptions_repo, match_records));
+    let subscriptions = Arc::new(SubscriptionAnimes::new(
+        sub_caps,
+        subscriptions_repo,
+        match_records,
+    ));
     let noop_spaces_repo = Arc::new(NoopSpaces);
     let noop_ids = Arc::new(NoopSpaceIdSequence);
     let spaces = Arc::new(Spaces::new(noop_spaces_repo, noop_ids));
@@ -1302,6 +1370,3 @@ async fn inactive_rule_is_not_selected_for_unbound_subscription() {
 
     assert!(!matched);
 }
-
-
-

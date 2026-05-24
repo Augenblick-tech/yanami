@@ -7,9 +7,9 @@ use domain::{
     shared::error::DomainError,
 };
 
-use domain::anime::capability::{AnimeLockCap, AnimeMetadataUpdateCap};
 use crate::entity::AnimeEntity;
 use crate::repository::{AnimeRepository, AnimeSnapshot};
+use domain::anime::capability::{AnimeLockCap, AnimeMetadataUpdateCap};
 
 #[derive(Clone)]
 pub struct AnimeCaps {
@@ -121,8 +121,8 @@ mod tests {
 
     use async_trait::async_trait;
     use domain::anime::{
-        AirDate, AnimeTitleSet, BroadcastWeekday, PlannedEpisodeCount, SeasonNumber,
-        capability::{AnimeLockCap, AnimeMetadataUpdateCap}, AnimeId,
+        capability::{AnimeLockCap, AnimeMetadataUpdateCap},
+        AirDate, AnimeId, AnimeTitleSet, BroadcastWeekday, PlannedEpisodeCount, SeasonNumber,
     };
 
     use super::*;
@@ -224,7 +224,11 @@ mod tests {
     struct NoopLockerCaps;
     #[async_trait]
     impl AnimeLockCap for NoopLockerCaps {
-        async fn write_lock_status(&self, _anime_id: AnimeId, _locked: bool) -> Result<(), DomainError> {
+        async fn write_lock_status(
+            &self,
+            _anime_id: AnimeId,
+            _locked: bool,
+        ) -> Result<(), DomainError> {
             Ok(())
         }
     }
@@ -232,7 +236,11 @@ mod tests {
     struct NoopMetadataUpdater;
     #[async_trait]
     impl AnimeMetadataUpdateCap for NoopMetadataUpdater {
-        async fn update_metadata(&self, _anime_id: AnimeId, _metadata: &AnimeMetadata) -> Result<(), DomainError> {
+        async fn update_metadata(
+            &self,
+            _anime_id: AnimeId,
+            _metadata: &AnimeMetadata,
+        ) -> Result<(), DomainError> {
             Ok(())
         }
     }

@@ -1,6 +1,6 @@
 use domain::{
-    anime::{AnimeId, AnimeMetadata},
     anime::capability::{AnimeLockCap, AnimeMetadataUpdateCap},
+    anime::{AnimeId, AnimeMetadata},
     shared::error::DomainError,
 };
 use std::fmt;
@@ -49,11 +49,17 @@ impl AnimeEntity {
         self.anime
     }
 
-    pub async fn set_metadata_locked(&mut self, locker: &dyn AnimeLockCap, locked: bool) -> Result<(), DomainError> {
+    pub async fn set_metadata_locked(
+        &mut self,
+        locker: &dyn AnimeLockCap,
+        locked: bool,
+    ) -> Result<(), DomainError> {
         if self.anime.metadata_locked == locked {
             return Ok(());
         }
-        locker.write_lock_status(self.anime.metadata.id, locked).await?;
+        locker
+            .write_lock_status(self.anime.metadata.id, locked)
+            .await?;
         self.anime.metadata_locked = locked;
         Ok(())
     }
@@ -105,12 +111,12 @@ pub fn validate_metadata(metadata: &AnimeMetadata) -> Result<(), DomainError> {
 #[cfg(test)]
 pub(crate) mod tests {
     use async_trait::async_trait;
+    use domain::anime::capability::{AnimeLockCap, AnimeMetadataUpdateCap};
+    use domain::anime::AnimeId;
     use domain::anime::{
         AirDate, AnimeMetadata, AnimeTitleSet, BroadcastWeekday, PlannedEpisodeCount, SeasonNumber,
     };
-    use domain::anime::capability::{AnimeLockCap, AnimeMetadataUpdateCap};
     use domain::shared::error::DomainError;
-    use domain::anime::AnimeId;
 
     use super::*;
 
@@ -149,7 +155,11 @@ pub(crate) mod tests {
     struct NoopLocker;
     #[async_trait]
     impl AnimeLockCap for NoopLocker {
-        async fn write_lock_status(&self, _anime_id: AnimeId, _locked: bool) -> Result<(), DomainError> {
+        async fn write_lock_status(
+            &self,
+            _anime_id: AnimeId,
+            _locked: bool,
+        ) -> Result<(), DomainError> {
             Ok(())
         }
     }
@@ -202,11 +212,9 @@ pub(crate) mod tests {
             planned_episode_count: PlannedEpisodeCount(0),
             ..sample_metadata()
         };
-        assert!(
-            entity
-                .update_metadata(&RecordingUpdater, invalid)
-                .await
-                .is_err()
-        );
+        assert!(entity
+            .update_metadata(&RecordingUpdater, invalid)
+            .await
+            .is_err());
     }
 }

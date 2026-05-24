@@ -7,8 +7,8 @@ use domain::user::UserId;
 use crate::http::auth::JwtDecoder;
 use service::{
     anime::service::AnimeService, download::service::DownloadService, feed::service::FeedService,
-    rule::service::RuleService, space::service::SpaceService, subscription::service::SubscriptionService,
-    user::service::UserService,
+    rule::service::RuleService, space::service::SpaceService,
+    subscription::service::SubscriptionService, user::service::UserService,
 };
 
 /// HTTP 服务共享状态。

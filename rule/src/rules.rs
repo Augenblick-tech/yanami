@@ -277,7 +277,13 @@ mod tests {
                 rule("deleted", "Lilith", 2, false),
             ],
         );
-        let rules = Rules::new(RuleCaps { writer: repository.clone() }, repository, Arc::new(AlwaysFalseRegexProvider));
+        let rules = Rules::new(
+            RuleCaps {
+                writer: repository.clone(),
+            },
+            repository,
+            Arc::new(AlwaysFalseRegexProvider),
+        );
 
         let listed = rules.list(SpaceId(1)).await.expect("list");
 
@@ -295,7 +301,13 @@ mod tests {
                 rule("to-delete", "Lilith", 2, true),
             ],
         );
-        let rules = Rules::new(RuleCaps { writer: repository.clone() }, repository, Arc::new(AlwaysFalseRegexProvider));
+        let rules = Rules::new(
+            RuleCaps {
+                writer: repository.clone(),
+            },
+            repository,
+            Arc::new(AlwaysFalseRegexProvider),
+        );
 
         let deleted = rules
             .deactivate_rule(SpaceId(1), &MatchingRuleId("to-delete".to_string()))
@@ -323,7 +335,13 @@ mod tests {
             .lock()
             .expect("rules")
             .insert(SpaceId(1), vec![rule("ani", "ANi", 1, true)]);
-        let rules = Rules::new(RuleCaps { writer: repository.clone() }, repository, Arc::new(AlwaysFalseRegexProvider));
+        let rules = Rules::new(
+            RuleCaps {
+                writer: repository.clone(),
+            },
+            repository,
+            Arc::new(AlwaysFalseRegexProvider),
+        );
 
         let new_rule = MatchingRule {
             id: MatchingRuleId("ani-v2".to_string()),
@@ -354,7 +372,13 @@ mod tests {
                 rule("lilith", "Lilith", 2, false),
             ],
         );
-        let rules = Rules::new(RuleCaps { writer: repository.clone() }, repository, Arc::new(AlwaysFalseRegexProvider));
+        let rules = Rules::new(
+            RuleCaps {
+                writer: repository.clone(),
+            },
+            repository,
+            Arc::new(AlwaysFalseRegexProvider),
+        );
 
         let new_rule = MatchingRule {
             id: MatchingRuleId("new-lilith".to_string()),

@@ -68,11 +68,16 @@ impl AnimeMetadata {
     /// 按优先级返回最适合做目录名的标题：search_name → zh_cn → zh_tw → original_ja。
     pub fn series_name(&self) -> String {
         let titles = &self.titles;
-        [&titles.search_name, &titles.localized_zh_cn, &titles.localized_zh_tw, &titles.original_ja]
-            .iter()
-            .find(|s| !s.trim().is_empty())
-            .map(|s| s.trim().to_string())
-            .unwrap_or_else(|| self.id.0.to_string())
+        [
+            &titles.search_name,
+            &titles.localized_zh_cn,
+            &titles.localized_zh_tw,
+            &titles.original_ja,
+        ]
+        .iter()
+        .find(|s| !s.trim().is_empty())
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|| self.id.0.to_string())
     }
 
     /// 返回所有标题变体作为搜索关键词。

@@ -6,7 +6,9 @@ use domain::{
     shared::{biz::BizContext, error::DomainError},
     space::SpaceId,
     subscription::{
-        capability::{SubscriptionMatchCap, SubscriptionPk, SubscriptionSearchCap, SubscriptionToggleCap},
+        capability::{
+            SubscriptionMatchCap, SubscriptionPk, SubscriptionSearchCap, SubscriptionToggleCap,
+        },
         MatchRecordRepository, SubscriptionAnime, SubscriptionAnimeRepository,
         SubscriptionSearchState,
     },
@@ -85,8 +87,6 @@ impl SubscriptionAnimes {
             .await?;
         Ok(entity)
     }
-
-
 
     pub async fn remove(
         &self,

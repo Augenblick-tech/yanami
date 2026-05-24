@@ -60,7 +60,9 @@ impl SubscriptionAnimeEntity {
         let pk = self.pk();
         pool.cleanup_by_subscription(pk.0, pk.1, pk.2).await?;
         toggle.write_enabled(pk, false).await?;
-        search.write_search_state(pk, SubscriptionSearchState::Stopped).await?;
+        search
+            .write_search_state(pk, SubscriptionSearchState::Stopped)
+            .await?;
         self.subscription.enabled = false;
         self.subscription.search_state = SubscriptionSearchState::Stopped;
         Ok(())
@@ -101,7 +103,9 @@ impl SubscriptionAnimeEntity {
             return Ok(());
         }
         let pk = self.pk();
-        search.write_search_state(pk, SubscriptionSearchState::Pending).await?;
+        search
+            .write_search_state(pk, SubscriptionSearchState::Pending)
+            .await?;
         self.subscription.search_state = SubscriptionSearchState::Pending;
         Ok(())
     }
@@ -114,7 +118,9 @@ impl SubscriptionAnimeEntity {
             return Ok(());
         }
         let pk = self.pk();
-        search.write_search_state(pk, SubscriptionSearchState::Stopped).await?;
+        search
+            .write_search_state(pk, SubscriptionSearchState::Stopped)
+            .await?;
         self.subscription.search_state = SubscriptionSearchState::Stopped;
         Ok(())
     }
@@ -127,7 +133,9 @@ impl SubscriptionAnimeEntity {
             return Ok(());
         }
         let pk = self.pk();
-        search.write_search_state(pk, SubscriptionSearchState::Running).await?;
+        search
+            .write_search_state(pk, SubscriptionSearchState::Running)
+            .await?;
         self.subscription.search_state = SubscriptionSearchState::Running;
         Ok(())
     }
@@ -140,7 +148,9 @@ impl SubscriptionAnimeEntity {
             return Ok(());
         }
         let pk = self.pk();
-        search.write_search_state(pk, SubscriptionSearchState::LocalMatch).await?;
+        search
+            .write_search_state(pk, SubscriptionSearchState::LocalMatch)
+            .await?;
         self.subscription.search_state = SubscriptionSearchState::LocalMatch;
         Ok(())
     }
@@ -155,7 +165,9 @@ impl SubscriptionAnimeEntity {
             Ok(false)
         } else {
             let pk = self.pk();
-            search.write_search_state(pk, SubscriptionSearchState::Running).await?;
+            search
+                .write_search_state(pk, SubscriptionSearchState::Running)
+                .await?;
             self.subscription.search_state = SubscriptionSearchState::Running;
             Ok(true)
         }
@@ -173,7 +185,9 @@ impl SubscriptionAnimeEntity {
             return Ok(());
         }
         let pk = self.pk();
-        search.write_search_state(pk, SubscriptionSearchState::Pending).await?;
+        search
+            .write_search_state(pk, SubscriptionSearchState::Pending)
+            .await?;
         self.subscription.search_state = SubscriptionSearchState::Pending;
         Ok(())
     }
@@ -309,7 +323,11 @@ impl SubscriptionAnimeEntity {
     }
 
     fn pk(&self) -> (domain::user::UserId, SpaceId, domain::anime::AnimeId) {
-        (self.subscription.user_id, self.subscription.space_id, self.subscription.anime_id)
+        (
+            self.subscription.user_id,
+            self.subscription.space_id,
+            self.subscription.anime_id,
+        )
     }
 }
 
@@ -337,7 +355,7 @@ fn title_matches_subscription(title: &str, anime_title_names: &[String]) -> bool
     let matched = candidates
         .iter()
         .any(|candidate| !candidate.is_empty() && normalized_title.contains(candidate));
-    tracing::debug!(
+    tracing::trace!(
         %normalized_title,
         ?candidates,
         matched,
@@ -371,7 +389,7 @@ fn is_release_date_valid(published_at: Option<i64>, air_date: &str) -> Result<bo
         .date_naive()
         .checked_add_days(Days::new(30))
         .is_some_and(|deadline| deadline >= air_date);
-    tracing::debug!(
+    tracing::trace!(
         ?published_at,
         %air_date,
         valid,
@@ -435,16 +453,47 @@ mod tests {
     struct NoopPool;
     #[async_trait]
     impl SearchPoolRepository for NoopPool {
-        async fn insert_pool_entries(&self, _: &[SearchPoolEntryData]) -> Result<Vec<i64>, DomainError> { Ok(vec![]) }
-        async fn insert_sub_links(&self, _: &[PoolSubLink]) -> Result<(), DomainError> { Ok(()) }
-        async fn list_distinct_feed_ids(&self) -> Result<Vec<FeedSourceId>, DomainError> { Ok(vec![]) }
-        async fn pick_random(&self, _: &FeedSourceId) -> Result<Option<SearchPoolEntry>, DomainError> { Ok(None) }
-        async fn delete_entry(&self, _: i64) -> Result<(), DomainError> { Ok(()) }
-        async fn delete_sub_links_by_pool(&self, _: i64) -> Result<(), DomainError> { Ok(()) }
-        async fn cleanup_by_subscription(&self, _: UserId, _: SpaceId, _: AnimeId) -> Result<(), DomainError> { Ok(()) }
-        async fn count_by_anime(&self, _: AnimeId) -> Result<i64, DomainError> { Ok(0) }
-        async fn count_distinct_anime(&self) -> Result<i64, DomainError> { Ok(0) }
-        async fn count_pending_links(&self) -> Result<i64, DomainError> { Ok(0) }
+        async fn insert_pool_entries(
+            &self,
+            _: &[SearchPoolEntryData],
+        ) -> Result<Vec<i64>, DomainError> {
+            Ok(vec![])
+        }
+        async fn insert_sub_links(&self, _: &[PoolSubLink]) -> Result<(), DomainError> {
+            Ok(())
+        }
+        async fn list_distinct_feed_ids(&self) -> Result<Vec<FeedSourceId>, DomainError> {
+            Ok(vec![])
+        }
+        async fn pick_random(
+            &self,
+            _: &FeedSourceId,
+        ) -> Result<Option<SearchPoolEntry>, DomainError> {
+            Ok(None)
+        }
+        async fn delete_entry(&self, _: i64) -> Result<(), DomainError> {
+            Ok(())
+        }
+        async fn delete_sub_links_by_pool(&self, _: i64) -> Result<(), DomainError> {
+            Ok(())
+        }
+        async fn cleanup_by_subscription(
+            &self,
+            _: UserId,
+            _: SpaceId,
+            _: AnimeId,
+        ) -> Result<(), DomainError> {
+            Ok(())
+        }
+        async fn count_by_anime(&self, _: AnimeId) -> Result<i64, DomainError> {
+            Ok(0)
+        }
+        async fn count_distinct_anime(&self) -> Result<i64, DomainError> {
+            Ok(0)
+        }
+        async fn count_pending_links(&self) -> Result<i64, DomainError> {
+            Ok(0)
+        }
     }
 
     struct RecordingSearch {
@@ -490,24 +539,55 @@ mod tests {
             }
         }
         fn cleanup_was_called(&self) -> bool {
-            self.cleanup_called.load(std::sync::atomic::Ordering::SeqCst)
+            self.cleanup_called
+                .load(std::sync::atomic::Ordering::SeqCst)
         }
     }
     #[async_trait]
     impl SearchPoolRepository for RecordingPool {
-        async fn insert_pool_entries(&self, _: &[SearchPoolEntryData]) -> Result<Vec<i64>, DomainError> { Ok(vec![]) }
-        async fn insert_sub_links(&self, _: &[PoolSubLink]) -> Result<(), DomainError> { Ok(()) }
-        async fn list_distinct_feed_ids(&self) -> Result<Vec<FeedSourceId>, DomainError> { Ok(vec![]) }
-        async fn pick_random(&self, _: &FeedSourceId) -> Result<Option<SearchPoolEntry>, DomainError> { Ok(None) }
-        async fn delete_entry(&self, _: i64) -> Result<(), DomainError> { Ok(()) }
-        async fn delete_sub_links_by_pool(&self, _: i64) -> Result<(), DomainError> { Ok(()) }
-        async fn cleanup_by_subscription(&self, _: UserId, _: SpaceId, _: AnimeId) -> Result<(), DomainError> {
-            self.cleanup_called.store(true, std::sync::atomic::Ordering::SeqCst);
+        async fn insert_pool_entries(
+            &self,
+            _: &[SearchPoolEntryData],
+        ) -> Result<Vec<i64>, DomainError> {
+            Ok(vec![])
+        }
+        async fn insert_sub_links(&self, _: &[PoolSubLink]) -> Result<(), DomainError> {
             Ok(())
         }
-        async fn count_by_anime(&self, _: AnimeId) -> Result<i64, DomainError> { Ok(0) }
-        async fn count_distinct_anime(&self) -> Result<i64, DomainError> { Ok(0) }
-        async fn count_pending_links(&self) -> Result<i64, DomainError> { Ok(0) }
+        async fn list_distinct_feed_ids(&self) -> Result<Vec<FeedSourceId>, DomainError> {
+            Ok(vec![])
+        }
+        async fn pick_random(
+            &self,
+            _: &FeedSourceId,
+        ) -> Result<Option<SearchPoolEntry>, DomainError> {
+            Ok(None)
+        }
+        async fn delete_entry(&self, _: i64) -> Result<(), DomainError> {
+            Ok(())
+        }
+        async fn delete_sub_links_by_pool(&self, _: i64) -> Result<(), DomainError> {
+            Ok(())
+        }
+        async fn cleanup_by_subscription(
+            &self,
+            _: UserId,
+            _: SpaceId,
+            _: AnimeId,
+        ) -> Result<(), DomainError> {
+            self.cleanup_called
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+            Ok(())
+        }
+        async fn count_by_anime(&self, _: AnimeId) -> Result<i64, DomainError> {
+            Ok(0)
+        }
+        async fn count_distinct_anime(&self) -> Result<i64, DomainError> {
+            Ok(0)
+        }
+        async fn count_pending_links(&self) -> Result<i64, DomainError> {
+            Ok(0)
+        }
     }
 
     struct NoopSearch;
@@ -553,7 +633,10 @@ mod tests {
     #[tokio::test]
     async fn resume_if_completed_disabled_with_progress_below_planned_reenables() {
         let mut entity = make_subscription_with_progress(false, 12);
-        let changed = entity.resume_if_completed(24, &NoopToggle).await.expect("resume");
+        let changed = entity
+            .resume_if_completed(24, &NoopToggle)
+            .await
+            .expect("resume");
         assert!(changed);
         assert!(entity.read_data().enabled);
     }
@@ -561,7 +644,10 @@ mod tests {
     #[tokio::test]
     async fn resume_if_completed_already_enabled_does_nothing() {
         let mut entity = make_subscription_with_progress(true, 12);
-        let changed = entity.resume_if_completed(24, &NoopToggle).await.expect("resume");
+        let changed = entity
+            .resume_if_completed(24, &NoopToggle)
+            .await
+            .expect("resume");
         assert!(!changed);
         assert!(entity.read_data().enabled);
     }
@@ -569,7 +655,10 @@ mod tests {
     #[tokio::test]
     async fn resume_if_completed_disabled_with_progress_equal_to_planned_does_nothing() {
         let mut entity = make_subscription_with_progress(false, 12);
-        let changed = entity.resume_if_completed(12, &NoopToggle).await.expect("resume");
+        let changed = entity
+            .resume_if_completed(12, &NoopToggle)
+            .await
+            .expect("resume");
         assert!(!changed);
         assert!(!entity.read_data().enabled);
     }
@@ -577,7 +666,10 @@ mod tests {
     #[tokio::test]
     async fn resume_if_completed_disabled_with_progress_above_planned_does_nothing() {
         let mut entity = make_subscription_with_progress(false, 15);
-        let changed = entity.resume_if_completed(12, &NoopToggle).await.expect("resume");
+        let changed = entity
+            .resume_if_completed(12, &NoopToggle)
+            .await
+            .expect("resume");
         assert!(!changed);
         assert!(!entity.read_data().enabled);
     }
@@ -585,7 +677,10 @@ mod tests {
     #[tokio::test]
     async fn resume_if_completed_zero_progress_not_reenabled() {
         let mut entity = make_subscription_with_progress(false, 0);
-        let changed = entity.resume_if_completed(12, &NoopToggle).await.expect("resume");
+        let changed = entity
+            .resume_if_completed(12, &NoopToggle)
+            .await
+            .expect("resume");
         assert!(!changed);
         assert!(!entity.read_data().enabled);
     }
@@ -600,7 +695,10 @@ mod tests {
     #[tokio::test]
     async fn disable_changes_enabled_to_disabled() {
         let mut entity = make_subscription(true);
-        entity.disable(&NoopToggle, &NoopSearch, &NoopPool).await.expect("disable");
+        entity
+            .disable(&NoopToggle, &NoopSearch, &NoopPool)
+            .await
+            .expect("disable");
         assert!(!entity.read_data().enabled);
     }
 
@@ -614,7 +712,10 @@ mod tests {
     #[tokio::test]
     async fn disable_on_already_disabled_is_idempotent() {
         let mut entity = make_subscription(false);
-        entity.disable(&NoopToggle, &NoopSearch, &NoopPool).await.expect("disable");
+        entity
+            .disable(&NoopToggle, &NoopSearch, &NoopPool)
+            .await
+            .expect("disable");
         assert!(!entity.read_data().enabled);
     }
 
@@ -623,8 +724,14 @@ mod tests {
         let search = RecordingSearch::new();
         let pool = RecordingPool::new();
         let mut entity = make_subscription(true);
-        entity.start_search(&NoopSearch).await.expect("start_search");
-        entity.disable(&NoopToggle, &search, &pool).await.expect("disable");
+        entity
+            .start_search(&NoopSearch)
+            .await
+            .expect("start_search");
+        entity
+            .disable(&NoopToggle, &search, &pool)
+            .await
+            .expect("disable");
         assert!(!entity.read_data().enabled);
         assert_eq!(
             entity.read_data().search_state,
@@ -642,7 +749,10 @@ mod tests {
         let search = RecordingSearch::new();
         let pool = RecordingPool::new();
         let mut entity = make_subscription(false);
-        entity.disable(&NoopToggle, &search, &pool).await.expect("disable");
+        entity
+            .disable(&NoopToggle, &search, &pool)
+            .await
+            .expect("disable");
         assert!(!entity.read_data().enabled);
         assert!(!pool.cleanup_was_called());
         assert_eq!(search.last_written_state(), None);
@@ -651,24 +761,45 @@ mod tests {
     #[tokio::test]
     async fn start_search_transitions_stopped_to_pending() {
         let mut entity = make_subscription(true);
-        entity.start_search(&NoopSearch).await.expect("start_search");
-        assert_eq!(entity.read_data().search_state, SubscriptionSearchState::Pending);
+        entity
+            .start_search(&NoopSearch)
+            .await
+            .expect("start_search");
+        assert_eq!(
+            entity.read_data().search_state,
+            SubscriptionSearchState::Pending
+        );
     }
 
     #[tokio::test]
     async fn stop_search_transitions_any_to_stopped() {
         let mut entity = make_subscription(true);
-        entity.start_search(&NoopSearch).await.expect("start_search");
+        entity
+            .start_search(&NoopSearch)
+            .await
+            .expect("start_search");
         entity.stop_search(&NoopSearch).await.expect("stop_search");
-        assert_eq!(entity.read_data().search_state, SubscriptionSearchState::Stopped);
+        assert_eq!(
+            entity.read_data().search_state,
+            SubscriptionSearchState::Stopped
+        );
     }
 
     #[tokio::test]
     async fn start_search_when_not_stopped_is_idempotent() {
         let mut entity = make_subscription(true);
-        entity.start_search(&NoopSearch).await.expect("start_search");
-        entity.start_search(&NoopSearch).await.expect("start_search");
-        assert_eq!(entity.read_data().search_state, SubscriptionSearchState::Pending);
+        entity
+            .start_search(&NoopSearch)
+            .await
+            .expect("start_search");
+        entity
+            .start_search(&NoopSearch)
+            .await
+            .expect("start_search");
+        assert_eq!(
+            entity.read_data().search_state,
+            SubscriptionSearchState::Pending
+        );
     }
 
     #[test]
@@ -728,72 +859,144 @@ mod tests {
     #[tokio::test]
     async fn resume_search_from_stopped_with_valid_count_resumes() {
         let mut entity = make_subscription(true);
-        entity.resume_search(&NoopSearch, 3).await.expect("resume_search");
-        assert_eq!(entity.read_data().search_state, SubscriptionSearchState::Pending);
+        entity
+            .resume_search(&NoopSearch, 3)
+            .await
+            .expect("resume_search");
+        assert_eq!(
+            entity.read_data().search_state,
+            SubscriptionSearchState::Pending
+        );
     }
 
     #[tokio::test]
     async fn resume_search_from_running_is_idempotent() {
         let mut entity = make_subscription(true);
-        entity.start_search(&NoopSearch).await.expect("start_search");
-        entity.resume_search(&NoopSearch, 3).await.expect("resume_search");
-        assert_eq!(entity.read_data().search_state, SubscriptionSearchState::Pending);
+        entity
+            .start_search(&NoopSearch)
+            .await
+            .expect("start_search");
+        entity
+            .resume_search(&NoopSearch, 3)
+            .await
+            .expect("resume_search");
+        assert_eq!(
+            entity.read_data().search_state,
+            SubscriptionSearchState::Pending
+        );
     }
 
     #[tokio::test]
     async fn resume_search_with_zero_missing_is_noop() {
         let mut entity = make_subscription(true);
-        entity.resume_search(&NoopSearch, 0).await.expect("resume_search");
-        assert_eq!(entity.read_data().search_state, SubscriptionSearchState::Stopped);
+        entity
+            .resume_search(&NoopSearch, 0)
+            .await
+            .expect("resume_search");
+        assert_eq!(
+            entity.read_data().search_state,
+            SubscriptionSearchState::Stopped
+        );
     }
 
     #[tokio::test]
     async fn resume_search_with_count_above_5_is_noop() {
         let mut entity = make_subscription(true);
-        entity.resume_search(&NoopSearch, 6).await.expect("resume_search");
-        assert_eq!(entity.read_data().search_state, SubscriptionSearchState::Stopped);
+        entity
+            .resume_search(&NoopSearch, 6)
+            .await
+            .expect("resume_search");
+        assert_eq!(
+            entity.read_data().search_state,
+            SubscriptionSearchState::Stopped
+        );
     }
 
     #[tokio::test]
     async fn resume_search_with_negative_count_is_noop() {
         let mut entity = make_subscription(true);
-        entity.resume_search(&NoopSearch, -1).await.expect("resume_search");
-        assert_eq!(entity.read_data().search_state, SubscriptionSearchState::Stopped);
+        entity
+            .resume_search(&NoopSearch, -1)
+            .await
+            .expect("resume_search");
+        assert_eq!(
+            entity.read_data().search_state,
+            SubscriptionSearchState::Stopped
+        );
     }
 
     #[tokio::test]
     async fn mark_search_local_match_transitions_pending_to_local_match() {
         let mut entity = make_subscription(true);
-        entity.start_search(&NoopSearch).await.expect("start_search");
-        entity.mark_search_local_match(&NoopSearch).await.expect("mark_local_match");
-        assert_eq!(entity.read_data().search_state, SubscriptionSearchState::LocalMatch);
+        entity
+            .start_search(&NoopSearch)
+            .await
+            .expect("start_search");
+        entity
+            .mark_search_local_match(&NoopSearch)
+            .await
+            .expect("mark_local_match");
+        assert_eq!(
+            entity.read_data().search_state,
+            SubscriptionSearchState::LocalMatch
+        );
     }
 
     #[tokio::test]
     async fn mark_search_local_match_from_stopped_is_idempotent() {
         let mut entity = make_subscription(true);
-        entity.mark_search_local_match(&NoopSearch).await.expect("mark_local_match");
-        assert_eq!(entity.read_data().search_state, SubscriptionSearchState::Stopped);
+        entity
+            .mark_search_local_match(&NoopSearch)
+            .await
+            .expect("mark_local_match");
+        assert_eq!(
+            entity.read_data().search_state,
+            SubscriptionSearchState::Stopped
+        );
     }
 
     #[tokio::test]
     async fn complete_local_match_when_completed_stops_search() {
         let mut entity = make_subscription_with_progress(true, 12);
-        entity.start_search(&NoopSearch).await.expect("start_search");
-        entity.mark_search_local_match(&NoopSearch).await.expect("mark_local_match");
-        let needs_network = entity.complete_local_match(12, &NoopSearch).await.expect("complete");
+        entity
+            .start_search(&NoopSearch)
+            .await
+            .expect("start_search");
+        entity
+            .mark_search_local_match(&NoopSearch)
+            .await
+            .expect("mark_local_match");
+        let needs_network = entity
+            .complete_local_match(12, &NoopSearch)
+            .await
+            .expect("complete");
         assert!(!needs_network);
-        assert_eq!(entity.read_data().search_state, SubscriptionSearchState::Stopped);
+        assert_eq!(
+            entity.read_data().search_state,
+            SubscriptionSearchState::Stopped
+        );
     }
 
     #[tokio::test]
     async fn complete_local_match_when_incomplete_switches_to_running() {
         let mut entity = make_subscription_with_progress(true, 5);
-        entity.start_search(&NoopSearch).await.expect("start_search");
-        entity.mark_search_local_match(&NoopSearch).await.expect("mark_local_match");
-        let needs_network = entity.complete_local_match(12, &NoopSearch).await.expect("complete");
+        entity
+            .start_search(&NoopSearch)
+            .await
+            .expect("start_search");
+        entity
+            .mark_search_local_match(&NoopSearch)
+            .await
+            .expect("mark_local_match");
+        let needs_network = entity
+            .complete_local_match(12, &NoopSearch)
+            .await
+            .expect("complete");
         assert!(needs_network);
-        assert_eq!(entity.read_data().search_state, SubscriptionSearchState::Running);
+        assert_eq!(
+            entity.read_data().search_state,
+            SubscriptionSearchState::Running
+        );
     }
 
     #[tokio::test]
@@ -822,7 +1025,10 @@ mod tests {
                 created_at: 100,
             }),
         };
-        let result = entity.apply_match(decision, &NoopMatch).await.expect("apply_match");
+        let result = entity
+            .apply_match(decision, &NoopMatch)
+            .await
+            .expect("apply_match");
         assert!(result.is_some());
         assert_eq!(entity.read_data().progress, 3);
         assert!(!entity.read_data().enabled);

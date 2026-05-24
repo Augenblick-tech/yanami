@@ -31,10 +31,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         )
         .route("/animes/dashboard", get(handler::get_anime_dashboard))
         .route("/animes/latest", get(handler::list_latest_anime_releases))
-        .route(
-            "/animes/preview",
-            get(handler::preview_anime),
-        )
+        .route("/animes/preview", get(handler::preview_anime))
         .route(
             "/animes/:anime_id",
             get(handler::get_anime).post(handler::update_anime),

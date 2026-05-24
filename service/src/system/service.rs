@@ -311,7 +311,11 @@ mod tests {
 
         async fn list_auto_subscribing_spaces(&self) -> Result<Vec<Space>, DomainError> {
             let spaces = self.spaces.lock().expect("lock spaces");
-            Ok(spaces.values().filter(|s| s.auto_subscribe).cloned().collect())
+            Ok(spaces
+                .values()
+                .filter(|s| s.auto_subscribe)
+                .cloned()
+                .collect())
         }
 
         async fn find_personal_space_user_ids(
@@ -403,9 +407,12 @@ mod tests {
     #[async_trait]
     impl BizFactory for RecordingBizFactory {
         async fn open_biz(&self) -> Result<BizContext, DomainError> {
-            Ok(BizContext::new(0, Arc::new(RecordingBizProvider {
-                stats: self.stats.clone(),
-            })))
+            Ok(BizContext::new(
+                0,
+                Arc::new(RecordingBizProvider {
+                    stats: self.stats.clone(),
+                }),
+            ))
         }
     }
 

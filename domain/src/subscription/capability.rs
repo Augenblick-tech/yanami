@@ -35,10 +35,7 @@ pub trait SubscriptionMatchCap: Send + Sync {
         enabled: bool,
     ) -> Result<(), DomainError>;
 
-    async fn with_biz(
-        &self,
-        _: &BizContext,
-    ) -> Result<Arc<dyn SubscriptionMatchCap>, DomainError> {
+    async fn with_biz(&self, _: &BizContext) -> Result<Arc<dyn SubscriptionMatchCap>, DomainError> {
         Err(DomainError::InvariantViolation(
             "subscription match cap does not support biz context",
         ))

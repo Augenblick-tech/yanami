@@ -34,7 +34,11 @@ impl SearchPoolEventHandler for SearchPoolHandler {
             .batch_update_search_state_by_anime(anime_id, SubscriptionSearchState::Running)
             .await
         {
-            tracing::error!(?anime_id, ?error, "pool_handler: mark search running failed");
+            tracing::error!(
+                ?anime_id,
+                ?error,
+                "pool_handler: mark search running failed"
+            );
         }
     }
 
@@ -63,7 +67,11 @@ impl SearchPoolEventHandler for SearchPoolHandler {
             .batch_update_search_state_by_anime(anime_id, target_state)
             .await
         {
-            tracing::error!(?anime_id, ?error, "pool_handler: update search state failed");
+            tracing::error!(
+                ?anime_id,
+                ?error,
+                "pool_handler: update search state failed"
+            );
         }
     }
 
@@ -81,7 +89,11 @@ impl SearchPoolEventHandler for SearchPoolHandler {
             .batch_update_search_state_by_anime(anime_id, target_state)
             .await
         {
-            tracing::error!(?anime_id, ?error, "pool_handler: update search state failed");
+            tracing::error!(
+                ?anime_id,
+                ?error,
+                "pool_handler: update search state failed"
+            );
         }
     }
 }

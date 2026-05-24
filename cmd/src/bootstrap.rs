@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
 use anime::{animes::Animes, source::AnimeSourceFactory, AnimeCaps};
-use subscription::missing_episodes::MissingEpisodeChecker;
-use infra::{anime_source::BangumiSingleSource, bangumi::BangumiClient, tmdb::TmdbClient};
 use anyhow::Result;
 use axum::serve;
+use infra::{anime_source::BangumiSingleSource, bangumi::BangumiClient, tmdb::TmdbClient};
+use subscription::missing_episodes::MissingEpisodeChecker;
 
 use domain::space::SpaceId;
 use domain::user::UserId;
@@ -33,9 +33,7 @@ use service::{
         user_actions::UserDownload,
     },
     feed::service::FeedService,
-    job::{
-        CheckMissingEpisodesJob, FetchResourcesJob, Job, SyncAnimeCalendarJob,
-    },
+    job::{CheckMissingEpisodesJob, FetchResourcesJob, Job, SyncAnimeCalendarJob},
     rule::service::RuleService,
     space::service::SpaceService,
     subscription::pool_consumer_handler::SearchPoolHandler,
@@ -107,9 +105,7 @@ pub async fn run(config: SchedulerConfig) -> Result<()> {
         vec![pool_handler],
     );
 
-    crate::local_match_runner::spawn_local_match_runner(
-        runtime.subscription_service.clone(),
-    );
+    crate::local_match_runner::spawn_local_match_runner(runtime.subscription_service.clone());
 
     let app_state = Arc::new(build_http_state(runtime, config.key.as_str()));
     let router = build_router(app_state);
@@ -139,8 +135,8 @@ async fn shutdown_signal() {
 
 fn init_tracing(mode: &str, log_file: Option<&str>) -> Result<()> {
     use std::sync::Arc;
-    use tracing_subscriber::Layer;
     use tracing_subscriber::layer::SubscriberExt;
+    use tracing_subscriber::Layer;
 
     let level = normalize_log_mode(mode);
     let filter_spec = format!(
@@ -191,11 +187,7 @@ fn build_job_names(
     check_missing_episodes: &'static str,
     fetch_resources: &'static str,
 ) -> [&'static str; 3] {
-    [
-        sync_anime_calendar,
-        check_missing_episodes,
-        fetch_resources,
-    ]
+    [sync_anime_calendar, check_missing_episodes, fetch_resources]
 }
 
 fn abort_handle(handle: Option<tokio::task::JoinHandle<()>>) {
@@ -369,7 +361,11 @@ pub(crate) async fn build_runtime(
         match_writer: database.clone(),
         search: database.clone(),
     };
-    let subscriptions = Arc::new(SubscriptionAnimes::new(subscription_caps, database.clone(), database.clone()));
+    let subscriptions = Arc::new(SubscriptionAnimes::new(
+        subscription_caps,
+        database.clone(),
+        database.clone(),
+    ));
     let subscription_service =
         Arc::new(SubscriptionService::new(SubscriptionServiceDependencies {
             search_pool: database.clone(),
@@ -509,5 +505,10 @@ fn build_animes(database: Arc<SqliteDb>) -> Arc<anime::animes::Animes> {
         locker: database.clone(),
         metadata_updater: database.clone(),
     };
-    Arc::new(Animes::new(caps, database.clone(), database.clone(), database))
+    Arc::new(Animes::new(
+        caps,
+        database.clone(),
+        database.clone(),
+        database,
+    ))
 }

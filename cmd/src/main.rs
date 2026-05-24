@@ -1,9 +1,9 @@
 mod bootstrap;
 mod config;
 mod http;
+mod local_match_runner;
 mod matched_resource_action;
 mod metadata;
-mod local_match_runner;
 mod pool_consumer;
 
 use anyhow::Result;

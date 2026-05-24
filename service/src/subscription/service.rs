@@ -2,7 +2,6 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use anime::animes::Animes;
-use subscription::missing_episodes::MissingEpisodeChecker;
 use domain::{
     anime::AnimeId,
     feed::{FeedSourceId, Resource, ResourceId},
@@ -18,6 +17,7 @@ use domain::{
 };
 use feed::{FeedEntity, FeedListQuery, Feeds, ResourceListQuery, Resources};
 use space::Spaces;
+use subscription::missing_episodes::MissingEpisodeChecker;
 use subscription::{
     action::{MatchedResource, RunMatchedResource},
     entity::SubscriptionAnimeEntity,
@@ -191,7 +191,7 @@ impl SubscriptionService {
                 {
                     Ok(true) => matched_count += 1,
                     Ok(false) => {
-                        tracing::debug!(
+                        tracing::trace!(
                             resource_id = %resource.read_data().id.0,
                             resource_title = %resource.read_data().title,
                             anime_id = %anime_id.0,
@@ -224,7 +224,9 @@ impl SubscriptionService {
             .load(user_id, space_id, anime_id)
             .await?
             .ok_or(DomainError::InvariantViolation("subscription not found"))?;
-        entity.start_search(&*self.subscriptions.caps.search).await?;
+        entity
+            .start_search(&*self.subscriptions.caps.search)
+            .await?;
         Ok(())
     }
 
@@ -317,7 +319,9 @@ impl SubscriptionService {
         let mut all_entries: Vec<(FeedSourceId, Vec<SearchPoolEntryData>)> = Vec::new();
         for source in &sources {
             let source_data = source.read_data();
-            let Some(search_template) = source_data.search_url.as_deref() else { continue };
+            let Some(search_template) = source_data.search_url.as_deref() else {
+                continue;
+            };
             let feed_id = source_data.id.clone();
 
             let entries: Vec<SearchPoolEntryData> = keywords
@@ -445,10 +449,10 @@ impl SubscriptionService {
                 }
             };
             let Some(assessment) = assessed else {
-            tracing::debug!(
-                anime_id = %subscription_data.anime_id.0,
-                "check_missing_episodes: no missing episodes, skipping"
-            );
+                tracing::trace!(
+                    anime_id = %subscription_data.anime_id.0,
+                    "check_missing_episodes: no missing episodes, skipping"
+                );
                 continue;
             };
             let anime_id = subscription_data.anime_id;
@@ -507,7 +511,7 @@ impl SubscriptionService {
             .resource_visible_to_subscription(subscription.space_id, resource)
             .await?
         {
-            tracing::debug!(
+            tracing::trace!(
                 resource_id = %resource.id.0,
                 resource_title = %resource.title,
                 anime_id = %subscription.anime_id.0,
@@ -552,20 +556,15 @@ impl SubscriptionService {
             title_names: keywords,
             air_date: metadata.air_date.0.clone(),
         };
-        let decision = entity.match_resource(
-            resource,
-            matched_rule.as_ref(),
-            &anime_context,
-            now,
-        )?;
+        let decision =
+            entity.match_resource(resource, matched_rule.as_ref(), &anime_context, now)?;
 
         match decision {
             MatchDecision::Ready {
                 updated_subscription,
                 record,
             } => {
-                let relative_save_path =
-                    build_relative_save_path(&metadata);
+                let relative_save_path = build_relative_save_path(&metadata);
                 let download_result = (self.run_matched_resource)(MatchedResource {
                     user_id: subscription.user_id,
                     source_url: resource.source_url.clone(),
@@ -614,7 +613,7 @@ impl SubscriptionService {
                 Ok(true)
             }
             MatchDecision::Skip(reason) => {
-                tracing::debug!(
+                tracing::trace!(
                     %reason,
                     resource_id = %resource.id.0,
                     resource_title = %resource.title,
@@ -686,7 +685,7 @@ impl SubscriptionService {
             return Ok(None);
         };
         let matched = rule.match_title(self.rules.regex_provider(), title)?;
-        tracing::debug!(
+        tracing::trace!(
             bound_rule = %subscription.bound_rule_name.as_deref().unwrap_or("none"),
             %title,
             matched = matched.is_some(),
@@ -710,7 +709,9 @@ impl SubscriptionService {
 
         for space in &spaces {
             let space_id = space.read_data().id;
-            let Some(&user_id) = user_map.get(&space_id) else { continue };
+            let Some(&user_id) = user_map.get(&space_id) else {
+                continue;
+            };
 
             let decided: Vec<AnimeId> = new_anime_ids
                 .iter()

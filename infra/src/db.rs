@@ -26,9 +26,9 @@ use domain::{
     },
     space::{PersonalSpaceBinding, Space, SpaceId, SpaceRepository},
     subscription::{
-        LatestMatchRecord, MatchRecord, MatchRecordRepository, MatchResourceId,
-        SearchPoolEntry, SearchPoolEntryData, SearchPoolRepository, PoolSubLink,
-        SubscriptionAnime, SubscriptionAnimeRepository, SubscriptionSearchState,
+        LatestMatchRecord, MatchRecord, MatchRecordRepository, MatchResourceId, PoolSubLink,
+        SearchPoolEntry, SearchPoolEntryData, SearchPoolRepository, SubscriptionAnime,
+        SubscriptionAnimeRepository, SubscriptionSearchState,
     },
     user::{PasswordHash, User, UserId, UserRepository, UserRole, Username},
 };
@@ -79,9 +79,7 @@ impl Drop for SqliteBizState {
             return;
         }
         tracing::trace!("biz #{} dropped without commit, auto-rolling back", self.id);
-        let _ = futures_executor::block_on(
-            sqlx::query("ROLLBACK").execute(&mut *self.connection),
-        );
+        let _ = futures_executor::block_on(sqlx::query("ROLLBACK").execute(&mut *self.connection));
     }
 }
 
@@ -1395,13 +1393,16 @@ impl BizFactory for SqliteDb {
             .await
             .map_err(|error| DomainError::external("biz context begin failed", error))?;
         tracing::trace!("biz #{id} opened");
-        Ok(BizContext::new(id, Arc::new(SqliteBizProvider {
-            state: Arc::new(Mutex::new(SqliteBizState {
-                id,
-                connection,
-                committed: false,
-            })),
-        })))
+        Ok(BizContext::new(
+            id,
+            Arc::new(SqliteBizProvider {
+                state: Arc::new(Mutex::new(SqliteBizState {
+                    id,
+                    connection,
+                    committed: false,
+                })),
+            }),
+        ))
     }
 }
 
@@ -1492,9 +1493,7 @@ impl SubscriptionAnimeRepository for SqliteDb {
         row.map(TryInto::try_into).transpose()
     }
 
-    async fn pick_one_pending(
-        &self,
-    ) -> Result<Option<SubscriptionAnime>, DomainError> {
+    async fn pick_one_pending(&self) -> Result<Option<SubscriptionAnime>, DomainError> {
         let row = query_as::<_, StoredSubscriptionAnimeRow>(
             r#"SELECT user_id, space_id, anime_id, enabled, bound_rule_name, search_state, progress
                FROM "anime_subscription"
@@ -1506,16 +1505,12 @@ impl SubscriptionAnimeRepository for SqliteDb {
         ))
         .fetch_optional(&self.pool)
         .await
-        .map_err(|error| {
-            DomainError::external("pick one pending subscription failed", error)
-        })?;
+        .map_err(|error| DomainError::external("pick one pending subscription failed", error))?;
 
         row.map(TryInto::try_into).transpose()
     }
 
-    async fn pick_one_localmatch(
-        &self,
-    ) -> Result<Option<SubscriptionAnime>, DomainError> {
+    async fn pick_one_localmatch(&self) -> Result<Option<SubscriptionAnime>, DomainError> {
         let row = query_as::<_, StoredSubscriptionAnimeRow>(
             r#"SELECT user_id, space_id, anime_id, enabled, bound_rule_name, search_state, progress
                FROM "anime_subscription"
@@ -1527,9 +1522,7 @@ impl SubscriptionAnimeRepository for SqliteDb {
         ))
         .fetch_optional(&self.pool)
         .await
-        .map_err(|error| {
-            DomainError::external("pick one localmatch subscription failed", error)
-        })?;
+        .map_err(|error| DomainError::external("pick one localmatch subscription failed", error))?;
 
         row.map(TryInto::try_into).transpose()
     }
@@ -1630,9 +1623,7 @@ impl SubscriptionAnimeRepository for SqliteDb {
         .bind(space_id.0)
         .fetch_all(&self.pool)
         .await
-        .map_err(|error| {
-            DomainError::external("enabled anime subscription list failed", error)
-        })?;
+        .map_err(|error| DomainError::external("enabled anime subscription list failed", error))?;
 
         rows.into_iter()
             .map(TryInto::try_into)
@@ -1696,11 +1687,19 @@ impl SubscriptionAnimeRepository for SqliteDb {
         Ok(())
     }
 
-    async fn save_subscription_batch(&self, subscriptions: &[&SubscriptionAnime]) -> Result<(), DomainError> {
+    async fn save_subscription_batch(
+        &self,
+        subscriptions: &[&SubscriptionAnime],
+    ) -> Result<(), DomainError> {
         let _guard = self.write_lock.lock().await;
-        let mut conn = self.pool.acquire().await
+        let mut conn = self
+            .pool
+            .acquire()
+            .await
             .map_err(|e| DomainError::external("subscription batch acquire failed", e))?;
-        let mut tx = conn.begin().await
+        let mut tx = conn
+            .begin()
+            .await
             .map_err(|e| DomainError::external("subscription batch begin failed", e))?;
         for subscription in subscriptions {
             query(
@@ -1724,7 +1723,8 @@ impl SubscriptionAnimeRepository for SqliteDb {
             .await
             .map_err(|e| DomainError::external("subscription batch upsert failed", e))?;
         }
-        tx.commit().await
+        tx.commit()
+            .await
             .map_err(|e| DomainError::external("subscription batch commit failed", e))?;
         Ok(())
     }
@@ -1872,9 +1872,8 @@ impl domain::subscription::capability::SubscriptionSearchCap for SqliteDb {
             return Ok(());
         }
         let _guard = self.write_lock.lock().await;
-        let mut qb = QueryBuilder::<sqlx::Sqlite>::new(
-            r#"UPDATE "anime_subscription" SET search_state = "#,
-        );
+        let mut qb =
+            QueryBuilder::<sqlx::Sqlite>::new(r#"UPDATE "anime_subscription" SET search_state = "#);
         let encoded = encode_subscription_search_state(state);
         qb.push_bind(encoded);
         qb.push(r#" WHERE (user_id, space_id, anime_id) IN ("#);
@@ -1963,7 +1962,9 @@ impl SubscriptionAnimeRepository for SqliteBizDb {
         .bind(space_id.0)
         .fetch_all(&mut *state.connection)
         .await
-        .map_err(|error| DomainError::external("biz list subscription anime ids by space failed", error))?;
+        .map_err(|error| {
+            DomainError::external("biz list subscription anime ids by space failed", error)
+        })?;
         Ok(rows.into_iter().map(|(id,)| AnimeId(id)).collect())
     }
 
@@ -2009,9 +2010,7 @@ impl SubscriptionAnimeRepository for SqliteBizDb {
             .collect::<Result<Vec<_>, _>>()
     }
 
-    async fn pick_one_pending(
-        &self,
-    ) -> Result<Option<SubscriptionAnime>, DomainError> {
+    async fn pick_one_pending(&self) -> Result<Option<SubscriptionAnime>, DomainError> {
         let mut state = self.biz.state.lock().await;
         let row = query_as::<_, StoredSubscriptionAnimeRow>(
             r#"SELECT user_id, space_id, anime_id, enabled, bound_rule_name, search_state, progress
@@ -2031,9 +2030,7 @@ impl SubscriptionAnimeRepository for SqliteBizDb {
         row.map(TryInto::try_into).transpose()
     }
 
-    async fn pick_one_localmatch(
-        &self,
-    ) -> Result<Option<SubscriptionAnime>, DomainError> {
+    async fn pick_one_localmatch(&self) -> Result<Option<SubscriptionAnime>, DomainError> {
         let mut state = self.biz.state.lock().await;
         let row = query_as::<_, StoredSubscriptionAnimeRow>(
             r#"SELECT user_id, space_id, anime_id, enabled, bound_rule_name, search_state, progress
@@ -2075,7 +2072,10 @@ impl SubscriptionAnimeRepository for SqliteBizDb {
         .fetch_optional(&mut *state.connection)
         .await
         .map_err(|error| {
-            DomainError::external("biz pick one pending or localmatch subscription failed", error)
+            DomainError::external(
+                "biz pick one pending or localmatch subscription failed",
+                error,
+            )
         })?;
 
         row.map(TryInto::try_into).transpose()
@@ -2146,9 +2146,15 @@ impl SubscriptionAnimeRepository for SqliteBizDb {
         Ok(())
     }
 
-    async fn save_subscription_batch(&self, subscriptions: &[&SubscriptionAnime]) -> Result<(), DomainError> {
+    async fn save_subscription_batch(
+        &self,
+        subscriptions: &[&SubscriptionAnime],
+    ) -> Result<(), DomainError> {
         let mut state = self.biz.state.lock().await;
-        let mut tx = state.connection.begin().await
+        let mut tx = state
+            .connection
+            .begin()
+            .await
             .map_err(|e| DomainError::external("biz subscription batch begin failed", e))?;
         for subscription in subscriptions {
             query(
@@ -2172,7 +2178,8 @@ impl SubscriptionAnimeRepository for SqliteBizDb {
             .await
             .map_err(|e| DomainError::external("biz subscription batch upsert failed", e))?;
         }
-        tx.commit().await
+        tx.commit()
+            .await
             .map_err(|e| DomainError::external("biz subscription batch commit failed", e))?;
         Ok(())
     }
@@ -2298,9 +2305,8 @@ impl domain::subscription::capability::SubscriptionSearchCap for SqliteBizDb {
             return Ok(());
         }
         let mut biz_state = self.biz.state.lock().await;
-        let mut qb = QueryBuilder::<sqlx::Sqlite>::new(
-            r#"UPDATE "anime_subscription" SET search_state = "#,
-        );
+        let mut qb =
+            QueryBuilder::<sqlx::Sqlite>::new(r#"UPDATE "anime_subscription" SET search_state = "#);
         let encoded = encode_subscription_search_state(search_state);
         qb.push_bind(encoded);
         qb.push(r#" WHERE (user_id, space_id, anime_id) IN ("#);
@@ -2516,10 +2522,12 @@ impl SearchPoolRepository for SqliteDb {
     }
 
     async fn list_distinct_feed_ids(&self) -> Result<Vec<FeedSourceId>, DomainError> {
-        let rows = query_as::<_, (String,)>(r#"SELECT DISTINCT "feed_id" FROM "search_pool" ORDER BY "feed_id" ASC"#)
-            .fetch_all(&self.pool)
-            .await
-            .map_err(|error| DomainError::external("search_pool feed ids list failed", error))?;
+        let rows = query_as::<_, (String,)>(
+            r#"SELECT DISTINCT "feed_id" FROM "search_pool" ORDER BY "feed_id" ASC"#,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|error| DomainError::external("search_pool feed ids list failed", error))?;
         Ok(rows.into_iter().map(|(id,)| FeedSourceId(id)).collect())
     }
 
@@ -2537,13 +2545,15 @@ impl SearchPoolRepository for SqliteDb {
         .fetch_optional(&self.pool)
         .await
         .map_err(|error| DomainError::external("search_pool pick random failed", error))?;
-        Ok(row.map(|(id, anime_id, keyword, search_url, _)| SearchPoolEntry {
-            id,
-            anime_id: AnimeId(anime_id),
-            feed_id: feed_id.clone(),
-            keyword,
-            search_url,
-        }))
+        Ok(
+            row.map(|(id, anime_id, keyword, search_url, _)| SearchPoolEntry {
+                id,
+                anime_id: AnimeId(anime_id),
+                feed_id: feed_id.clone(),
+                keyword,
+                search_url,
+            }),
+        )
     }
 
     async fn delete_entry(&self, id: i64) -> Result<(), DomainError> {
@@ -2592,33 +2602,33 @@ impl SearchPoolRepository for SqliteDb {
     }
 
     async fn count_by_anime(&self, anime_id: AnimeId) -> Result<i64, DomainError> {
-        let (count,) = query_as::<_, (i64,)>(
-            r#"SELECT COUNT(*) FROM "search_pool" WHERE "anime_id" = $1"#,
-        )
-        .bind(anime_id.0)
-        .fetch_one(&self.pool)
-        .await
-        .map_err(|error| DomainError::external("search_pool count by anime failed", error))?;
+        let (count,) =
+            query_as::<_, (i64,)>(r#"SELECT COUNT(*) FROM "search_pool" WHERE "anime_id" = $1"#)
+                .bind(anime_id.0)
+                .fetch_one(&self.pool)
+                .await
+                .map_err(|error| {
+                    DomainError::external("search_pool count by anime failed", error)
+                })?;
         Ok(count)
     }
 
     async fn count_distinct_anime(&self) -> Result<i64, DomainError> {
-        let (count,) = query_as::<_, (i64,)>(
-            r#"SELECT COUNT(DISTINCT "anime_id") FROM "search_pool""#,
-        )
-        .fetch_one(&self.pool)
-        .await
-        .map_err(|error| DomainError::external("search_pool count distinct anime failed", error))?;
+        let (count,) =
+            query_as::<_, (i64,)>(r#"SELECT COUNT(DISTINCT "anime_id") FROM "search_pool""#)
+                .fetch_one(&self.pool)
+                .await
+                .map_err(|error| {
+                    DomainError::external("search_pool count distinct anime failed", error)
+                })?;
         Ok(count)
     }
 
     async fn count_pending_links(&self) -> Result<i64, DomainError> {
-        let (count,) = query_as::<_, (i64,)>(
-            r#"SELECT COUNT(*) FROM "search_pool""#,
-        )
-        .fetch_one(&self.pool)
-        .await
-        .map_err(|error| DomainError::external("search_pool count total failed", error))?;
+        let (count,) = query_as::<_, (i64,)>(r#"SELECT COUNT(*) FROM "search_pool""#)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|error| DomainError::external("search_pool count total failed", error))?;
         Ok(count)
     }
 
@@ -2678,12 +2688,12 @@ impl SearchPoolRepository for SqliteBizDb {
 
     async fn list_distinct_feed_ids(&self) -> Result<Vec<FeedSourceId>, DomainError> {
         let mut state = self.biz.state.lock().await;
-        let rows = query_as::<_, (String,)>(
-            r#"SELECT DISTINCT "feed_id" FROM "search_pool""#,
-        )
-        .fetch_all(&mut *state.connection)
-        .await
-        .map_err(|error| DomainError::external("biz search_pool distinct feed ids failed", error))?;
+        let rows = query_as::<_, (String,)>(r#"SELECT DISTINCT "feed_id" FROM "search_pool""#)
+            .fetch_all(&mut *state.connection)
+            .await
+            .map_err(|error| {
+                DomainError::external("biz search_pool distinct feed ids failed", error)
+            })?;
         Ok(rows.into_iter().map(|(id,)| FeedSourceId(id)).collect())
     }
 
@@ -2703,13 +2713,15 @@ impl SearchPoolRepository for SqliteBizDb {
         .fetch_optional(&mut *state.connection)
         .await
         .map_err(|error| DomainError::external("biz search_pool pick random failed", error))?;
-        Ok(row.map(|(id, anime_id, feed, keyword, search_url)| SearchPoolEntry {
-            id,
-            anime_id: AnimeId(anime_id),
-            feed_id: FeedSourceId(feed),
-            keyword,
-            search_url,
-        }))
+        Ok(row.map(
+            |(id, anime_id, feed, keyword, search_url)| SearchPoolEntry {
+                id,
+                anime_id: AnimeId(anime_id),
+                feed_id: FeedSourceId(feed),
+                keyword,
+                search_url,
+            },
+        ))
     }
 
     async fn delete_entry(&self, id: i64) -> Result<(), DomainError> {
@@ -2728,7 +2740,9 @@ impl SearchPoolRepository for SqliteBizDb {
             .bind(pool_id)
             .execute(&mut *state.connection)
             .await
-            .map_err(|error| DomainError::external("biz search_pool_sub delete by pool failed", error))?;
+            .map_err(|error| {
+                DomainError::external("biz search_pool_sub delete by pool failed", error)
+            })?;
         Ok(())
     }
 
@@ -2759,35 +2773,35 @@ impl SearchPoolRepository for SqliteBizDb {
 
     async fn count_by_anime(&self, anime_id: AnimeId) -> Result<i64, DomainError> {
         let mut state = self.biz.state.lock().await;
-        let (count,) = query_as::<_, (i64,)>(
-            r#"SELECT COUNT(*) FROM "search_pool" WHERE "anime_id" = $1"#,
-        )
-        .bind(anime_id.0)
-        .fetch_one(&mut *state.connection)
-        .await
-        .map_err(|error| DomainError::external("biz search_pool count by anime failed", error))?;
+        let (count,) =
+            query_as::<_, (i64,)>(r#"SELECT COUNT(*) FROM "search_pool" WHERE "anime_id" = $1"#)
+                .bind(anime_id.0)
+                .fetch_one(&mut *state.connection)
+                .await
+                .map_err(|error| {
+                    DomainError::external("biz search_pool count by anime failed", error)
+                })?;
         Ok(count)
     }
 
     async fn count_distinct_anime(&self) -> Result<i64, DomainError> {
         let mut state = self.biz.state.lock().await;
-        let (count,) = query_as::<_, (i64,)>(
-            r#"SELECT COUNT(DISTINCT "anime_id") FROM "search_pool""#,
-        )
-        .fetch_one(&mut *state.connection)
-        .await
-        .map_err(|error| DomainError::external("biz search_pool count distinct anime failed", error))?;
+        let (count,) =
+            query_as::<_, (i64,)>(r#"SELECT COUNT(DISTINCT "anime_id") FROM "search_pool""#)
+                .fetch_one(&mut *state.connection)
+                .await
+                .map_err(|error| {
+                    DomainError::external("biz search_pool count distinct anime failed", error)
+                })?;
         Ok(count)
     }
 
     async fn count_pending_links(&self) -> Result<i64, DomainError> {
         let mut state = self.biz.state.lock().await;
-        let (count,) = query_as::<_, (i64,)>(
-            r#"SELECT COUNT(*) FROM "search_pool""#,
-        )
-        .fetch_one(&mut *state.connection)
-        .await
-        .map_err(|error| DomainError::external("biz search_pool count total failed", error))?;
+        let (count,) = query_as::<_, (i64,)>(r#"SELECT COUNT(*) FROM "search_pool""#)
+            .fetch_one(&mut *state.connection)
+            .await
+            .map_err(|error| DomainError::external("biz search_pool count total failed", error))?;
         Ok(count)
     }
 }
@@ -3988,7 +4002,13 @@ impl SpaceRepository for SqliteDb {
         .fetch_all(&self.pool)
         .await
         .map_err(|error| DomainError::external("list auto subscribing spaces failed", error))?;
-        Ok(rows.into_iter().map(|r| Space { id: SpaceId(r.id), auto_subscribe: r.auto_subscribe }).collect())
+        Ok(rows
+            .into_iter()
+            .map(|r| Space {
+                id: SpaceId(r.id),
+                auto_subscribe: r.auto_subscribe,
+            })
+            .collect())
     }
 
     async fn find_personal_space_user_ids(
@@ -4007,9 +4027,14 @@ impl SpaceRepository for SqliteDb {
         for id in space_ids {
             q = q.bind(id.0);
         }
-        let rows = q.fetch_all(&self.pool).await
+        let rows = q
+            .fetch_all(&self.pool)
+            .await
             .map_err(|error| DomainError::external("find personal space user ids failed", error))?;
-        Ok(rows.into_iter().map(|(sid, uid)| (SpaceId(sid), UserId(uid))).collect())
+        Ok(rows
+            .into_iter()
+            .map(|(sid, uid)| (SpaceId(sid), UserId(uid)))
+            .collect())
     }
 }
 
@@ -4106,7 +4131,13 @@ impl SpaceRepository for SqliteBizDb {
         .fetch_all(&mut *state.connection)
         .await
         .map_err(|error| DomainError::external("biz list auto subscribing spaces failed", error))?;
-        Ok(rows.into_iter().map(|r| Space { id: SpaceId(r.id), auto_subscribe: r.auto_subscribe }).collect())
+        Ok(rows
+            .into_iter()
+            .map(|r| Space {
+                id: SpaceId(r.id),
+                auto_subscribe: r.auto_subscribe,
+            })
+            .collect())
     }
 
     async fn find_personal_space_user_ids(
@@ -4126,9 +4157,13 @@ impl SpaceRepository for SqliteBizDb {
         for id in space_ids {
             q = q.bind(id.0);
         }
-        let rows = q.fetch_all(&mut *state.connection).await
-            .map_err(|error| DomainError::external("biz find personal space user ids failed", error))?;
-        Ok(rows.into_iter().map(|(sid, uid)| (SpaceId(sid), UserId(uid))).collect())
+        let rows = q.fetch_all(&mut *state.connection).await.map_err(|error| {
+            DomainError::external("biz find personal space user ids failed", error)
+        })?;
+        Ok(rows
+            .into_iter()
+            .map(|(sid, uid)| (SpaceId(sid), UserId(uid)))
+            .collect())
     }
 }
 
@@ -5208,7 +5243,10 @@ mod db_tests {
 
         // Second biz after auto-rollback
         {
-            let biz = database.open_biz().await.expect("second biz after auto-rollback");
+            let biz = database
+                .open_biz()
+                .await
+                .expect("second biz after auto-rollback");
             biz.commit().await.expect("commit after auto-rollback");
         }
 
@@ -5220,7 +5258,10 @@ mod db_tests {
 
         // Fourth biz after explicit rollback
         {
-            let biz = database.open_biz().await.expect("fourth biz after explicit rollback");
+            let biz = database
+                .open_biz()
+                .await
+                .expect("fourth biz after explicit rollback");
             biz.commit().await.expect("commit after explicit rollback");
         }
     }
@@ -5228,7 +5269,8 @@ mod db_tests {
     use domain::subscription::capability::{SubscriptionSearchCap, SubscriptionToggleCap};
 
     #[tokio::test]
-    async fn biz_disable_cleans_pool_and_writes_enabled_and_stops_search_in_one_tx() -> Result<(), DomainError> {
+    async fn biz_disable_cleans_pool_and_writes_enabled_and_stops_search_in_one_tx(
+    ) -> Result<(), DomainError> {
         let db_file = NamedTempFile::new().expect("temp db");
         let db_url = format!("sqlite://{}", db_file.path().display());
         let database = SqliteDb::new(&db_url, "test-key")
@@ -5262,7 +5304,10 @@ mod db_tests {
             search_state: SubscriptionSearchState::Pending,
             progress: 0,
         };
-        database.save_subscription(&sub).await.expect("save subscription");
+        database
+            .save_subscription(&sub)
+            .await
+            .expect("save subscription");
 
         // insert pool entries + sub_links directly via SQL
         query(
@@ -5281,12 +5326,11 @@ mod db_tests {
         .expect("insert sub link");
 
         // verify initial state
-        let pool_count: (i64,) = query_as(
-            r#"SELECT COUNT(*) FROM "search_pool" WHERE "anime_id" = 1"#,
-        )
-        .fetch_one(&database.pool)
-        .await
-        .expect("count pool by anime");
+        let pool_count: (i64,) =
+            query_as(r#"SELECT COUNT(*) FROM "search_pool" WHERE "anime_id" = 1"#)
+                .fetch_one(&database.pool)
+                .await
+                .expect("count pool by anime");
         assert_eq!(pool_count.0, 1, "should have 1 pool entry before disable");
 
         // biz: cleanup + disable + stop_search
@@ -5302,28 +5346,29 @@ mod db_tests {
                 .await
                 .expect("write enabled");
             biz_db
-                .write_search_state((UserId(1), SpaceId(1), AnimeId(1)), SubscriptionSearchState::Stopped)
+                .write_search_state(
+                    (UserId(1), SpaceId(1), AnimeId(1)),
+                    SubscriptionSearchState::Stopped,
+                )
                 .await
                 .expect("write search state");
             biz.commit().await.expect("commit biz");
         }
 
         // verify pool entries cleaned
-        let pool_count: (i64,) = query_as(
-            r#"SELECT COUNT(*) FROM "search_pool" WHERE "anime_id" = 1"#,
-        )
-        .fetch_one(&database.pool)
-        .await
-        .expect("count pool by anime");
+        let pool_count: (i64,) =
+            query_as(r#"SELECT COUNT(*) FROM "search_pool" WHERE "anime_id" = 1"#)
+                .fetch_one(&database.pool)
+                .await
+                .expect("count pool by anime");
         assert_eq!(pool_count.0, 0, "pool entries should be cleaned");
 
         // verify sub_links cleaned
-        let link_count: (i64,) = query_as(
-            r#"SELECT COUNT(*) FROM "search_pool_sub" WHERE "anime_id" = 1"#,
-        )
-        .fetch_one(&database.pool)
-        .await
-        .expect("count sub links");
+        let link_count: (i64,) =
+            query_as(r#"SELECT COUNT(*) FROM "search_pool_sub" WHERE "anime_id" = 1"#)
+                .fetch_one(&database.pool)
+                .await
+                .expect("count sub links");
         assert_eq!(link_count.0, 0, "sub links should be cleaned");
 
         // verify subscription state
@@ -5374,7 +5419,10 @@ mod db_tests {
             search_state: SubscriptionSearchState::Running,
             progress: 5,
         };
-        database.save_subscription(&sub).await.expect("save subscription");
+        database
+            .save_subscription(&sub)
+            .await
+            .expect("save subscription");
 
         query(
             r#"INSERT INTO "download_record"
@@ -5480,7 +5528,10 @@ mod db_tests {
             search_state: SubscriptionSearchState::Running,
             progress: 3,
         };
-        database.save_subscription(&sub).await.expect("save subscription");
+        database
+            .save_subscription(&sub)
+            .await
+            .expect("save subscription");
 
         query(
             r#"INSERT INTO "search_pool" ("anime_id", "feed_id", "keyword", "search_url", "created_at")
@@ -5489,13 +5540,12 @@ mod db_tests {
         .execute(&database.pool)
         .await
         .expect("insert pool entry");
-        let pool_id = query_as::<_, (i64,)>(
-            r#"SELECT "id" FROM "search_pool" WHERE "anime_id" = 3 LIMIT 1"#,
-        )
-        .fetch_one(&database.pool)
-        .await
-        .expect("get pool id")
-        .0;
+        let pool_id =
+            query_as::<_, (i64,)>(r#"SELECT "id" FROM "search_pool" WHERE "anime_id" = 3 LIMIT 1"#)
+                .fetch_one(&database.pool)
+                .await
+                .expect("get pool id")
+                .0;
 
         query(
             r#"INSERT INTO "search_pool_sub" ("pool_id", "user_id", "space_id", "anime_id")
@@ -5507,12 +5557,11 @@ mod db_tests {
         .expect("insert sub link");
 
         // verify initial pool exists
-        let pool_count: (i64,) = query_as(
-            r#"SELECT COUNT(*) FROM "search_pool" WHERE "anime_id" = 3"#,
-        )
-        .fetch_one(&database.pool)
-        .await
-        .expect("count pool before");
+        let pool_count: (i64,) =
+            query_as(r#"SELECT COUNT(*) FROM "search_pool" WHERE "anime_id" = 3"#)
+                .fetch_one(&database.pool)
+                .await
+                .expect("count pool before");
         assert_eq!(pool_count.0, 1, "should have 1 pool entry before stop");
 
         // biz: cleanup + stop_search (equivalent of clean_anime_search_pool)
@@ -5524,28 +5573,29 @@ mod db_tests {
                 .await
                 .expect("cleanup pool");
             biz_db
-                .write_search_state((UserId(3), SpaceId(3), AnimeId(3)), SubscriptionSearchState::Stopped)
+                .write_search_state(
+                    (UserId(3), SpaceId(3), AnimeId(3)),
+                    SubscriptionSearchState::Stopped,
+                )
                 .await
                 .expect("write search state");
             biz.commit().await.expect("commit biz");
         }
 
         // verify pool cleaned
-        let pool_count: (i64,) = query_as(
-            r#"SELECT COUNT(*) FROM "search_pool" WHERE "anime_id" = 3"#,
-        )
-        .fetch_one(&database.pool)
-        .await
-        .expect("count pool after");
+        let pool_count: (i64,) =
+            query_as(r#"SELECT COUNT(*) FROM "search_pool" WHERE "anime_id" = 3"#)
+                .fetch_one(&database.pool)
+                .await
+                .expect("count pool after");
         assert_eq!(pool_count.0, 0, "pool entries should be cleaned");
 
         // verify sub_links cleaned
-        let link_count: (i64,) = query_as(
-            r#"SELECT COUNT(*) FROM "search_pool_sub" WHERE "anime_id" = 3"#,
-        )
-        .fetch_one(&database.pool)
-        .await
-        .expect("count sub links");
+        let link_count: (i64,) =
+            query_as(r#"SELECT COUNT(*) FROM "search_pool_sub" WHERE "anime_id" = 3"#)
+                .fetch_one(&database.pool)
+                .await
+                .expect("count sub links");
         assert_eq!(link_count.0, 0, "sub links should be cleaned");
 
         // verify enabled unchanged, search_state Stopped

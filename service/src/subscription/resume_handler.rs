@@ -38,8 +38,10 @@ impl ResumeCompletedSubscriptions {
         let planned = anime.read_data().metadata.planned_episode_count.0;
         let subscriptions = self.subscriptions.list_by_anime(anime_id).await?;
         for mut entity in subscriptions {
-            if entity.resume_if_completed(planned, &*self.subscriptions.caps.toggle).await? {
-            }
+            if entity
+                .resume_if_completed(planned, &*self.subscriptions.caps.toggle)
+                .await?
+            {}
         }
         Ok(())
     }

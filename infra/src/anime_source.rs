@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use chrono::Datelike;
 use anime::source::build_anime_metadata;
 use anime::source::{AnimeMetadataSeed, AnimeSource, SingleAnimeSource};
 use async_trait::async_trait;
+use chrono::Datelike;
 use domain::{
     anime::{AnimeId, AnimeMetadata},
     shared::error::DomainError,
@@ -169,9 +169,7 @@ impl SingleAnimeSource for BangumiSingleSource {
             .bangumi
             .get_subject(bgm_id.0)
             .await?
-            .ok_or(DomainError::InvariantViolation(
-                "bgm subject not found",
-            ))?;
+            .ok_or(DomainError::InvariantViolation("bgm subject not found"))?;
         let name = subject.name.ok_or(DomainError::InvariantViolation(
             "bgm subject name is missing",
         ))?;
@@ -179,10 +177,9 @@ impl SingleAnimeSource for BangumiSingleSource {
             "bgm subject air_date is missing",
         ))?;
 
-        let date =
-            chrono::NaiveDate::parse_from_str(&air_date, "%Y-%m-%d").map_err(|error| {
-                DomainError::external("bgm subject air_date is not yyyy-mm-dd", error)
-            })?;
+        let date = chrono::NaiveDate::parse_from_str(&air_date, "%Y-%m-%d").map_err(|error| {
+            DomainError::external("bgm subject air_date is not yyyy-mm-dd", error)
+        })?;
         let weekday = date.weekday().num_days_from_sunday() as i64;
 
         let seed = AnimeMetadataSeed {

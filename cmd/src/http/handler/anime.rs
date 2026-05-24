@@ -157,10 +157,8 @@ pub async fn get_anime_dashboard(
 async fn build_search_stats(
     state: &AppState,
 ) -> Result<AnimeDashboardSearchResponse, crate::http::error::ApiError> {
-    let (searching_anime_count, pending_link_count) = state
-        .subscription_service
-        .get_search_pool_stats()
-        .await?;
+    let (searching_anime_count, pending_link_count) =
+        state.subscription_service.get_search_pool_stats().await?;
     Ok(AnimeDashboardSearchResponse {
         searching_anime_count,
         pending_link_count,

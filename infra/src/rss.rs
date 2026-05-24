@@ -98,14 +98,13 @@ impl HttpFeedFetcher {
             .bytes()
             .await
             .map_err(|error| DomainError::external("rss response body read failed", error))?;
-        let channel = Channel::read_from(std::io::Cursor::new(content.as_ref())).map_err(
-            |error| {
+        let channel =
+            Channel::read_from(std::io::Cursor::new(content.as_ref())).map_err(|error| {
                 DomainError::external(
                     "rss channel parse failed",
                     anyhow!("url={}, error={}", url, error),
                 )
-            },
-        )?;
+            })?;
         let source = resolve_source_from_channel(&channel)?;
         let mut items = Vec::new();
         for item in channel.items() {
