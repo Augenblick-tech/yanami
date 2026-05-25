@@ -507,10 +507,7 @@ impl SubscriptionService {
         subscription: SubscriptionAnime,
         resource: &Resource,
     ) -> Result<bool, ApplicationError> {
-        if !self
-            .resource_visible_to_subscription(subscription.space_id, resource)
-            .await?
-        {
+        if !self.resource_visible_to_subscription().await? {
             tracing::trace!(
                 resource_id = %resource.id.0,
                 resource_title = %resource.title,
@@ -625,12 +622,7 @@ impl SubscriptionService {
         }
     }
 
-    async fn resource_visible_to_subscription(
-        &self,
-        space_id: SpaceId,
-        resource: &Resource,
-    ) -> Result<bool, ApplicationError> {
-        let _ = (space_id, resource);
+    async fn resource_visible_to_subscription(&self) -> Result<bool, ApplicationError> {
         Ok(true)
     }
 
@@ -747,9 +739,8 @@ impl SubscriptionService {
                         },
                         vec![],
                     )
-                    .expect("valid auto_subscribe entity")
                 })
-                .collect();
+                .collect::<Result<Vec<_>, _>>()?;
             self.subscriptions.save_list(&entities).await?;
             for anime_id in &to_create {
                 self.start_anime_search(user_id, space_id, *anime_id)

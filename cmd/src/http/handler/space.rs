@@ -1,8 +1,11 @@
 use std::sync::Arc;
 
-use axum::{extract::State, Json};
+use axum::{
+    extract::{Extension, State},
+    Json,
+};
 
-use crate::http::{error::ApiError, model::*, state::AppState};
+use crate::http::{auth::AuthenticatedUser, error::ApiError, model::*, state::AppState};
 
 /// 查询当前个人空间的自动订阅开关状态。
 ///
@@ -27,11 +30,13 @@ use crate::http::{error::ApiError, model::*, state::AppState};
 )]
 pub async fn get_auto_subscribe(
     State(state): State<Arc<AppState>>,
+    Extension(user): Extension<AuthenticatedUser>,
 ) -> Result<Json<ApiResponse<AutoSubscribeResponse>>, ApiError> {
-    let enabled = state
+    let space_id = state
         .space_service
-        .get_auto_subscribe(state.admin_space_id)
+        .resolve_personal_space(user.user_id)
         .await?;
+    let enabled = state.space_service.get_auto_subscribe(space_id).await?;
     Ok(Json(ApiResponse::ok(AutoSubscribeResponse { enabled })))
 }
 
@@ -69,11 +74,16 @@ pub async fn get_auto_subscribe(
 )]
 pub async fn set_auto_subscribe(
     State(state): State<Arc<AppState>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Json(request): Json<SetAutoSubscribeRequest>,
 ) -> Result<Json<ApiResponse<AutoSubscribeResponse>>, ApiError> {
+    let space_id = state
+        .space_service
+        .resolve_personal_space(user.user_id)
+        .await?;
     let enabled = state
         .space_service
-        .set_auto_subscribe(state.admin_space_id, request.enabled)
+        .set_auto_subscribe(space_id, request.enabled)
         .await?;
     Ok(Json(ApiResponse::ok(AutoSubscribeResponse { enabled })))
 }

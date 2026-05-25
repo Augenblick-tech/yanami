@@ -3,11 +3,10 @@ use std::sync::Arc;
 use domain::{
     feed::{ResourceId, ResourceRepository},
     shared::error::DomainError,
-    space::SpaceId,
 };
 use user::gateway::EpochClock;
 
-use crate::{contracts::FeedData, entity::FeedEntity, resource_entity::ResourceEntity, Feeds};
+use crate::{contracts::FeedData, entity::FeedEntity, resource_entity::ResourceEntity};
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ResourceListQuery {
@@ -25,7 +24,6 @@ impl Resources {
     pub fn new(
         resource_repository: Arc<dyn ResourceRepository>,
         clock: Arc<dyn EpochClock>,
-        _feeds: Arc<Feeds>,
     ) -> Self {
         Self {
             resource_repository,
@@ -67,27 +65,6 @@ impl Resources {
                 "resource list query must specify exactly one filter",
             )),
         }
-    }
-
-    pub async fn list_recent_for_space(
-        &self,
-        space_id: SpaceId,
-        window_seconds: i64,
-    ) -> Result<Vec<ResourceEntity>, DomainError> {
-        let _ = space_id;
-        let now = self.clock.now_epoch_seconds();
-        let since = now - window_seconds;
-
-        let mut resources = Vec::new();
-        for resource in self.resource_repository.latest_resources(since).await? {
-            let resource_id = resource.id.clone();
-            let sources = self
-                .resource_repository
-                .list_resource_sources(&resource_id)
-                .await?;
-            resources.push(ResourceEntity::new(resource, sources)?);
-        }
-        Ok(resources)
     }
 
     pub async fn ingest(&self, feed_data: FeedData) -> Result<Vec<ResourceEntity>, DomainError> {

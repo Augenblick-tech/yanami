@@ -1009,11 +1009,7 @@ fn build_service_with_rules_action_and_records(
         space_rules,
         Arc::new(StubRegexProvider),
     ));
-    let resources = Arc::new(Resources::new(
-        resources_repo,
-        Arc::new(StubClock),
-        feeds.clone(),
-    ));
+    let resources = Arc::new(Resources::new(resources_repo, Arc::new(StubClock)));
     let sub_caps = SubscriptionCaps {
         toggle: subscriptions_repo.clone(),
         match_writer: subscriptions_repo.clone(),

@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
 use axum::{
-    extract::{Path, State},
+    extract::{Extension, Path, State},
     Json,
 };
 use domain::rule::MatchingRuleId;
 
-use crate::http::{error::ApiError, model::*, state::AppState};
+use crate::http::{auth::AuthenticatedUser, error::ApiError, model::*, state::AppState};
 
 /// 查询空间下的规则集。
 #[utoipa::path(
@@ -17,8 +17,13 @@ use crate::http::{error::ApiError, model::*, state::AppState};
 )]
 pub async fn get_rules(
     State(state): State<Arc<AppState>>,
+    Extension(user): Extension<AuthenticatedUser>,
 ) -> Result<Json<ApiResponse<RulesResponse>>, ApiError> {
-    let outcome = state.rule_service.get_rules(state.admin_space_id).await?;
+    let space_id = state
+        .space_service
+        .resolve_personal_space(user.user_id)
+        .await?;
+    let outcome = state.rule_service.get_rules(space_id).await?;
     Ok(Json(ApiResponse::ok(RulesResponse {
         owner_id: outcome.space_id.0,
         rules: outcome.rules.into_iter().map(Into::into).collect(),
@@ -35,12 +40,17 @@ pub async fn get_rules(
 )]
 pub async fn create_rule(
     State(state): State<Arc<AppState>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Json(request): Json<MatchingRuleRequest>,
 ) -> Result<Json<ApiResponse<MatchingRuleView>>, ApiError> {
+    let space_id = state
+        .space_service
+        .resolve_personal_space(user.user_id)
+        .await?;
     let id = request.name.clone();
     let outcome = state
         .rule_service
-        .save_rule(state.admin_space_id, request.into_domain(id))
+        .save_rule(space_id, request.into_domain(id))
         .await?;
     Ok(Json(ApiResponse::ok(outcome.rule.into())))
 }
@@ -56,12 +66,17 @@ pub async fn create_rule(
 )]
 pub async fn update_rule(
     State(state): State<Arc<AppState>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Path(rule_id): Path<String>,
     Json(request): Json<MatchingRuleRequest>,
 ) -> Result<Json<ApiResponse<MatchingRuleView>>, ApiError> {
+    let space_id = state
+        .space_service
+        .resolve_personal_space(user.user_id)
+        .await?;
     let outcome = state
         .rule_service
-        .save_rule(state.admin_space_id, request.into_domain(rule_id))
+        .save_rule(space_id, request.into_domain(rule_id))
         .await?;
     Ok(Json(ApiResponse::ok(outcome.rule.into())))
 }
@@ -76,11 +91,16 @@ pub async fn update_rule(
 )]
 pub async fn delete_rule(
     State(state): State<Arc<AppState>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Path(rule_id): Path<String>,
 ) -> Result<Json<ApiResponse<DeleteMatchingRuleResponse>>, ApiError> {
+    let space_id = state
+        .space_service
+        .resolve_personal_space(user.user_id)
+        .await?;
     let outcome = state
         .rule_service
-        .delete_rule(state.admin_space_id, MatchingRuleId(rule_id))
+        .delete_rule(space_id, MatchingRuleId(rule_id))
         .await?;
     Ok(Json(ApiResponse::ok(DeleteMatchingRuleResponse {
         id: outcome.rule_id.0,

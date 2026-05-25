@@ -54,7 +54,7 @@ impl JwtDecoder {
             }
         };
         Ok(AuthenticatedUser {
-            user_id: domain::user::UserId(claims._user_id),
+            user_id: domain::user::UserId(claims.user_id),
         })
     }
 }
@@ -80,9 +80,6 @@ pub async fn require_auth(
 
 #[derive(Debug, Clone, Deserialize)]
 struct AccessTokenClaims {
-    #[serde(rename = "user_id")]
-    _user_id: i64,
-    #[serde(rename = "exp")]
-    _exp: usize,
+    user_id: i64,
     character: String,
 }

@@ -6,8 +6,6 @@ use axum::serve;
 use infra::{anime_source::BangumiSingleSource, bangumi::BangumiClient, tmdb::TmdbClient};
 use subscription::missing_episodes::MissingEpisodeChecker;
 
-use domain::space::SpaceId;
-use domain::user::UserId;
 use feed::{Feeds as FeedsContext, Resources as ResourceContext};
 use infra::{
     db::SqliteDb,
@@ -328,7 +326,6 @@ pub(crate) async fn build_runtime(
     let resources = Arc::new(ResourceContext::new(
         database.clone(),
         Arc::new(SystemEpochClock) as Arc<dyn user::gateway::EpochClock>,
-        feeds_impl.clone(),
     ));
     let animes = build_animes(database.clone());
 
@@ -343,7 +340,7 @@ pub(crate) async fn build_runtime(
         password_service.clone(),
         user_ids.clone(),
     ));
-    let initialization = SystemService::new(
+    SystemService::new(
         database.clone(),
         database.clone(),
         user_accounts.clone(),
@@ -393,8 +390,6 @@ pub(crate) async fn build_runtime(
         database,
         http_feed,
         token_issuer,
-        admin_user_id: initialization.admin_user_id,
-        admin_space_id: initialization.admin_space_id,
         rule_runtime,
         download_cache_invalidator,
         download_executor,
@@ -431,8 +426,6 @@ pub(crate) struct RuntimeServices {
     pub(crate) database: Arc<SqliteDb>,
     pub(crate) http_feed: Arc<HttpFeedFetcher>,
     token_issuer: Arc<JwtAccessTokenIssuer>,
-    admin_user_id: UserId,
-    admin_space_id: SpaceId,
     rule_runtime: Arc<CachingRuleRuntime>,
     download_cache_invalidator: Arc<CompositeUserDownloadRuntimeCacheInvalidator>,
     download_executor: Arc<RoutingUserDownloadExecutor>,
@@ -495,8 +488,6 @@ pub(crate) fn build_http_state_with_qbit_verifier(
         anime_service: runtime.anime_service,
         subscription_service: runtime.subscription_service,
         single_anime_source: runtime.single_anime_source,
-        admin_user_id: runtime.admin_user_id,
-        admin_space_id: runtime.admin_space_id,
     }
 }
 

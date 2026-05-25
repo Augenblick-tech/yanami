@@ -47,19 +47,19 @@ impl YucClient {
         ))
     }
 
-    pub fn season_of_date(date: NaiveDate) -> (i32, u32) {
+    pub fn season_of_date(date: NaiveDate) -> Result<(i32, u32), DomainError> {
         match date.month() {
-            1..=3 => (date.year(), 1),
-            4..=6 => (date.year(), 4),
-            7..=9 => (date.year(), 7),
-            10..=12 => (date.year(), 10),
-            _ => unreachable!(),
+            1..=3 => Ok((date.year(), 1)),
+            4..=6 => Ok((date.year(), 4)),
+            7..=9 => Ok((date.year(), 7)),
+            10..=12 => Ok((date.year(), 10)),
+            _ => Err(DomainError::InvariantViolation("month must be 1..=12")),
         }
     }
 
     pub fn current_season_page_url() -> Result<String, Error> {
         let today = Local::now().date_naive();
-        let (year, month) = Self::season_of_date(today);
+        let (year, month) = Self::season_of_date(today)?;
         Self::season_page_url(year, month)
     }
 
@@ -67,7 +67,7 @@ impl YucClient {
         &self,
     ) -> Result<YucSeasonCalendarPage, DomainError> {
         let today = Local::now().date_naive();
-        let (year, month) = Self::season_of_date(today);
+        let (year, month) = Self::season_of_date(today)?;
         self.fetch_season_calendar(year, month).await
     }
 
@@ -519,35 +519,43 @@ mod tests {
     #[test]
     fn maps_dates_to_correct_season_month() {
         assert_eq!(
-            YucClient::season_of_date(NaiveDate::from_ymd_opt(2026, 1, 1).expect("date")),
+            YucClient::season_of_date(NaiveDate::from_ymd_opt(2026, 1, 1).expect("date"))
+                .expect("season"),
             (2026, 1)
         );
         assert_eq!(
-            YucClient::season_of_date(NaiveDate::from_ymd_opt(2026, 3, 31).expect("date")),
+            YucClient::season_of_date(NaiveDate::from_ymd_opt(2026, 3, 31).expect("date"))
+                .expect("season"),
             (2026, 1)
         );
         assert_eq!(
-            YucClient::season_of_date(NaiveDate::from_ymd_opt(2026, 4, 1).expect("date")),
+            YucClient::season_of_date(NaiveDate::from_ymd_opt(2026, 4, 1).expect("date"))
+                .expect("season"),
             (2026, 4)
         );
         assert_eq!(
-            YucClient::season_of_date(NaiveDate::from_ymd_opt(2026, 6, 30).expect("date")),
+            YucClient::season_of_date(NaiveDate::from_ymd_opt(2026, 6, 30).expect("date"))
+                .expect("season"),
             (2026, 4)
         );
         assert_eq!(
-            YucClient::season_of_date(NaiveDate::from_ymd_opt(2026, 7, 1).expect("date")),
+            YucClient::season_of_date(NaiveDate::from_ymd_opt(2026, 7, 1).expect("date"))
+                .expect("season"),
             (2026, 7)
         );
         assert_eq!(
-            YucClient::season_of_date(NaiveDate::from_ymd_opt(2026, 9, 30).expect("date")),
+            YucClient::season_of_date(NaiveDate::from_ymd_opt(2026, 9, 30).expect("date"))
+                .expect("season"),
             (2026, 7)
         );
         assert_eq!(
-            YucClient::season_of_date(NaiveDate::from_ymd_opt(2026, 10, 1).expect("date")),
+            YucClient::season_of_date(NaiveDate::from_ymd_opt(2026, 10, 1).expect("date"))
+                .expect("season"),
             (2026, 10)
         );
         assert_eq!(
-            YucClient::season_of_date(NaiveDate::from_ymd_opt(2026, 12, 31).expect("date")),
+            YucClient::season_of_date(NaiveDate::from_ymd_opt(2026, 12, 31).expect("date"))
+                .expect("season"),
             (2026, 10)
         );
     }

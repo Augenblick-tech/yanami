@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Extension, Path, Query, State},
     http::{header::ACCEPT_LANGUAGE, HeaderMap, StatusCode},
     Json,
 };
 
-use crate::http::{error::ApiError, model::*, state::AppState};
+use crate::http::{auth::AuthenticatedUser, error::ApiError, model::*, state::AppState};
 use domain::anime::{
     AirDate, AnimeId, AnimeMetadata, AnimeTitleSet, BroadcastWeekday, PlannedEpisodeCount,
     SeasonNumber,
@@ -23,9 +23,14 @@ use service::anime::service::AnimeCollectionFilter;
 )]
 pub async fn list_animes(
     State(state): State<Arc<AppState>>,
+    Extension(user): Extension<AuthenticatedUser>,
     headers: HeaderMap,
     Query(query): Query<AnimeQuery>,
 ) -> Result<Json<ApiResponse<PaginatedAnimeResponse>>, ApiError> {
+    let space_id = state
+        .space_service
+        .resolve_personal_space(user.user_id)
+        .await?;
     let page = query.page.unwrap_or(1);
     let page_size = query.page_size.unwrap_or(20);
     let language = query.language.clone();
@@ -41,10 +46,7 @@ pub async fn list_animes(
         page,
         page_size,
     };
-    let outcome = state
-        .anime_service
-        .list_animes(state.admin_space_id, filter)
-        .await?;
+    let outcome = state.anime_service.list_animes(space_id, filter).await?;
     Ok(Json(ApiResponse::ok(PaginatedAnimeResponse {
         items: outcome
             .items
@@ -74,17 +76,18 @@ pub async fn list_animes(
 )]
 pub async fn get_anime(
     State(state): State<Arc<AppState>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Path(path): Path<AnimeIdParam>,
     headers: HeaderMap,
     Query(query): Query<AnimeLanguageQuery>,
 ) -> Result<Json<ApiResponse<AnimeViewResponse>>, ApiError> {
+    let space_id = state
+        .space_service
+        .resolve_personal_space(user.user_id)
+        .await?;
     let anime = state
         .anime_service
-        .get_anime_item(
-            state.admin_user_id,
-            state.admin_space_id,
-            AnimeId(path.anime_id),
-        )
+        .get_anime_item(user.user_id, space_id, AnimeId(path.anime_id))
         .await?;
     match anime {
         Some(item) => Ok(Json(ApiResponse::ok(AnimeViewResponse::from_item(
@@ -105,15 +108,17 @@ pub async fn get_anime(
 )]
 pub async fn list_latest_anime_releases(
     State(state): State<Arc<AppState>>,
+    Extension(user): Extension<AuthenticatedUser>,
     headers: HeaderMap,
     Query(query): Query<LatestAnimeParam>,
 ) -> Result<Json<ApiResponse<Vec<LatestAnimeViewResponse>>>, ApiError> {
+    let space_id = state
+        .space_service
+        .resolve_personal_space(user.user_id)
+        .await?;
     let limit = query.limit.unwrap_or(10).min(20);
     let language = query.language.clone();
-    let outcomes = state
-        .anime_service
-        .list_latest(state.admin_space_id, limit)
-        .await?;
+    let outcomes = state.anime_service.list_latest(space_id, limit).await?;
     Ok(Json(ApiResponse::ok(
         outcomes
             .into_iter()
@@ -139,11 +144,13 @@ pub async fn list_latest_anime_releases(
 )]
 pub async fn get_anime_dashboard(
     State(state): State<Arc<AppState>>,
+    Extension(user): Extension<AuthenticatedUser>,
 ) -> Result<Json<ApiResponse<AnimeDashboardResponse>>, ApiError> {
-    let dashboard = state
-        .anime_service
-        .get_dashboard(state.admin_space_id)
+    let space_id = state
+        .space_service
+        .resolve_personal_space(user.user_id)
         .await?;
+    let dashboard = state.anime_service.get_dashboard(space_id).await?;
     let search = build_search_stats(&state).await?;
     Ok(Json(ApiResponse::ok(AnimeDashboardResponse::from_view(
         dashboard, search,
@@ -175,15 +182,16 @@ async fn build_search_stats(
 )]
 pub async fn list_anime_release_records(
     State(state): State<Arc<AppState>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Path(path): Path<AnimeIdParam>,
 ) -> Result<Json<ApiResponse<AnimeReleaseRecordsResponse>>, ApiError> {
+    let space_id = state
+        .space_service
+        .resolve_personal_space(user.user_id)
+        .await?;
     let outcome = state
         .anime_service
-        .list_release_records(
-            state.admin_user_id,
-            state.admin_space_id,
-            AnimeId(path.anime_id),
-        )
+        .list_release_records(user.user_id, space_id, AnimeId(path.anime_id))
         .await?;
     Ok(Json(ApiResponse::ok(AnimeReleaseRecordsResponse {
         anime_id: outcome.anime_id.0,
@@ -250,6 +258,7 @@ pub async fn preview_anime(
 )]
 pub async fn create_anime(
     State(state): State<Arc<AppState>>,
+    Extension(user): Extension<AuthenticatedUser>,
     headers: HeaderMap,
     Query(query): Query<AnimeLanguageQuery>,
     Json(request): Json<CreateAnimeRequest>,
@@ -268,6 +277,10 @@ pub async fn create_anime(
         air_date: AirDate(request.air_date),
         season: SeasonNumber(request.season),
     };
+    let space_id = state
+        .space_service
+        .resolve_personal_space(user.user_id)
+        .await?;
     let anime_id = state.anime_service.create_anime(metadata).await?;
     if let Err(error) = state
         .subscription_service
@@ -278,7 +291,7 @@ pub async fn create_anime(
     }
     let item = state
         .anime_service
-        .get_anime_item(state.admin_user_id, state.admin_space_id, anime_id)
+        .get_anime_item(user.user_id, space_id, anime_id)
         .await?
         .ok_or(ApiError::not_found("anime"))?;
     Ok((
@@ -310,9 +323,14 @@ pub async fn create_anime(
 )]
 pub async fn update_anime_metadata(
     State(state): State<Arc<AppState>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Path(path): Path<AnimeIdParam>,
     Json(request): Json<UpdateAnimeMetadataRequest>,
 ) -> Result<Json<ApiResponse<AnimeViewResponse>>, ApiError> {
+    let space_id = state
+        .space_service
+        .resolve_personal_space(user.user_id)
+        .await?;
     let anime_id = AnimeId(path.anime_id);
     let metadata = AnimeMetadata {
         id: anime_id,
@@ -330,12 +348,7 @@ pub async fn update_anime_metadata(
     };
     let outcome = state
         .anime_service
-        .update_anime_metadata(
-            state.admin_user_id,
-            state.admin_space_id,
-            anime_id,
-            metadata,
-        )
+        .update_anime_metadata(user.user_id, space_id, anime_id, metadata)
         .await?;
     Ok(Json(ApiResponse::ok(AnimeViewResponse::from_item(
         outcome.item,
@@ -359,12 +372,17 @@ pub async fn update_anime_metadata(
 )]
 pub async fn get_anime_metadata(
     State(state): State<Arc<AppState>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Path(path): Path<AnimeIdParam>,
 ) -> Result<Json<ApiResponse<UpdateAnimeMetadataRequest>>, ApiError> {
+    let space_id = state
+        .space_service
+        .resolve_personal_space(user.user_id)
+        .await?;
     let anime_id = AnimeId(path.anime_id);
     let item = state
         .anime_service
-        .get_anime_item(state.admin_user_id, state.admin_space_id, anime_id)
+        .get_anime_item(user.user_id, space_id, anime_id)
         .await?
         .ok_or(ApiError::not_found("anime"))?;
     let m = &item.anime.metadata;
@@ -396,16 +414,21 @@ pub async fn get_anime_metadata(
 )]
 pub async fn subscribe(
     State(state): State<Arc<AppState>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Path(path): Path<AnimeIdParam>,
 ) -> Result<Json<ApiResponse<AnimeViewResponse>>, ApiError> {
+    let space_id = state
+        .space_service
+        .resolve_personal_space(user.user_id)
+        .await?;
     let anime_id = AnimeId(path.anime_id);
     state
         .anime_service
-        .subscribe(state.admin_user_id, state.admin_space_id, anime_id)
+        .subscribe(user.user_id, space_id, anime_id)
         .await?;
     let item = state
         .anime_service
-        .get_anime_item(state.admin_user_id, state.admin_space_id, anime_id)
+        .get_anime_item(user.user_id, space_id, anime_id)
         .await?
         .ok_or(ApiError::not_found("anime"))?;
     Ok(Json(ApiResponse::ok(AnimeViewResponse::from_item(
@@ -429,16 +452,21 @@ pub async fn subscribe(
 )]
 pub async fn unsubscribe(
     State(state): State<Arc<AppState>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Path(path): Path<AnimeIdParam>,
 ) -> Result<Json<ApiResponse<AnimeViewResponse>>, ApiError> {
+    let space_id = state
+        .space_service
+        .resolve_personal_space(user.user_id)
+        .await?;
     let anime_id = AnimeId(path.anime_id);
     state
         .anime_service
-        .unsubscribe(state.admin_user_id, state.admin_space_id, anime_id)
+        .unsubscribe(user.user_id, space_id, anime_id)
         .await?;
     let item = state
         .anime_service
-        .get_anime_item(state.admin_user_id, state.admin_space_id, anime_id)
+        .get_anime_item(user.user_id, space_id, anime_id)
         .await?
         .ok_or(ApiError::not_found("anime"))?;
     Ok(Json(ApiResponse::ok(AnimeViewResponse::from_item(
@@ -467,22 +495,22 @@ pub async fn unsubscribe(
 )]
 pub async fn set_subscription_active(
     State(state): State<Arc<AppState>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Path(path): Path<AnimeIdParam>,
     Json(request): Json<SetSubscriptionRequest>,
 ) -> Result<Json<ApiResponse<AnimeViewResponse>>, ApiError> {
+    let space_id = state
+        .space_service
+        .resolve_personal_space(user.user_id)
+        .await?;
     let anime_id = AnimeId(path.anime_id);
     state
         .anime_service
-        .set_active(
-            state.admin_user_id,
-            state.admin_space_id,
-            anime_id,
-            request.enabled,
-        )
+        .set_active(user.user_id, space_id, anime_id, request.enabled)
         .await?;
     let item = state
         .anime_service
-        .get_anime_item(state.admin_user_id, state.admin_space_id, anime_id)
+        .get_anime_item(user.user_id, space_id, anime_id)
         .await?
         .ok_or(ApiError::not_found("anime"))?;
     Ok(Json(ApiResponse::ok(AnimeViewResponse::from_item(
@@ -504,14 +532,19 @@ pub async fn set_subscription_active(
 )]
 pub async fn update_anime(
     State(state): State<Arc<AppState>>,
+    Extension(user): Extension<AuthenticatedUser>,
     Path(path): Path<AnimeIdParam>,
     Json(request): Json<PatchAnimeRequest>,
 ) -> Result<Json<ApiResponse<AnimeViewResponse>>, ApiError> {
+    let space_id = state
+        .space_service
+        .resolve_personal_space(user.user_id)
+        .await?;
     let outcome = state
         .anime_service
         .patch_anime_item(
-            state.admin_user_id,
-            state.admin_space_id,
+            user.user_id,
+            space_id,
             AnimeId(path.anime_id),
             request.search_enabled,
             request.metadata_locked,

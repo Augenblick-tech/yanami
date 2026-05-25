@@ -85,7 +85,7 @@ impl HttpFeedFetcher {
             ));
         }
         if !status.is_success() {
-            let _content = response
+            response
                 .bytes()
                 .await
                 .map_err(|error| DomainError::external("rss response body read failed", error))?;

@@ -1,8 +1,6 @@
 use std::sync::Arc;
 
 use anime::source::SingleAnimeSource;
-use domain::space::SpaceId;
-use domain::user::UserId;
 
 use crate::http::auth::JwtDecoder;
 use service::{
@@ -23,6 +21,4 @@ pub struct AppState {
     pub anime_service: Arc<AnimeService>,
     pub subscription_service: Arc<SubscriptionService>,
     pub single_anime_source: Arc<dyn SingleAnimeSource>,
-    pub admin_user_id: UserId,
-    pub admin_space_id: SpaceId,
 }

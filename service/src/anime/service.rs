@@ -186,16 +186,16 @@ impl AnimeService {
                 },
             )
             .collect();
-        let replaced = self.animes.save_list(&entries).await?;
-        let new_anime_ids: Vec<AnimeId> = replaced.iter().map(|a| a.id()).collect();
-        for anime in &replaced {
+        let new_entities = self.animes.save_list(&entries).await?;
+        let new_anime_ids: Vec<AnimeId> = new_entities.iter().map(|a| a.id()).collect();
+        for entry in &entries {
             for handler in &self.after_update_handlers {
-                handler.on_anime_updated(anime.id()).await;
+                handler.on_anime_updated(entry.id()).await;
             }
         }
         Ok(SyncAnimeCalendarOutcome {
             fetched,
-            persisted: replaced.len(),
+            persisted: new_entities.len(),
             new_anime_ids,
         })
     }
@@ -504,8 +504,7 @@ impl AnimeService {
         metadata_locked: Option<bool>,
     ) -> Result<UpdateAnimeItemOutcome, ApplicationError> {
         if let Some(search_enabled) = search_enabled {
-            let _ = self
-                .set_search_enabled(user_id, space_id, anime_id, search_enabled)
+            self.set_search_enabled(user_id, space_id, anime_id, search_enabled)
                 .await?;
         }
         if let Some(metadata_locked) = metadata_locked {

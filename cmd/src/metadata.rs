@@ -52,7 +52,6 @@ pub fn build_metadata_sources(
     tmdb_token: &str,
     sources: &[MetadataSourceKind],
 ) -> Result<Vec<Box<dyn AnimeSource>>> {
-    let tmdb = TmdbClient::new(tmdb_token)?;
     let mut metadata_sources: Vec<Box<dyn AnimeSource>> = Vec::with_capacity(sources.len());
 
     for source_kind in sources {
@@ -73,7 +72,6 @@ pub fn build_metadata_sources(
         }
     }
 
-    let _ = tmdb;
     Ok(metadata_sources)
 }
 

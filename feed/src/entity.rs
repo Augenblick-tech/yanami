@@ -187,7 +187,9 @@ fn validate_source(source: &FeedSource) -> Result<(), DomainError> {
     }
 
     if has_search_url {
-        let search_url = source.search_url.as_deref().unwrap();
+        let search_url = source.search_url.as_deref().ok_or_else(|| {
+            DomainError::InvariantViolation("search feed source must have search url")
+        })?;
         if !search_url.contains("{}") {
             return Err(DomainError::InvariantViolation(
                 "search template feed source must contain placeholder",

@@ -48,7 +48,7 @@ use user::gateway::UserIdGenerator;
 
 use crate::secret::SecretProtector;
 
-const LATEST_SCHEMA_VERSION: i64 = 1;
+const LATEST_SCHEMA_VERSION: i64 = 2;
 const SCHEMA_VERSION_KEY: &str = "schema_version";
 
 /// 基于 SQLite 的全局数据库实现。
@@ -79,7 +79,12 @@ impl Drop for SqliteBizState {
             return;
         }
         tracing::trace!("biz #{} dropped without commit, auto-rolling back", self.id);
-        let _ = futures_executor::block_on(sqlx::query("ROLLBACK").execute(&mut *self.connection));
+        // Drop 中无法返回错误，回滚失败时已有日志记录，不做额外处理
+        if let Err(error) =
+            futures_executor::block_on(sqlx::query("ROLLBACK").execute(&mut *self.connection))
+        {
+            tracing::error!(?error, "biz auto-rollback failed");
+        }
     }
 }
 
@@ -183,7 +188,14 @@ impl SqliteDb {
         match database.initialize_schema(&biz).await {
             Ok(()) => {
                 if let Err(error) = biz.commit().await {
-                    let _ = biz.rollback().await;
+                    // commit 失败后尝试回滚；回滚失败时记录日志但不覆盖原始错误
+                    if let Err(rollback_error) = biz.rollback().await {
+                        tracing::error!(
+                            ?rollback_error,
+                            ?error,
+                            "rollback after commit failure also failed"
+                        );
+                    }
                     return Err(error);
                 }
             }
@@ -637,6 +649,10 @@ impl SqliteDb {
                 self.migrate_v0_to_v1(&mut *transaction).await?;
                 1
             }
+            1 => {
+                self.migrate_v1_to_v2(&mut *transaction).await?;
+                2
+            }
             _ => {
                 return Err(DomainError::InvariantViolation(
                     "database schema migration path is not implemented",
@@ -674,6 +690,41 @@ impl SqliteDb {
         value.parse::<i64>().map_err(|error| {
             DomainError::external("schema version parse failed", anyhow::anyhow!(error))
         })
+    }
+
+    async fn migrate_v1_to_v2(
+        &self,
+        transaction: &mut sqlx::SqliteConnection,
+    ) -> Result<(), DomainError> {
+        query(
+            r#"DELETE FROM "feed_source" WHERE rowid NOT IN (
+                SELECT MIN(rowid) FROM "feed_source" WHERE "source_key" IS NOT NULL GROUP BY "source_key"
+            )"#,
+        )
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| DomainError::external("feed_source duplicate cleanup failed", error))?;
+        query(
+            r#"DELETE FROM "matching_rule" WHERE rowid NOT IN (
+                SELECT MIN(rowid) FROM "matching_rule" GROUP BY "owner_scope", "scope_id", "name"
+            )"#,
+        )
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| DomainError::external("matching_rule duplicate cleanup failed", error))?;
+        query(
+            r#"CREATE UNIQUE INDEX IF NOT EXISTS "idx_feed_source_source_key" ON "feed_source"("source_key")"#,
+        )
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| DomainError::external("feed_source source_key unique index failed", error))?;
+        query(
+            r#"CREATE UNIQUE INDEX IF NOT EXISTS "idx_matching_rule_scope_name" ON "matching_rule"("owner_scope", "scope_id", "name")"#,
+        )
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| DomainError::external("matching_rule scope+name unique index failed", error))?;
+        Ok(())
     }
 
     async fn migrate_v0_to_v1(
@@ -4878,21 +4929,21 @@ fn anime_row_matches_query(
         else {
             return Ok(false);
         };
-        if normalize_season_filter(air_date.year(), air_date.month()) != (year, month) {
+        if normalize_season_filter(air_date.year(), air_date.month())? != (year, month) {
             return Ok(false);
         }
     }
     Ok(true)
 }
 
-fn normalize_season_filter(year: i32, month: u32) -> (i32, u32) {
+fn normalize_season_filter(year: i32, month: u32) -> Result<(i32, u32), DomainError> {
     match month {
-        12 => (year + 1, 1),
-        1..=2 => (year, 1),
-        3..=5 => (year, 4),
-        6..=8 => (year, 7),
-        9..=11 => (year, 10),
-        _ => unreachable!("month must be 1..=12"),
+        12 => Ok((year + 1, 1)),
+        1..=2 => Ok((year, 1)),
+        3..=5 => Ok((year, 4)),
+        6..=8 => Ok((year, 7)),
+        9..=11 => Ok((year, 10)),
+        _ => Err(DomainError::InvariantViolation("month must be 1..=12")),
     }
 }
 
