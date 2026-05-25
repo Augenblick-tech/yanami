@@ -9,70 +9,23 @@ use std::{
 };
 
 use async_trait::async_trait;
-use domain::{shared::error::DomainError, user::UserId};
-
-use crate::download::{
-    contracts::{DownloadRequest, UserDownloadExecutor},
-    shared::error::ApplicationError,
+use domain::{
+    download::{
+        DownloadRequest, UserDownloadDriver, UserDownloadDriverBindingStore,
+        UserQbitDownloadProfile,
+    },
+    shared::error::DomainError,
+    user::UserId,
 };
 
-/// 某个具体下载器驱动的应用层端口。
-#[async_trait]
-pub trait UserDownloadDriver: Send + Sync {
-    /// 驱动唯一标识，例如 `qbit`。
-    fn driver_key(&self) -> &'static str;
-
-    /// 使用该驱动处理一次用户下载请求。
-    async fn download(
-        &self,
-        user_id: UserId,
-        request: &DownloadRequest,
-    ) -> Result<(), ApplicationError>;
-}
+use crate::download::{
+    contracts::UserDownloadExecutor,
+    shared::error::ApplicationError,
+};
 
 pub type ResolveDriverKeyFuture =
     Pin<Box<dyn Future<Output = Result<Option<String>, ApplicationError>> + Send>>;
 pub type ResolveUserDownloadDriver = dyn Fn(UserId) -> ResolveDriverKeyFuture + Send + Sync;
-
-/// 用户下载器选择的持久化端口。
-#[async_trait]
-pub trait UserDownloadDriverBindingStore: Send + Sync {
-    /// 读取用户当前绑定的下载器标识。
-    async fn find_driver_key(&self, user_id: UserId) -> Result<Option<String>, ApplicationError>;
-
-    /// 保存用户当前绑定的下载器标识。
-    async fn save_driver_key(
-        &self,
-        user_id: UserId,
-        driver_key: &str,
-    ) -> Result<(), ApplicationError>;
-}
-
-/// qBittorrent 的用户下载配置。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UserQbitDownloadProfile {
-    pub endpoint: String,
-    pub username: String,
-    pub secret: String,
-    pub download_path: String,
-}
-
-/// qBittorrent 用户配置持久化端口。
-#[async_trait]
-pub trait UserQbitDownloadProfileStore: Send + Sync {
-    /// 读取用户的 qbit 配置。
-    async fn find_qbit_profile(
-        &self,
-        user_id: UserId,
-    ) -> Result<Option<UserQbitDownloadProfile>, ApplicationError>;
-
-    /// 保存用户的 qbit 配置。
-    async fn save_qbit_profile(
-        &self,
-        user_id: UserId,
-        profile: &UserQbitDownloadProfile,
-    ) -> Result<(), ApplicationError>;
-}
 
 pub type VerifyQbitProfileFuture =
     Pin<Box<dyn Future<Output = Result<(), ApplicationError>> + Send>>;
@@ -154,8 +107,7 @@ impl RoutingUserDownloadExecutor {
 
         driver
             .download(user_id, request)
-            .await
-            .map_err(DomainError::from)?;
+            .await?;
         Ok(())
     }
 }
@@ -278,10 +230,14 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use async_trait::async_trait;
-    use domain::{shared::error::DomainError, user::UserId};
+    use domain::{
+        download::DownloadRequest,
+        shared::error::DomainError,
+        user::UserId,
+    };
 
     use super::*;
-    use crate::download::contracts::DownloadRequest;
+    use crate::download::shared::error::ApplicationError;
 
     fn fixed_resolver(key: Option<String>) -> Arc<ResolveUserDownloadDriver> {
         Arc::new(move |_user_id| {
@@ -311,7 +267,7 @@ mod tests {
         async fn find_driver_key(
             &self,
             user_id: UserId,
-        ) -> Result<Option<String>, ApplicationError> {
+        ) -> Result<Option<String>, DomainError> {
             *self.reads.lock().expect("lock reads") += 1;
             Ok(self
                 .values
@@ -326,7 +282,7 @@ mod tests {
             &self,
             user_id: UserId,
             driver_key: &str,
-        ) -> Result<(), ApplicationError> {
+        ) -> Result<(), DomainError> {
             self.values
                 .lock()
                 .expect("lock values")
@@ -345,7 +301,7 @@ mod tests {
             &self,
             user_id: UserId,
             _request: &DownloadRequest,
-        ) -> Result<(), ApplicationError> {
+        ) -> Result<(), DomainError> {
             self.seen.lock().expect("lock seen").push(user_id);
             Ok(())
         }

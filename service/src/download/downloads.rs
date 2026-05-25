@@ -1,14 +1,17 @@
 use std::sync::Arc;
 
-use domain::{shared::error::DomainError, user::UserId};
+use domain::{
+    download::{
+        UserDownloadDriverBindingStore, UserQbitDownloadProfile, UserQbitDownloadProfileStore,
+    },
+    shared::error::DomainError,
+    user::UserId,
+};
 use user::users::Users;
 
 use crate::download::{
     contracts::{DownloadConfiguration, QbitProfileView, UserDownloads as UserDownloadsPort},
-    runtime::{
-        InvalidateUserDownloadRuntime, UserDownloadDriverBindingStore, UserQbitDownloadProfile,
-        UserQbitDownloadProfileStore, VerifyQbitProfile,
-    },
+    runtime::{InvalidateUserDownloadRuntime, VerifyQbitProfile},
     user_actions::{UserDownload, UserDownloadRequest},
 };
 
@@ -58,13 +61,11 @@ impl UserDownloads {
         let driver_key = self
             .drivers
             .find_driver_key(user_id)
-            .await
-            .map_err(DomainError::from)?;
+            .await?;
         let qbit_profile = self
             .qbit_profiles
             .find_qbit_profile(user_id)
-            .await
-            .map_err(DomainError::from)?
+            .await?
             .map(|profile| QbitProfileView {
                 endpoint: profile.endpoint,
                 username: profile.username,
@@ -89,8 +90,7 @@ impl UserDownloads {
         let driver_key = validate_driver_key(&driver_key)?;
         self.drivers
             .save_driver_key(user_id, &driver_key)
-            .await
-            .map_err(DomainError::from)?;
+            .await?;
         (self.invalidate_user_runtime)(user_id);
         Ok(driver_key)
     }
@@ -106,12 +106,10 @@ impl UserDownloads {
         self.ensure_user_exists(user_id).await?;
         let profile = validate_qbit_profile(&endpoint, &username, &secret, &download_path)?;
         (self.verify_qbit_profile)(profile.clone())
-            .await
-            .map_err(DomainError::from)?;
+            .await?;
         self.qbit_profiles
             .save_qbit_profile(user_id, &profile)
-            .await
-            .map_err(DomainError::from)?;
+            .await?;
         (self.invalidate_user_runtime)(user_id);
         Ok(())
     }

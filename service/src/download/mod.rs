@@ -8,4 +8,5 @@ pub mod shared {
     pub mod error;
 }
 
-pub use contracts::{DownloadConfiguration, DownloadRequest, QbitProfileView};
+pub use contracts::{DownloadConfiguration, QbitProfileView};
+pub use domain::download::DownloadRequest;

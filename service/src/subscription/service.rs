@@ -107,7 +107,7 @@ impl SubscriptionService {
             .await?;
         for mut feed in feeds {
             let source_title = feed.read_data().title.clone();
-            let feed_data = match feed.fetch().await {
+            let feed_data = match self.feeds.fetch_feed(&mut feed).await {
                 Ok(feed_data) => feed_data,
                 Err(error) => {
                     tracing::error!(

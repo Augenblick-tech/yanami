@@ -58,6 +58,22 @@ pub struct RegistrationCode {
     pub remaining_uses: u32,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AccessToken {
+    pub access_token: String,
+    pub token_type: String,
+    pub expires_at: i64,
+}
+
+#[async_trait]
+pub trait AccessTokenIssuer: Send + Sync {
+    async fn issue_access_token(
+        &self,
+        user_id: UserId,
+        role: UserRole,
+    ) -> Result<AccessToken, DomainError>;
+}
+
 /// Account context 下的用户账号仓储端口。
 #[async_trait]
 pub trait UserRepository: Send + Sync {

@@ -2,13 +2,14 @@ use std::sync::Arc;
 
 use domain::{
     feed::{FeedSource, FeedSourceId, SpaceFeedRepository},
+    feed::capability::FeedSourceWriterCap,
     shared::biz::BizContext,
     shared::error::DomainError,
     space::SpaceId,
 };
 
 use crate::{
-    contracts::{FeedFetcher, FeedSourceKeyUpdater, ResolveFeedSource},
+    contracts::{FeedData, FeedFetcher, ResolveFeedSource},
     entity::{validate_source_set, FeedEntity},
 };
 
@@ -20,10 +21,16 @@ pub struct FeedListQuery {
 }
 
 #[derive(Clone)]
+pub struct FeedCaps {
+    pub writer: Arc<dyn FeedSourceWriterCap>,
+}
+
+#[derive(Clone)]
 pub struct Feeds {
     space_repository: Arc<dyn SpaceFeedRepository>,
     resolve_source: Arc<ResolveFeedSource>,
     feed_fetcher: Arc<dyn FeedFetcher>,
+    pub caps: FeedCaps,
 }
 
 impl Feeds {
@@ -31,11 +38,13 @@ impl Feeds {
         space_repository: Arc<dyn SpaceFeedRepository>,
         resolve_source: Arc<ResolveFeedSource>,
         feed_fetcher: Arc<dyn FeedFetcher>,
+        caps: FeedCaps,
     ) -> Self {
         Self {
             space_repository,
             resolve_source,
             feed_fetcher,
+            caps,
         }
     }
 
@@ -44,6 +53,7 @@ impl Feeds {
             space_repository: self.space_repository.with_biz(biz)?,
             resolve_source: self.resolve_source.clone(),
             feed_fetcher: self.feed_fetcher.clone(),
+            caps: self.caps.clone(),
         })
     }
 
@@ -56,11 +66,7 @@ impl Feeds {
     }
 
     pub async fn create(&self, source: FeedSource) -> Result<FeedEntity, DomainError> {
-        FeedEntity::new_with_source_key_updater(
-            self.resolve_source(source).await?,
-            self.feed_fetcher.clone(),
-            self.source_key_updater(),
-        )
+        FeedEntity::new(self.resolve_source(source).await?)
     }
 
     pub async fn save_source(
@@ -75,11 +81,7 @@ impl Feeds {
         self.space_repository
             .save_space_feed(space_id, &source_to_save)
             .await?;
-        FeedEntity::new_with_source_key_updater(
-            source_to_save,
-            self.feed_fetcher.clone(),
-            self.source_key_updater(),
-        )
+        FeedEntity::new(source_to_save)
     }
 
     pub async fn delete_source(
@@ -116,13 +118,7 @@ impl Feeds {
         validate_source_set(&sources)?;
         sources
             .into_iter()
-            .map(|source| {
-                FeedEntity::new_with_source_key_updater(
-                    source,
-                    self.feed_fetcher.clone(),
-                    self.source_key_updater(),
-                )
-            })
+            .map(FeedEntity::new)
             .collect()
     }
 
@@ -135,27 +131,8 @@ impl Feeds {
         Ok(source)
     }
 
-    fn source_key_updater(&self) -> Arc<dyn FeedSourceKeyUpdater> {
-        Arc::new(RepositoryFeedSourceKeyUpdater {
-            repository: self.space_repository.clone(),
-        })
-    }
-}
-
-struct RepositoryFeedSourceKeyUpdater {
-    repository: Arc<dyn SpaceFeedRepository>,
-}
-
-#[async_trait::async_trait]
-impl FeedSourceKeyUpdater for RepositoryFeedSourceKeyUpdater {
-    async fn update_source_key(
-        &self,
-        source_id: &FeedSourceId,
-        source_key: &str,
-    ) -> Result<(), DomainError> {
-        self.repository
-            .update_space_feed_source_key(source_id, source_key)
-            .await
+    pub async fn fetch_feed(&self, feed: &mut FeedEntity) -> Result<FeedData, DomainError> {
+        feed.fetch(self.feed_fetcher.as_ref()).await
     }
 }
 
@@ -253,10 +230,24 @@ mod tests {
 
     use async_trait::async_trait;
     use domain::feed::{FeedSource, FeedSourceId};
+    use domain::feed::capability::FeedSourceUpdate;
 
     use crate::contracts::{FeedData, FeedFetcher, ResolvedFeedSource};
 
     use super::*;
+
+    struct NoopFeedSourceWriter;
+
+    #[async_trait]
+    impl FeedSourceWriterCap for NoopFeedSourceWriter {
+        async fn write_source(
+            &self,
+            _scope: (&str, i64),
+            _source: &FeedSourceUpdate,
+        ) -> Result<(), DomainError> {
+            Ok(())
+        }
+    }
 
     fn source(id: &str, source_key: &str) -> FeedSource {
         FeedSource {
@@ -376,6 +367,9 @@ mod tests {
                 })
             }),
             Arc::new(NoopFeedFetcher),
+            FeedCaps {
+                writer: Arc::new(NoopFeedSourceWriter),
+            },
         )
     }
 

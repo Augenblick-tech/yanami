@@ -29,8 +29,20 @@ impl RuleEntity {
         self.rule
     }
 
-    pub fn read_data_mut(&mut self) -> &mut MatchingRule {
-        &mut self.rule
+    pub fn set_active(&mut self) {
+        self.rule.active = true;
+    }
+
+    pub fn merge_or_reject(&mut self, existing: &MatchingRule) -> Result<(), DomainError> {
+        if existing.active && existing.id != self.rule.id {
+            return Err(DomainError::InvariantViolation(
+                "matching rule name must be unique",
+            ));
+        }
+        if !existing.active && existing.id != self.rule.id {
+            self.rule.id = existing.id.clone();
+        }
+        Ok(())
     }
 
     pub async fn activate(
@@ -207,6 +219,30 @@ mod tests {
 
         validate_rule_list(&[sample_rule("a", "ANi", 1, r"^\[ANi\].*$"), inactive])
             .expect("inactive duplicate order");
+    }
+
+    #[test]
+    fn merge_or_reject_rejects_active_name_conflict() {
+        let mut entity = RuleEntity::new(sample_rule("a", "ANi", 1, r"^\[ANi\].*$")).expect("entity");
+        let existing = sample_rule("b", "ANi", 2, r"^\[ANi\].*$");
+
+        let error = entity.merge_or_reject(&existing).expect_err("active conflict");
+
+        assert_eq!(
+            error.to_string(),
+            "domain invariant violation: matching rule name must be unique"
+        );
+    }
+
+    #[test]
+    fn merge_or_reject_adopts_inactive_id() {
+        let mut entity = RuleEntity::new(sample_rule("new-id", "Lilith", 3, r"^\[Lilith\].*$")).expect("entity");
+        let mut existing = sample_rule("old-id", "Lilith", 2, r"^\[Lilith\].*$");
+        existing.active = false;
+
+        entity.merge_or_reject(&existing).expect("adopt id");
+
+        assert_eq!(entity.read_data().id.0, "old-id");
     }
 
     #[test]

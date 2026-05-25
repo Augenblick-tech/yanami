@@ -1,13 +1,6 @@
 use async_trait::async_trait;
 
-use domain::{shared::error::DomainError, user::UserId};
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DownloadRequest {
-    pub source_url: String,
-    pub resource_id: String,
-    pub relative_target_path: String,
-}
+use domain::{download::DownloadRequest, shared::error::DomainError, user::UserId};
 
 #[async_trait]
 pub(crate) trait UserDownloadExecutor: Send + Sync {

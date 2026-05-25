@@ -14,46 +14,9 @@ use crate::entity::validate_source;
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
-    use async_trait::async_trait;
     use domain::feed::FeedSourceId;
 
     use super::*;
-    use crate::contracts::{FeedData, FeedFetcher};
-
-    struct NoopFeedFetcher;
-
-    #[async_trait]
-    impl FeedFetcher for NoopFeedFetcher {
-        async fn fetch(&self, source: &FeedSource) -> Result<FeedData, DomainError> {
-            Ok(FeedData {
-                source_key: source
-                    .source_key
-                    .clone()
-                    .unwrap_or_else(|| "source-key".to_string()),
-                items: vec![],
-            })
-        }
-
-        async fn search(
-            &self,
-            source: &FeedSource,
-            _keyword: &str,
-        ) -> Result<FeedData, DomainError> {
-            Ok(FeedData {
-                source_key: source
-                    .source_key
-                    .clone()
-                    .unwrap_or_else(|| "source-key".to_string()),
-                items: vec![],
-            })
-        }
-    }
-
-    fn fetcher() -> Arc<dyn FeedFetcher> {
-        Arc::new(NoopFeedFetcher)
-    }
 
     fn feed(id: &str, url: &str) -> FeedSource {
         FeedSource {
@@ -67,8 +30,7 @@ mod tests {
 
     #[test]
     fn replace_source_accepts_valid_source() {
-        let mut entity =
-            FeedEntity::new(feed("a", "https://a.example/rss"), fetcher()).expect("entity");
+        let mut entity = FeedEntity::new(feed("a", "https://a.example/rss")).expect("entity");
 
         entity
             .replace_source(feed("b", "https://b.example/rss"))
@@ -79,8 +41,7 @@ mod tests {
 
     #[test]
     fn replace_source_keeps_original_when_validation_fails() {
-        let mut entity =
-            FeedEntity::new(feed("a", "https://a.example/rss"), fetcher()).expect("entity");
+        let mut entity = FeedEntity::new(feed("a", "https://a.example/rss")).expect("entity");
 
         let error = entity
             .replace_source(feed("b", ""))

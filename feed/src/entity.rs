@@ -1,41 +1,26 @@
-use std::{collections::HashSet, sync::Arc, sync::OnceLock};
+use std::{collections::HashSet, sync::OnceLock};
 
-use async_trait::async_trait;
 use domain::{
-    feed::{FeedSource, FeedSourceId},
+    feed::FeedSource,
     shared::error::DomainError,
 };
 
 use regex::Regex;
 
-use crate::contracts::{FeedData, FeedFetcher, FeedSourceKeyUpdater};
+use crate::contracts::{FeedData, FeedFetcher};
 
 #[path = "validate.rs"]
 mod validate;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct FeedEntity {
     source: FeedSource,
-    fetcher: Arc<dyn FeedFetcher>,
-    source_key_updater: Arc<dyn FeedSourceKeyUpdater>,
 }
 
 impl FeedEntity {
-    pub fn new(source: FeedSource, fetcher: Arc<dyn FeedFetcher>) -> Result<Self, DomainError> {
-        Self::new_with_source_key_updater(source, fetcher, Arc::new(NoopFeedSourceKeyUpdater))
-    }
-
-    pub(crate) fn new_with_source_key_updater(
-        source: FeedSource,
-        fetcher: Arc<dyn FeedFetcher>,
-        source_key_updater: Arc<dyn FeedSourceKeyUpdater>,
-    ) -> Result<Self, DomainError> {
+    pub fn new(source: FeedSource) -> Result<Self, DomainError> {
         validate_source(&source)?;
-        Ok(Self {
-            source,
-            fetcher,
-            source_key_updater,
-        })
+        Ok(Self { source })
     }
 
     pub fn read_data(&self) -> &FeedSource {
@@ -46,15 +31,19 @@ impl FeedEntity {
         self.source
     }
 
-    pub async fn fetch(&mut self) -> Result<FeedData, DomainError> {
-        let data = self.fetcher.fetch(&self.source).await?;
-        self.update_source_key_from_feed_data(&data).await?;
+    pub async fn fetch(&mut self, fetcher: &dyn FeedFetcher) -> Result<FeedData, DomainError> {
+        let data = fetcher.fetch(&self.source).await?;
+        self.update_source_key_from_feed_data(&data);
         Ok(data)
     }
 
-    pub async fn search(&mut self, keyword: &str) -> Result<FeedData, DomainError> {
-        let data = self.fetcher.search(&self.source, keyword).await?;
-        self.update_source_key_from_feed_data(&data).await?;
+    pub async fn search(
+        &mut self,
+        keyword: &str,
+        fetcher: &dyn FeedFetcher,
+    ) -> Result<FeedData, DomainError> {
+        let data = fetcher.search(&self.source, keyword).await?;
+        self.update_source_key_from_feed_data(&data);
         Ok(data)
     }
 
@@ -70,43 +59,17 @@ impl FeedEntity {
         re.is_match(title)
     }
 
-    async fn update_source_key_from_feed_data(
-        &mut self,
-        data: &FeedData,
-    ) -> Result<(), DomainError> {
+    fn update_source_key_from_feed_data(&mut self, data: &FeedData) {
         let source_key = data.source_key.trim();
-        if source_key.is_empty() {
-            return Err(DomainError::InvariantViolation(
-                "feed source key cannot be empty",
-            ));
-        }
         if self
             .source
             .source_key
             .as_deref()
             .is_some_and(|current| current == source_key)
         {
-            return Ok(());
+            return;
         }
-
-        self.source_key_updater
-            .update_source_key(&self.source.id, source_key)
-            .await?;
         self.source.source_key = Some(source_key.to_string());
-        Ok(())
-    }
-}
-
-struct NoopFeedSourceKeyUpdater;
-
-#[async_trait]
-impl FeedSourceKeyUpdater for NoopFeedSourceKeyUpdater {
-    async fn update_source_key(
-        &self,
-        _source_id: &FeedSourceId,
-        _source_key: &str,
-    ) -> Result<(), DomainError> {
-        Ok(())
     }
 }
 
@@ -236,10 +199,6 @@ mod tests {
         }
     }
 
-    fn fetcher() -> Arc<dyn FeedFetcher> {
-        Arc::new(NoopFeedFetcher)
-    }
-
     fn feed(id: &str, site_url: &str) -> FeedSource {
         FeedSource {
             id: FeedSourceId(id.to_string()),
@@ -252,18 +211,16 @@ mod tests {
 
     #[test]
     fn new_accepts_valid_source() {
-        let entity =
-            FeedEntity::new(feed("a", "https://a.example/rss"), fetcher()).expect("entity");
+        let entity = FeedEntity::new(feed("a", "https://a.example/rss")).expect("entity");
 
         assert_eq!(entity.read_data().id.0, "a");
     }
 
     #[tokio::test]
     async fn fetch_does_not_require_persisted_source_key() {
-        let mut entity =
-            FeedEntity::new(feed("a", "https://a.example/rss"), fetcher()).expect("entity");
+        let mut entity = FeedEntity::new(feed("a", "https://a.example/rss")).expect("entity");
 
-        let data = entity.fetch().await.expect("fetch");
+        let data = entity.fetch(&NoopFeedFetcher).await.expect("fetch");
 
         assert_eq!(data.source_key, "source-key");
     }

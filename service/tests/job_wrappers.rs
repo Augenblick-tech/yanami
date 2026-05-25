@@ -8,8 +8,10 @@ use anime::{
 };
 use async_trait::async_trait;
 use domain::anime::capability::{AnimeLockCap, AnimeMetadataUpdateCap};
+use domain::feed::capability::FeedSourceWriterCap;
 use domain::rule::capability::RuleWriterCap;
 use domain::shared::biz::{BizContext, BizFactory};
+use domain::space::capability::SpaceAutoSubscribeCap;
 use domain::subscription::capability::{
     SubscriptionMatchCap, SubscriptionSearchCap, SubscriptionToggleCap,
 };
@@ -35,13 +37,13 @@ use domain::{
 };
 use feed::{
     contracts::{FeedData, FeedFetcher, FetchedFeedItem, ResolveFeedSource, ResolvedFeedSource},
-    Feeds, Resources,
+    Feeds, FeedCaps, Resources,
 };
 use service::{
     job::{CheckMissingEpisodesJob, FetchResourcesJob, Job, MatchResourcesJob},
     subscription::service::{SubscriptionService, SubscriptionServiceDependencies},
 };
-use space::Spaces;
+use space::{SpaceCaps, Spaces};
 use subscription::{
     action::{MatchedResource, RunMatchedResource},
     missing_episodes::MissingEpisodeChecker,
@@ -174,6 +176,7 @@ impl AnimeStateRepository for NoopAnimeStateRepository {
 }
 
 struct NoopRuleWriter;
+
 #[async_trait]
 impl RuleWriterCap for NoopRuleWriter {
     async fn write_rule(
@@ -184,6 +187,32 @@ impl RuleWriterCap for NoopRuleWriter {
         _order: u32,
         _pattern: &str,
         _active: bool,
+    ) -> Result<(), DomainError> {
+        Ok(())
+    }
+}
+
+struct NoopFeedSourceWriter;
+
+#[async_trait]
+impl FeedSourceWriterCap for NoopFeedSourceWriter {
+    async fn write_source(
+        &self,
+        _scope: (&str, i64),
+        _source: &domain::feed::capability::FeedSourceUpdate,
+    ) -> Result<(), DomainError> {
+        Ok(())
+    }
+}
+
+struct NoopSpaceAutoSubscriber;
+
+#[async_trait]
+impl SpaceAutoSubscribeCap for NoopSpaceAutoSubscriber {
+    async fn write_auto_subscribe(
+        &self,
+        _space_id: SpaceId,
+        _auto_subscribe: bool,
     ) -> Result<(), DomainError> {
         Ok(())
     }
@@ -1000,7 +1029,14 @@ fn build_service_with_rules_action_and_records(
             }]),
         }),
     ));
-    let feeds = Arc::new(Feeds::new(space_feeds, resolve_feed_source(), feed_fetcher));
+    let feeds = Arc::new(Feeds::new(
+        space_feeds,
+        resolve_feed_source(),
+        feed_fetcher,
+        FeedCaps {
+            writer: Arc::new(NoopFeedSourceWriter),
+        },
+    ));
     let rule_caps = rule::RuleCaps {
         writer: Arc::new(NoopRuleWriter),
     };
@@ -1022,7 +1058,13 @@ fn build_service_with_rules_action_and_records(
     ));
     let noop_spaces_repo = Arc::new(NoopSpaces);
     let noop_ids = Arc::new(NoopSpaceIdSequence);
-    let spaces = Arc::new(Spaces::new(noop_spaces_repo, noop_ids));
+    let spaces = Arc::new(Spaces::new(
+        noop_spaces_repo,
+        noop_ids,
+        SpaceCaps {
+            auto_subscriber: Arc::new(NoopSpaceAutoSubscriber),
+        },
+    ));
 
     Arc::new(SubscriptionService::new(SubscriptionServiceDependencies {
         search_pool: Arc::new(NoopSearchPool),

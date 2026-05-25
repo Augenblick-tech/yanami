@@ -1,18 +1,18 @@
 use domain::{
     shared::error::DomainError,
     user::{User, UserId, UserRole, Username},
+    user::capability::UserPasswordChangerCap,
 };
 use std::fmt;
 
 use crate::gateway::PasswordService;
 
 #[derive(Clone)]
-pub struct UserEntity<'a> {
+pub struct UserEntity {
     snapshot: User,
-    password_service: &'a dyn PasswordService,
 }
 
-impl fmt::Debug for UserEntity<'_> {
+impl fmt::Debug for UserEntity {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("UserEntity")
@@ -23,13 +23,10 @@ impl fmt::Debug for UserEntity<'_> {
     }
 }
 
-impl<'a> UserEntity<'a> {
-    /// 基于用户快照与能力端口创建用户聚合根。
-    pub fn new(snapshot: User, password_service: &'a dyn PasswordService) -> Self {
-        Self {
-            snapshot,
-            password_service,
-        }
+impl UserEntity {
+    /// 基于用户快照创建用户聚合根。
+    pub fn new(snapshot: User) -> Self {
+        Self { snapshot }
     }
 
     pub fn read_data(&self) -> &User {
@@ -52,31 +49,30 @@ impl<'a> UserEntity<'a> {
         &self.snapshot.username
     }
 
-    pub async fn verify_password(&self, password: &str) -> Result<(), DomainError> {
-        let matched = self
-            .password_service
+    pub async fn verify_password(
+        &self,
+        password: &str,
+        password_service: &dyn PasswordService,
+    ) -> Result<(), DomainError> {
+        password_service
             .verify_password(&self.snapshot.password_hash, password)
-            .await?;
-        if !matched {
-            return Err(DomainError::InvariantViolation("password does not match"));
-        }
-        Ok(())
+            .await?
+            .then_some(())
+            .ok_or(DomainError::InvariantViolation("wrong password"))
     }
 
     pub async fn change_password(
         &mut self,
         old_password: &str,
         new_password: &str,
+        password_service: &dyn PasswordService,
+        cap: &dyn UserPasswordChangerCap,
     ) -> Result<(), DomainError> {
         validate_password(new_password)?;
-        let matched = self
-            .password_service
-            .verify_password(&self.snapshot.password_hash, old_password)
-            .await?;
-        if !matched {
-            return Err(DomainError::InvariantViolation("password does not match"));
-        }
-        self.snapshot.password_hash = self.password_service.hash_password(new_password).await?;
+        self.verify_password(old_password, password_service).await?;
+        let new_hash = password_service.hash_password(new_password).await?;
+        cap.write_password(self.snapshot.id, new_hash.0.clone()).await?;
+        self.snapshot.password_hash = new_hash;
         Ok(())
     }
 
@@ -84,7 +80,7 @@ impl<'a> UserEntity<'a> {
         user_id: UserId,
         username: Username,
         password: &str,
-        password_service: &'a dyn PasswordService,
+        password_service: &dyn PasswordService,
     ) -> Result<Self, DomainError> {
         validate_username(&username.0)?;
         validate_password(password)?;
@@ -95,7 +91,6 @@ impl<'a> UserEntity<'a> {
                 password_hash: password_service.hash_password(password).await?,
                 role: UserRole::User,
             },
-            password_service,
         })
     }
 
@@ -103,7 +98,7 @@ impl<'a> UserEntity<'a> {
         user_id: UserId,
         username: Username,
         password: &str,
-        password_service: &'a dyn PasswordService,
+        password_service: &dyn PasswordService,
     ) -> Result<Self, DomainError> {
         validate_username(&username.0)?;
         validate_password(password)?;
@@ -114,7 +109,6 @@ impl<'a> UserEntity<'a> {
                 password_hash: password_service.hash_password(password).await?,
                 role: UserRole::Admin,
             },
-            password_service,
         })
     }
 }
@@ -142,8 +136,22 @@ mod tests {
 
     use super::*;
     use crate::gateway::PasswordService;
+    use domain::user::capability::UserPasswordChangerCap;
 
     struct StubPasswordService;
+
+    struct NoopPasswordChanger;
+
+    #[async_trait]
+    impl UserPasswordChangerCap for NoopPasswordChanger {
+        async fn write_password(
+            &self,
+            _user_id: UserId,
+            _new_hash: String,
+        ) -> Result<(), DomainError> {
+            Ok(())
+        }
+    }
 
     #[async_trait]
     impl PasswordService for StubPasswordService {
@@ -174,26 +182,26 @@ mod tests {
 
     #[tokio::test]
     async fn verify_password_requires_matching_password() {
-        let entity = UserEntity::new(sample_user(), &StubPasswordService);
+        let entity = UserEntity::new(sample_user());
 
-        let mismatch = match entity.verify_password("bad").await {
+        let mismatch = match entity.verify_password("bad", &StubPasswordService).await {
             Ok(_) => panic!("bad password"),
             Err(error) => error,
         };
         entity
-            .verify_password("123456")
+            .verify_password("123456", &StubPasswordService)
             .await
             .expect("password matches");
 
         assert_eq!(
             mismatch.to_string(),
-            "domain invariant violation: password does not match"
+            "domain invariant violation: wrong password"
         );
     }
 
     #[tokio::test]
     async fn change_password_and_constructors_validate_input() {
-        let mut entity = UserEntity::new(sample_user(), &StubPasswordService);
+        let mut entity = UserEntity::new(sample_user());
 
         let empty_username = UserEntity::new_user(
             UserId(8),
@@ -211,13 +219,17 @@ mod tests {
         )
         .await
         .expect_err("password");
-        let wrong_old = match entity.change_password("bad", "next123").await {
+        let noop_cap = NoopPasswordChanger;
+        let wrong_old = match entity
+            .change_password("bad", "next123", &StubPasswordService, &noop_cap)
+            .await
+        {
             Ok(_) => panic!("wrong old password"),
             Err(error) => error,
         };
 
         entity
-            .change_password("123456", "next123")
+            .change_password("123456", "next123", &StubPasswordService, &noop_cap)
             .await
             .expect("change");
 
@@ -231,7 +243,7 @@ mod tests {
         );
         assert_eq!(
             wrong_old.to_string(),
-            "domain invariant violation: password does not match"
+            "domain invariant violation: wrong password"
         );
         assert_eq!(entity.read_data().password_hash.0, "hashed:next123");
     }

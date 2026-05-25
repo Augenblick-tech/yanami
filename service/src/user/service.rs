@@ -1,28 +1,9 @@
 use std::sync::Arc;
 
-use domain::{
-    shared::error::DomainError,
-    user::{User, UserId, UserRole},
-};
+use domain::user::{AccessToken, AccessTokenIssuer, User, UserId, UserRole};
 use user::users::Users;
 
 use crate::shared::error::ApplicationError;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AccessToken {
-    pub access_token: String,
-    pub token_type: String,
-    pub expires_at: i64,
-}
-
-#[async_trait::async_trait]
-pub trait AccessTokenIssuer: Send + Sync {
-    async fn issue_access_token(
-        &self,
-        user_id: UserId,
-        role: UserRole,
-    ) -> Result<AccessToken, DomainError>;
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoginOutcome {
@@ -61,7 +42,7 @@ impl UserService {
         password: String,
     ) -> Result<LoginOutcome, ApplicationError> {
         let user = self.users.load_by_username(&username).await?;
-        user.verify_password(&password).await?;
+        self.users.verify_password(user.id(), &password).await?;
         let access_token = self
             .access_tokens
             .issue_access_token(user.id(), user.role())
@@ -79,9 +60,9 @@ impl UserService {
         old_password: String,
         new_password: String,
     ) -> Result<ChangePasswordOutcome, ApplicationError> {
-        let mut user = self.users.load(user_id).await?;
-        user.change_password(&old_password, &new_password).await?;
-        self.users.save(&user).await?;
+        self.users
+            .change_password(user_id, &old_password, &new_password)
+            .await?;
         Ok(ChangePasswordOutcome { user_id })
     }
 
@@ -209,12 +190,53 @@ mod tests {
         }
     }
 
+    struct NoopUserInfoWriter;
+
+    #[async_trait]
+    impl domain::user::capability::UserInfoWriterCap for NoopUserInfoWriter {
+        async fn write_info(
+            &self,
+            _user_id: UserId,
+            _info: &domain::user::capability::UserInfoUpdate,
+        ) -> Result<(), DomainError> {
+            Ok(())
+        }
+    }
+
+    struct NoopUserPasswordChanger {
+        users: Arc<InMemoryUsers>,
+    }
+
+    #[async_trait]
+    impl domain::user::capability::UserPasswordChangerCap for NoopUserPasswordChanger {
+        async fn write_password(
+            &self,
+            user_id: UserId,
+            new_hash: String,
+        ) -> Result<(), DomainError> {
+            let users = self.users.items.lock().expect("lock users");
+            if let Some(user) = users.get(&user_id) {
+                let mut updated = user.clone();
+                updated.password_hash = PasswordHash(new_hash);
+                drop(users);
+                self.users.items.lock().expect("lock users").insert(user_id, updated);
+            }
+            Ok(())
+        }
+    }
+
     fn build_users(users: Arc<InMemoryUsers>) -> Arc<user::users::Users> {
         let repository: Arc<dyn UserRepository> = users.clone();
         Arc::new(user::users::Users::new(
             repository,
             Arc::new(FixedPasswordService),
             Arc::new(FixedUserIdGenerator),
+            user::users::UserCaps {
+                info_writer: Arc::new(NoopUserInfoWriter),
+                password_changer: Arc::new(NoopUserPasswordChanger {
+                    users: users.clone(),
+                }),
+            },
         ))
     }
 

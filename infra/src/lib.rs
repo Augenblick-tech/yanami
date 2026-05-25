@@ -15,3 +15,6 @@ pub mod yuc;
 
 #[cfg(test)]
 mod seed_source_tests;
+
+#[cfg(test)]
+pub(crate) use service::system::service::SystemService;

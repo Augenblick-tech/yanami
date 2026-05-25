@@ -1,20 +1,15 @@
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use domain::{
-    shared::{biz::BizContext, biz::BizFactory, error::DomainError},
+    shared::biz::BizFactory,
     space::SpaceId,
+    system::SystemInfrastructureInitializer,
     user::UserId,
 };
 use space::Spaces;
 use user::users::Users;
 
 use crate::shared::error::ApplicationError;
-
-#[async_trait]
-pub trait SystemInfrastructureInitializer: Send + Sync {
-    async fn initialize_infrastructure(&self, biz: &BizContext) -> Result<(), DomainError>;
-}
 
 /// 系统初始化结果。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -153,7 +148,11 @@ mod tests {
     use ::user::gateway::{PasswordService, UserIdGenerator};
     use async_trait::async_trait;
     use domain::{
-        shared::{biz::InfraTxProvider, error::DomainError, identifier::IdSequence},
+        shared::{
+            biz::{BizContext, InfraTxProvider},
+            error::DomainError,
+            identifier::IdSequence,
+        },
         space::{PersonalSpaceBinding, Space, SpaceRepository},
         user::{PasswordHash, User, UserRepository, UserRole, Username},
     };
@@ -377,6 +376,45 @@ mod tests {
         }
     }
 
+    struct NoopUserInfoWriter;
+
+    #[async_trait]
+    impl domain::user::capability::UserInfoWriterCap for NoopUserInfoWriter {
+        async fn write_info(
+            &self,
+            _user_id: UserId,
+            _info: &domain::user::capability::UserInfoUpdate,
+        ) -> Result<(), DomainError> {
+            Ok(())
+        }
+    }
+
+    struct NoopUserPasswordChanger;
+
+    #[async_trait]
+    impl domain::user::capability::UserPasswordChangerCap for NoopUserPasswordChanger {
+        async fn write_password(
+            &self,
+            _user_id: UserId,
+            _new_hash: String,
+        ) -> Result<(), DomainError> {
+            Ok(())
+        }
+    }
+
+    struct NoopSpaceAutoSubscriber;
+
+    #[async_trait]
+    impl domain::space::capability::SpaceAutoSubscribeCap for NoopSpaceAutoSubscriber {
+        async fn write_auto_subscribe(
+            &self,
+            _space_id: SpaceId,
+            _auto_subscribe: bool,
+        ) -> Result<(), DomainError> {
+            Ok(())
+        }
+    }
+
     #[derive(Clone)]
     struct RecordingBizProvider {
         stats: Arc<BizStats>,
@@ -427,11 +465,18 @@ mod tests {
             user_repository,
             Arc::new(FixedPasswordService),
             Arc::new(IncrementingUserIds::new(10001)),
+            user::users::UserCaps {
+                info_writer: Arc::new(NoopUserInfoWriter),
+                password_changer: Arc::new(NoopUserPasswordChanger),
+            },
         ));
         let space_repository: Arc<dyn SpaceRepository> = spaces;
         let spaces = Arc::new(Spaces::new(
             space_repository,
             Arc::new(IncrementingSpaceIds::new(7)),
+            space::SpaceCaps {
+                auto_subscriber: Arc::new(NoopSpaceAutoSubscriber),
+            },
         ));
         SystemService::new(
             Arc::new(RecordingBizFactory { stats }),

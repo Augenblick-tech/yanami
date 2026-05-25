@@ -9,7 +9,7 @@ use domain::{
 };
 use jsonwebtoken::{encode, EncodingKey, Header};
 use serde::Serialize;
-use service::user::service::{AccessToken, AccessTokenIssuer};
+use domain::user::{AccessToken, AccessTokenIssuer};
 use sha2::{Digest, Sha256};
 use tokio::sync::Mutex;
 use user::gateway::{EpochClock, PasswordService, RegistrationCodeGenerator, UserIdGenerator};

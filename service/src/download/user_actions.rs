@@ -1,11 +1,15 @@
 use std::path::{Component, Path};
 use std::sync::Arc;
 
-use domain::{shared::error::DomainError, user::UserId};
+use domain::{
+    download::DownloadRequest,
+    shared::error::DomainError,
+    user::UserId,
+};
 
 use crate::download::shared::error::ApplicationError;
 use crate::download::{
-    contracts::{DownloadRequest, UserDownloadExecutor},
+    contracts::UserDownloadExecutor,
     runtime::RoutingUserDownloadExecutor,
 };
 
@@ -86,7 +90,8 @@ mod tests {
     use domain::{shared::error::DomainError, user::UserId};
 
     use super::*;
-    use crate::download::contracts::{DownloadRequest, UserDownloadExecutor};
+    use crate::download::contracts::UserDownloadExecutor;
+    use domain::download::DownloadRequest;
 
     #[derive(Default)]
     struct RecordingUserDownloadExecutor {

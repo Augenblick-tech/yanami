@@ -83,22 +83,15 @@ impl Rules {
         space_id: SpaceId,
         mut entity: RuleEntity,
     ) -> Result<RuleEntity, DomainError> {
-        entity.read_data_mut().active = true;
-        let mut rule = entity.read_data().clone();
+        entity.set_active();
         if let Some(existing) = self
             .space_repository
-            .find_space_rule_by_name(space_id, &rule.name)
+            .find_space_rule_by_name(space_id, &entity.read_data().name)
             .await?
         {
-            if existing.active && existing.id != rule.id {
-                return Err(DomainError::InvariantViolation(
-                    "matching rule name must be unique",
-                ));
-            }
-            if !existing.active && existing.id != rule.id {
-                rule.id = existing.id.clone();
-            }
+            entity.merge_or_reject(&existing)?;
         }
+        let rule = entity.into_snapshot();
 
         let mut active_rules = self
             .space_repository

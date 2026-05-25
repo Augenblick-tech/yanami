@@ -5,6 +5,7 @@ use crate::space_entity::SpaceEntity;
 use domain::{
     shared::{biz::BizContext, error::DomainError, identifier::IdSequence},
     space::{PersonalSpaceBinding, SpaceId, SpaceRepository},
+    space::capability::SpaceAutoSubscribeCap,
     user::UserId,
 };
 
@@ -94,20 +95,32 @@ impl SpaceAccess {
 }
 
 #[derive(Clone)]
+pub struct SpaceCaps {
+    pub auto_subscriber: Arc<dyn SpaceAutoSubscribeCap>,
+}
+
+#[derive(Clone)]
 pub struct Spaces {
     access: Arc<SpaceAccess>,
+    pub caps: SpaceCaps,
 }
 
 impl Spaces {
-    pub fn new(spaces: Arc<dyn SpaceRepository>, identifiers: Arc<dyn IdSequence>) -> Self {
+    pub fn new(
+        spaces: Arc<dyn SpaceRepository>,
+        identifiers: Arc<dyn IdSequence>,
+        caps: SpaceCaps,
+    ) -> Self {
         Self {
             access: Arc::new(SpaceAccess::new(spaces, identifiers)),
+            caps,
         }
     }
 
     pub fn with_biz(&self, biz: &BizContext) -> Result<Self, DomainError> {
         Ok(Self {
             access: Arc::new(self.access.with_biz(biz)?),
+            caps: self.caps.clone(),
         })
     }
 
@@ -148,6 +161,19 @@ impl Spaces {
         }
         self.access.create_personal(user_id, auto_subscribe).await
     }
+
+    /// 设置自动订阅状态，通过 Cap 直接持久化。
+    pub async fn set_auto_subscribe(
+        &self,
+        space_id: SpaceId,
+        enabled: bool,
+    ) -> Result<(), DomainError> {
+        let mut space = self.access.load(space_id).await?;
+        space
+            .set_auto_subscribe(&*self.caps.auto_subscriber, enabled)
+            .await?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -160,8 +186,28 @@ mod tests {
     use async_trait::async_trait;
 
     use domain::space::Space;
+    use domain::space::capability::SpaceAutoSubscribeCap;
 
     use super::*;
+
+    struct NoopSpaceAutoSubscriber;
+
+    #[async_trait]
+    impl SpaceAutoSubscribeCap for NoopSpaceAutoSubscriber {
+        async fn write_auto_subscribe(
+            &self,
+            _space_id: SpaceId,
+            _auto_subscribe: bool,
+        ) -> Result<(), DomainError> {
+            Ok(())
+        }
+    }
+
+    fn noop_space_caps() -> SpaceCaps {
+        SpaceCaps {
+            auto_subscriber: Arc::new(NoopSpaceAutoSubscriber),
+        }
+    }
 
     #[derive(Clone, Default)]
     struct InMemorySpaces {
@@ -272,7 +318,11 @@ mod tests {
     #[tokio::test]
     async fn ensure_personal_space_creates_space_from_space_id_sequence() {
         let repository = Arc::new(InMemorySpaces::default());
-        let spaces = Spaces::new(repository.clone(), Arc::new(IncrementingIds::new(42)));
+        let spaces = Spaces::new(
+            repository.clone(),
+            Arc::new(IncrementingIds::new(42)),
+            noop_space_caps(),
+        );
 
         let entity = spaces
             .ensure_personal_space(UserId(10001), false)
@@ -309,7 +359,11 @@ mod tests {
     #[tokio::test]
     async fn ensure_personal_space_is_idempotent_for_existing_binding() {
         let repository = Arc::new(InMemorySpaces::default());
-        let spaces = Spaces::new(repository.clone(), Arc::new(IncrementingIds::new(7)));
+        let spaces = Spaces::new(
+            repository.clone(),
+            Arc::new(IncrementingIds::new(7)),
+            noop_space_caps(),
+        );
 
         let first = spaces
             .ensure_personal_space(UserId(3), false)

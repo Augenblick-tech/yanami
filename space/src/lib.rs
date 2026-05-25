@@ -4,4 +4,4 @@ mod space_entity;
 mod spaces;
 
 pub use space_entity::SpaceEntity;
-pub use spaces::Spaces;
+pub use spaces::{SpaceCaps, Spaces};

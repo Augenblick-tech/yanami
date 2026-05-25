@@ -60,7 +60,7 @@ pub mod code {
 /// 出站逻辑里散落裸数字。
 pub fn invariant_violation_code(message: &'static str) -> i32 {
     match message {
-        "password does not match" => code::IDENTITY_PASSWORD_MISMATCH,
+        "password does not match" | "wrong password" => code::IDENTITY_PASSWORD_MISMATCH,
         "username cannot be empty"
         | "registration code cannot be empty"
         | "password must be at least 6 characters"
@@ -130,6 +130,10 @@ mod tests {
     fn invariant_violation_code_maps_known_identity_messages() {
         assert_eq!(
             invariant_violation_code("password does not match"),
+            code::IDENTITY_PASSWORD_MISMATCH
+        );
+        assert_eq!(
+            invariant_violation_code("wrong password"),
             code::IDENTITY_PASSWORD_MISMATCH
         );
         assert_eq!(

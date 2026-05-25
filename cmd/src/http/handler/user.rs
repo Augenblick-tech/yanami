@@ -30,7 +30,7 @@ pub async fn login(
     {
         Ok(outcome) => outcome,
         Err(ApplicationError::Domain(DomainError::InvariantViolation(
-            "user not found" | "password does not match",
+            "user not found" | "wrong password",
         ))) => return Err(ApiError::invalid_credentials()),
         Err(error) => return Err(error.into()),
     };

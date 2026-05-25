@@ -4,6 +4,7 @@ use domain::{
     shared::biz::BizContext,
     shared::error::DomainError,
     user::{User, UserId, UserRepository, Username},
+    user::capability::{UserInfoWriterCap, UserPasswordChangerCap},
 };
 
 use crate::{
@@ -12,10 +13,17 @@ use crate::{
 };
 
 #[derive(Clone)]
+pub struct UserCaps {
+    pub info_writer: Arc<dyn UserInfoWriterCap>,
+    pub password_changer: Arc<dyn UserPasswordChangerCap>,
+}
+
+#[derive(Clone)]
 pub struct Users {
     repository: Arc<dyn UserRepository>,
     password_service: Arc<dyn PasswordService>,
     user_ids: Arc<dyn UserIdGenerator>,
+    pub caps: UserCaps,
 }
 
 impl Users {
@@ -24,11 +32,13 @@ impl Users {
         repository: Arc<dyn UserRepository>,
         password_service: Arc<dyn PasswordService>,
         user_ids: Arc<dyn UserIdGenerator>,
+        caps: UserCaps,
     ) -> Self {
         Self {
             repository,
             password_service,
             user_ids,
+            caps,
         }
     }
 
@@ -37,14 +47,15 @@ impl Users {
             repository: self.repository.with_biz(biz)?,
             password_service: self.password_service.clone(),
             user_ids: self.user_ids.with_biz(biz)?,
+            caps: self.caps.clone(),
         })
     }
 
-    fn build_entity(&self, snapshot: User) -> UserEntity<'_> {
-        UserEntity::new(snapshot, self.password_service.as_ref())
+    fn build_entity(&self, snapshot: User) -> UserEntity {
+        UserEntity::new(snapshot)
     }
 
-    pub async fn load(&self, user_id: UserId) -> Result<UserEntity<'_>, DomainError> {
+    pub async fn load(&self, user_id: UserId) -> Result<UserEntity, DomainError> {
         let snapshot = self
             .repository
             .find_user(user_id)
@@ -56,7 +67,7 @@ impl Users {
     pub async fn try_load_by_username(
         &self,
         username: &str,
-    ) -> Result<Option<UserEntity<'_>>, DomainError> {
+    ) -> Result<Option<UserEntity>, DomainError> {
         let username = validate_username(username)?;
         Ok(self
             .repository
@@ -69,7 +80,7 @@ impl Users {
         &self,
         username: &str,
         password: &str,
-    ) -> Result<UserEntity<'_>, DomainError> {
+    ) -> Result<UserEntity, DomainError> {
         let username = validate_username(username)?;
         if self
             .repository
@@ -96,7 +107,7 @@ impl Users {
         &self,
         username: &str,
         password: &str,
-    ) -> Result<UserEntity<'_>, DomainError> {
+    ) -> Result<UserEntity, DomainError> {
         let username = validate_username(username)?;
         if self
             .repository
@@ -119,17 +130,45 @@ impl Users {
         Ok(entity)
     }
 
-    pub async fn load_by_username(&self, username: &str) -> Result<UserEntity<'_>, DomainError> {
+    pub async fn load_by_username(&self, username: &str) -> Result<UserEntity, DomainError> {
         self.try_load_by_username(username)
             .await?
             .ok_or(DomainError::InvariantViolation("user not found"))
     }
 
-    pub async fn save(&self, entity: &UserEntity<'_>) -> Result<(), DomainError> {
+    pub async fn save(&self, entity: &UserEntity) -> Result<(), DomainError> {
         self.repository.save_user(entity.read_data()).await
     }
 
-    pub async fn list(&self) -> Result<Vec<UserEntity<'_>>, DomainError> {
+    pub async fn verify_password(
+        &self,
+        user_id: UserId,
+        password: &str,
+    ) -> Result<(), DomainError> {
+        let entity = self.load(user_id).await?;
+        entity
+            .verify_password(password, self.password_service.as_ref())
+            .await
+    }
+
+    pub async fn change_password(
+        &self,
+        user_id: UserId,
+        old_password: &str,
+        new_password: &str,
+    ) -> Result<(), DomainError> {
+        let mut user = self.load(user_id).await?;
+        user.change_password(
+            old_password,
+            new_password,
+            self.password_service.as_ref(),
+            &*self.caps.password_changer,
+        )
+        .await?;
+        Ok(())
+    }
+
+    pub async fn list(&self) -> Result<Vec<UserEntity>, DomainError> {
         Ok(self
             .repository
             .list_users()
@@ -146,8 +185,42 @@ mod tests {
 
     use async_trait::async_trait;
     use domain::user::{PasswordHash, User, UserRole};
+    use domain::user::capability::{UserInfoWriterCap, UserInfoUpdate, UserPasswordChangerCap};
 
     use super::*;
+
+    struct NoopUserInfoWriter;
+
+    #[async_trait]
+    impl UserInfoWriterCap for NoopUserInfoWriter {
+        async fn write_info(
+            &self,
+            _user_id: UserId,
+            _info: &UserInfoUpdate,
+        ) -> Result<(), DomainError> {
+            Ok(())
+        }
+    }
+
+    struct NoopUserPasswordChanger;
+
+    #[async_trait]
+    impl UserPasswordChangerCap for NoopUserPasswordChanger {
+        async fn write_password(
+            &self,
+            _user_id: UserId,
+            _new_hash: String,
+        ) -> Result<(), DomainError> {
+            Ok(())
+        }
+    }
+
+    fn noop_user_caps() -> UserCaps {
+        UserCaps {
+            info_writer: Arc::new(NoopUserInfoWriter),
+            password_changer: Arc::new(NoopUserPasswordChanger),
+        }
+    }
 
     #[derive(Default)]
     struct InMemoryRepository {
@@ -221,6 +294,7 @@ mod tests {
             repository_port,
             Arc::new(StubPasswordService),
             Arc::new(FixedUserIdGenerator(id)),
+            noop_user_caps(),
         )
     }
 
@@ -299,27 +373,36 @@ mod tests {
 
         assert_eq!(entity.id(), UserId(7));
         assert_eq!(entity.role(), UserRole::User);
-        entity.verify_password("123456").await.expect("password");
+        entity
+            .verify_password("123456", &StubPasswordService)
+            .await
+            .expect("password");
     }
 
     #[tokio::test]
-    async fn save_persists_entity_changes() {
+    async fn change_password_updates_hash_via_cap() {
         let repository = Arc::new(InMemoryRepository::default());
         let users = users(repository.clone(), 10);
         users.create("alice", "123456").await.expect("create");
 
         let mut entity = users.load(UserId(10)).await.expect("load");
+        // change_password persists via cap and updates in-memory hash
+        let cap = NoopUserPasswordChanger;
         entity
-            .change_password("123456", "next123")
+            .change_password("123456", "next123", &StubPasswordService, &cap)
             .await
             .expect("change");
-        users.save(&entity).await.expect("save");
-
-        let saved = repository
-            .find_user(UserId(10))
-            .await
-            .expect("find")
-            .expect("exists");
-        assert_eq!(saved.password_hash.0, "hashed:next123");
+        assert_eq!(entity.read_data().password_hash.0, "hashed:next123");
+        // cap is noop in tests, so repo is not updated
+        assert_eq!(
+            repository
+                .find_user(UserId(10))
+                .await
+                .expect("find")
+                .expect("exists")
+                .password_hash
+                .0,
+            "hashed:123456"
+        );
     }
 }

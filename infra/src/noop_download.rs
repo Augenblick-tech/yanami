@@ -1,7 +1,8 @@
 use async_trait::async_trait;
-use domain::user::UserId;
-use service::download::{
-    contracts::DownloadRequest, runtime::UserDownloadDriver, shared::error::ApplicationError,
+use domain::{
+    download::{DownloadRequest, UserDownloadDriver},
+    shared::error::DomainError,
+    user::UserId,
 };
 
 pub struct NoopDownloadDriver;
@@ -16,7 +17,7 @@ impl UserDownloadDriver for NoopDownloadDriver {
         &self,
         user_id: UserId,
         request: &DownloadRequest,
-    ) -> Result<(), ApplicationError> {
+    ) -> Result<(), DomainError> {
         tracing::info!(
             user_id = %user_id.0,
             resource_id = %request.resource_id,

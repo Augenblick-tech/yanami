@@ -10,11 +10,12 @@ use std::{
 };
 
 use async_trait::async_trait;
-use domain::{shared::error::DomainError, user::UserId};
+use domain::{
+    download::{DownloadRequest, UserDownloadDriver, UserQbitDownloadProfile},
+    shared::error::DomainError,
+    user::UserId,
+};
 use reqwest::{multipart::Form, Client, ClientBuilder, StatusCode, Url};
-use service::download::runtime::{UserDownloadDriver, UserQbitDownloadProfile};
-use service::download::shared::error::ApplicationError;
-use service::download::DownloadRequest;
 use tokio::{sync::Mutex as AsyncMutex, time};
 
 use crate::db::{SqliteDb, StoredUserQbitDownloadProfile};
@@ -303,10 +304,10 @@ impl UserDownloadDriver for QbitDownloadDriver {
         "qbit"
     }
 
-    async fn download(&self, _: UserId, _: &DownloadRequest) -> Result<(), ApplicationError> {
-        Err(ApplicationError::Domain(DomainError::InvariantViolation(
+    async fn download(&self, _: UserId, _: &DownloadRequest) -> Result<(), DomainError> {
+        Err(DomainError::InvariantViolation(
             "qbit driver requires profile-aware download",
-        )))
+        ))
     }
 }
 
@@ -323,7 +324,7 @@ impl LiveQbitProfileVerifier {
     pub async fn verify_qbit_profile(
         &self,
         profile: &UserQbitDownloadProfile,
-    ) -> Result<(), ApplicationError> {
+    ) -> Result<(), DomainError> {
         let session = QbitSession::new(StoredUserQbitDownloadProfile {
             user_id: 0,
             endpoint: profile.endpoint.clone(),
@@ -382,7 +383,7 @@ impl CachedQbitProfileLoader {
     async fn load_qbit_profile(
         &self,
         user_id: UserId,
-    ) -> Result<Option<StoredUserQbitDownloadProfile>, ApplicationError> {
+    ) -> Result<Option<StoredUserQbitDownloadProfile>, DomainError> {
         let access_order = self.access_counter.fetch_add(1, Ordering::SeqCst) + 1;
         if let Some(profile) =
             self.with_cache_read(|cache| cache.get(&user_id).map(|cached| cached.profile.clone()))
@@ -398,8 +399,7 @@ impl CachedQbitProfileLoader {
         let profile = self
             .db
             .load_user_qbit_download_profile(user_id)
-            .await
-            .map_err(ApplicationError::from)?;
+            .await?;
         self.with_cache_write(|cache| {
             cache.insert(
                 user_id,
@@ -467,14 +467,14 @@ impl UserDownloadDriver for UserBoundQbitDownloadDriver {
         &self,
         user_id: UserId,
         request: &DownloadRequest,
-    ) -> Result<(), ApplicationError> {
+    ) -> Result<(), DomainError> {
         let profile = self
             .profile_loader
             .load_qbit_profile(user_id)
             .await?
-            .ok_or(ApplicationError::Domain(DomainError::InvariantViolation(
+            .ok_or(DomainError::InvariantViolation(
                 "user qbit download profile not found",
-            )))?;
+            ))?;
         self.inner.download_with_profile(&profile, request).await?;
         Ok(())
     }

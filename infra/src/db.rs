@@ -33,11 +33,10 @@ use domain::{
     user::{PasswordHash, User, UserId, UserRepository, UserRole, Username},
 };
 use serde::{Deserialize, Serialize};
-use service::download::runtime::{
+use domain::download::{
     UserDownloadDriverBindingStore, UserQbitDownloadProfile, UserQbitDownloadProfileStore,
 };
-use service::download::shared::error::ApplicationError;
-use service::system::service::SystemInfrastructureInitializer;
+use domain::system::SystemInfrastructureInitializer;
 use sha1::{Digest, Sha1};
 use sqlx::{
     pool::PoolConnection, query, query_as, sqlite::SqlitePoolOptions, Acquire, Pool, QueryBuilder,
@@ -3797,6 +3796,174 @@ impl domain::rule::capability::RuleWriterCap for SqliteBizDb {
 }
 
 #[async_trait]
+impl domain::feed::capability::FeedSourceWriterCap for SqliteDb {
+    async fn write_source(
+        &self,
+        scope: (&str, i64),
+        source: &domain::feed::capability::FeedSourceUpdate,
+    ) -> Result<(), DomainError> {
+        let _guard = self.write_lock.lock().await;
+        query(
+            r#"UPDATE "feed_source" SET title = $1, site_url = $2, search_url = $3
+               WHERE owner_scope = $4 AND scope_id = $5"#,
+        )
+        .bind(&source.title)
+        .bind(&source.site_url)
+        .bind(&source.search_url)
+        .bind(scope.0)
+        .bind(scope.1)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| DomainError::external("feed source writer cap failed", e))?;
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl domain::feed::capability::FeedSourceWriterCap for SqliteBizDb {
+    async fn write_source(
+        &self,
+        scope: (&str, i64),
+        source: &domain::feed::capability::FeedSourceUpdate,
+    ) -> Result<(), DomainError> {
+        let mut state = self.biz.state.lock().await;
+        query(
+            r#"UPDATE "feed_source" SET title = $1, site_url = $2, search_url = $3
+               WHERE owner_scope = $4 AND scope_id = $5"#,
+        )
+        .bind(&source.title)
+        .bind(&source.site_url)
+        .bind(&source.search_url)
+        .bind(scope.0)
+        .bind(scope.1)
+        .execute(&mut *state.connection)
+        .await
+        .map_err(|e| DomainError::external("biz feed source writer cap failed", e))?;
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl domain::user::capability::UserInfoWriterCap for SqliteDb {
+    async fn write_info(
+        &self,
+        user_id: domain::user::UserId,
+        info: &domain::user::capability::UserInfoUpdate,
+    ) -> Result<(), DomainError> {
+        let _guard = self.write_lock.lock().await;
+        let role = encode_user_role(info.role);
+        query(
+            r#"UPDATE "user" SET username = $1, chatacter = $2 WHERE id = $3"#,
+        )
+        .bind(&info.username)
+        .bind(role)
+        .bind(user_id.0)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| DomainError::external("user info writer cap failed", e))?;
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl domain::user::capability::UserInfoWriterCap for SqliteBizDb {
+    async fn write_info(
+        &self,
+        user_id: domain::user::UserId,
+        info: &domain::user::capability::UserInfoUpdate,
+    ) -> Result<(), DomainError> {
+        let mut state = self.biz.state.lock().await;
+        let role = encode_user_role(info.role);
+        query(
+            r#"UPDATE "user" SET username = $1, chatacter = $2 WHERE id = $3"#,
+        )
+        .bind(&info.username)
+        .bind(role)
+        .bind(user_id.0)
+        .execute(&mut *state.connection)
+        .await
+        .map_err(|e| DomainError::external("biz user info writer cap failed", e))?;
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl domain::user::capability::UserPasswordChangerCap for SqliteDb {
+    async fn write_password(
+        &self,
+        user_id: domain::user::UserId,
+        new_hash: String,
+    ) -> Result<(), DomainError> {
+        let _guard = self.write_lock.lock().await;
+        query(r#"UPDATE "user" SET password = $1 WHERE id = $2"#)
+            .bind(&new_hash)
+            .bind(user_id.0)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| DomainError::external("user password changer cap failed", e))?;
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl domain::user::capability::UserPasswordChangerCap for SqliteBizDb {
+    async fn write_password(
+        &self,
+        user_id: domain::user::UserId,
+        new_hash: String,
+    ) -> Result<(), DomainError> {
+        let mut state = self.biz.state.lock().await;
+        query(r#"UPDATE "user" SET password = $1 WHERE id = $2"#)
+            .bind(&new_hash)
+            .bind(user_id.0)
+            .execute(&mut *state.connection)
+            .await
+            .map_err(|e| DomainError::external("biz user password changer cap failed", e))?;
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl domain::space::capability::SpaceAutoSubscribeCap for SqliteDb {
+    async fn write_auto_subscribe(
+        &self,
+        space_id: domain::space::SpaceId,
+        auto_subscribe: bool,
+    ) -> Result<(), DomainError> {
+        let _guard = self.write_lock.lock().await;
+        query(
+            r#"UPDATE "subscription_space" SET auto_subscribe = $1 WHERE id = $2"#,
+        )
+        .bind(auto_subscribe)
+        .bind(space_id.0)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| DomainError::external("space auto subscribe cap failed", e))?;
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl domain::space::capability::SpaceAutoSubscribeCap for SqliteBizDb {
+    async fn write_auto_subscribe(
+        &self,
+        space_id: domain::space::SpaceId,
+        auto_subscribe: bool,
+    ) -> Result<(), DomainError> {
+        let mut state = self.biz.state.lock().await;
+        query(
+            r#"UPDATE "subscription_space" SET auto_subscribe = $1 WHERE id = $2"#,
+        )
+        .bind(auto_subscribe)
+        .bind(space_id.0)
+        .execute(&mut *state.connection)
+        .await
+        .map_err(|e| DomainError::external("biz space auto subscribe cap failed", e))?;
+        Ok(())
+    }
+}
+
+#[async_trait]
 impl ResourceRepository for SqliteDb {
     async fn find_resource(
         &self,
@@ -4354,20 +4521,16 @@ impl SqliteDb {
 
 #[async_trait]
 impl UserDownloadDriverBindingStore for SqliteDb {
-    async fn find_driver_key(&self, user_id: UserId) -> Result<Option<String>, ApplicationError> {
-        self.load_user_download_driver_key(user_id)
-            .await
-            .map_err(ApplicationError::from)
+    async fn find_driver_key(&self, user_id: UserId) -> Result<Option<String>, DomainError> {
+        self.load_user_download_driver_key(user_id).await
     }
 
     async fn save_driver_key(
         &self,
         user_id: UserId,
         driver_key: &str,
-    ) -> Result<(), ApplicationError> {
-        self.save_user_download_driver_key(user_id, driver_key)
-            .await
-            .map_err(ApplicationError::from)
+    ) -> Result<(), DomainError> {
+        self.save_user_download_driver_key(user_id, driver_key).await
     }
 }
 
@@ -4376,7 +4539,7 @@ impl UserQbitDownloadProfileStore for SqliteDb {
     async fn find_qbit_profile(
         &self,
         user_id: UserId,
-    ) -> Result<Option<UserQbitDownloadProfile>, ApplicationError> {
+    ) -> Result<Option<UserQbitDownloadProfile>, DomainError> {
         self.load_user_qbit_download_profile(user_id)
             .await
             .map(|profile| {
@@ -4387,14 +4550,13 @@ impl UserQbitDownloadProfileStore for SqliteDb {
                     download_path: profile.download_path,
                 })
             })
-            .map_err(ApplicationError::from)
     }
 
     async fn save_qbit_profile(
         &self,
         user_id: UserId,
         profile: &UserQbitDownloadProfile,
-    ) -> Result<(), ApplicationError> {
+    ) -> Result<(), DomainError> {
         self.save_user_qbit_download_profile(&StoredUserQbitDownloadProfile {
             user_id: user_id.0,
             endpoint: profile.endpoint.clone(),
@@ -4403,7 +4565,6 @@ impl UserQbitDownloadProfileStore for SqliteDb {
             download_path: profile.download_path.clone(),
         })
         .await
-        .map_err(ApplicationError::from)
     }
 }
 
@@ -5125,10 +5286,10 @@ mod db_tests {
         AirDate, AnimeMetadataRepository, AnimeTitleSet, BroadcastWeekday, PlannedEpisodeCount,
         SeasonNumber,
     };
-    use service::system::service::SystemService;
-    use space::Spaces;
+    use crate::SystemService;
+    use space::{SpaceCaps, Spaces};
     use tempfile::NamedTempFile;
-    use user::users::Users;
+    use user::users::{UserCaps, Users};
 
     use crate::user::{LegacySha256PasswordService, SqliteUserIdGenerator};
 
@@ -5147,8 +5308,18 @@ mod db_tests {
             database.clone(),
             Arc::new(LegacySha256PasswordService),
             Arc::new(SqliteUserIdGenerator::new(database.clone())),
+            UserCaps {
+                info_writer: database.clone(),
+                password_changer: database.clone(),
+            },
         ));
-        let spaces = Arc::new(Spaces::new(database.clone(), database.clone()));
+        let spaces = Arc::new(Spaces::new(
+            database.clone(),
+            database.clone(),
+            SpaceCaps {
+                auto_subscriber: database.clone(),
+            },
+        ));
         let service = SystemService::new(database.clone(), database.clone(), user_accounts, spaces);
 
         let error = service

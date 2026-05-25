@@ -38,9 +38,7 @@ impl SpaceService {
         space_id: SpaceId,
         enabled: bool,
     ) -> Result<bool, ApplicationError> {
-        let mut space = self.spaces.load(space_id).await?;
-        space.set_auto_subscribe(enabled);
-        self.spaces.save(&space).await?;
+        self.spaces.set_auto_subscribe(space_id, enabled).await?;
         Ok(enabled)
     }
 }

@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use anime::{animes::Animes, source::AnimeSourceFactory, AnimeCaps};
+use domain::download::UserDownloadDriver;
 use anyhow::Result;
 use axum::serve;
 use infra::{anime_source::BangumiSingleSource, bangumi::BangumiClient, tmdb::TmdbClient};
@@ -25,9 +26,10 @@ use service::{
         runtime::{
             CachingUserDownloadDriverResolver, CompositeUserDownloadRuntimeCacheInvalidator,
             InvalidateUserDownloadRuntime, ResolveUserDownloadDriver, RoutingUserDownloadExecutor,
-            UserDownloadDriver, VerifyQbitProfile,
+            VerifyQbitProfile,
         },
         service::DownloadService,
+        shared::error::ApplicationError,
         user_actions::UserDownload,
     },
     feed::service::FeedService,
@@ -228,7 +230,12 @@ fn build_invalidate_user_runtime(
 fn build_verify_qbit_profile(verifier: Arc<LiveQbitProfileVerifier>) -> Arc<VerifyQbitProfile> {
     Arc::new(move |profile| {
         let verifier = verifier.clone();
-        Box::pin(async move { verifier.verify_qbit_profile(&profile).await })
+        Box::pin(async move {
+            verifier
+                .verify_qbit_profile(&profile)
+                .await
+                .map_err(ApplicationError::from)
+        })
     })
 }
 
@@ -310,6 +317,9 @@ pub(crate) async fn build_runtime(
         database.clone(),
         feed_source_resolver.clone(),
         http_feed.clone(),
+        feed::FeedCaps {
+            writer: database.clone(),
+        },
     ));
     let rule_caps = rule::RuleCaps {
         writer: database.clone(),
@@ -322,6 +332,9 @@ pub(crate) async fn build_runtime(
     let spaces_impl = Arc::new(Spaces::new(
         database.clone(),
         database.clone() as Arc<dyn domain::shared::identifier::IdSequence>,
+        space::SpaceCaps {
+            auto_subscriber: database.clone(),
+        },
     ));
     let resources = Arc::new(ResourceContext::new(
         database.clone(),
@@ -339,6 +352,10 @@ pub(crate) async fn build_runtime(
         database.clone(),
         password_service.clone(),
         user_ids.clone(),
+        user::users::UserCaps {
+            info_writer: database.clone(),
+            password_changer: database.clone(),
+        },
     ));
     SystemService::new(
         database.clone(),

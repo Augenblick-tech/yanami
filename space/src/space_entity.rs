@@ -2,6 +2,7 @@ use domain::{
     anime::AnimeId,
     shared::error::DomainError,
     space::{AutoSubscribeDecision, Space, SpaceId},
+    space::capability::SpaceAutoSubscribeCap,
 };
 
 /// 订阅空间聚合根。
@@ -38,8 +39,14 @@ impl SpaceEntity {
     }
 
     /// 设置是否自动订阅新番。
-    pub fn set_auto_subscribe(&mut self, enabled: bool) {
+    pub async fn set_auto_subscribe(
+        &mut self,
+        cap: &dyn SpaceAutoSubscribeCap,
+        enabled: bool,
+    ) -> Result<(), DomainError> {
+        cap.write_auto_subscribe(self.space.id, enabled).await?;
         self.space.auto_subscribe = enabled;
+        Ok(())
     }
 
     /// 信息专家：空间根据自身规则判断是否应自动订阅该番剧。
