@@ -1,7 +1,7 @@
 use domain::{
     shared::error::DomainError,
-    user::{User, UserId, UserRole, Username},
     user::capability::UserPasswordChangerCap,
+    user::{User, UserId, UserRole, Username},
 };
 use std::fmt;
 
@@ -71,7 +71,8 @@ impl UserEntity {
         validate_password(new_password)?;
         self.verify_password(old_password, password_service).await?;
         let new_hash = password_service.hash_password(new_password).await?;
-        cap.write_password(self.snapshot.id, new_hash.0.clone()).await?;
+        cap.write_password(self.snapshot.id, new_hash.0.clone())
+            .await?;
         self.snapshot.password_hash = new_hash;
         Ok(())
     }

@@ -1,14 +1,10 @@
 use domain::{
-    rule::{capability::RuleWriterCap, MatchingRule},
+    rule::{MatchingRule, RegexProvider},
     shared::error::DomainError,
-    space::SpaceId,
 };
-use regex::Regex;
 
 #[path = "match_rule.rs"]
 mod match_rule;
-#[path = "validate.rs"]
-mod validate;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuleEntity {
@@ -16,8 +12,8 @@ pub struct RuleEntity {
 }
 
 impl RuleEntity {
-    pub fn new(rule: MatchingRule) -> Result<Self, DomainError> {
-        validate_rule(&rule)?;
+    pub fn new(rule: MatchingRule, p: &dyn RegexProvider) -> Result<Self, DomainError> {
+        validate_rule(&rule, p)?;
         Ok(Self { rule })
     }
 
@@ -45,57 +41,17 @@ impl RuleEntity {
         Ok(())
     }
 
-    pub async fn activate(
-        &mut self,
-        writer: &dyn RuleWriterCap,
-        space_id: SpaceId,
-    ) -> Result<(), DomainError> {
-        if self.rule.active {
-            return Ok(());
-        }
-        writer
-            .write_rule(
-                ("space", space_id.0),
-                &self.rule.id,
-                &self.rule.name,
-                self.rule.order,
-                &self.rule.pattern,
-                true,
-            )
-            .await?;
-        self.rule.active = true;
-        Ok(())
-    }
-
-    pub async fn deactivate(
-        &mut self,
-        writer: &dyn RuleWriterCap,
-        space_id: SpaceId,
-    ) -> Result<(), DomainError> {
-        if !self.rule.active {
-            return Ok(());
-        }
-        writer
-            .write_rule(
-                ("space", space_id.0),
-                &self.rule.id,
-                &self.rule.name,
-                self.rule.order,
-                &self.rule.pattern,
-                false,
-            )
-            .await?;
+    pub fn deactivate(&mut self) {
         self.rule.active = false;
-        Ok(())
     }
 }
 
-pub(crate) fn validate_rule_list(rules: &[MatchingRule]) -> Result<(), DomainError> {
+pub(crate) fn validate_rule_list(rules: &[MatchingRule], p: &dyn RegexProvider) -> Result<(), DomainError> {
     let mut seen_ids = std::collections::HashSet::new();
     let mut seen_active_orders = std::collections::HashSet::new();
 
     for rule in rules {
-        validate_rule(rule)?;
+        validate_rule(rule, p)?;
         if !seen_ids.insert(rule.id.0.clone()) {
             return Err(DomainError::InvariantViolation(
                 "matching rule id must be unique",
@@ -111,7 +67,7 @@ pub(crate) fn validate_rule_list(rules: &[MatchingRule]) -> Result<(), DomainErr
     Ok(())
 }
 
-fn validate_rule(rule: &MatchingRule) -> Result<(), DomainError> {
+fn validate_rule(rule: &MatchingRule, p: &dyn RegexProvider) -> Result<(), DomainError> {
     if rule.id.0.trim().is_empty() {
         return Err(DomainError::InvariantViolation(
             "matching rule id cannot be empty",
@@ -127,8 +83,7 @@ fn validate_rule(rule: &MatchingRule) -> Result<(), DomainError> {
             "matching rule pattern cannot be empty",
         ));
     }
-    Regex::new(&rule.pattern)
-        .map_err(|_| DomainError::InvariantViolation("matching rule pattern is invalid"))?;
+    p.validate_and_cache(&rule.pattern)?;
     Ok(())
 }
 
@@ -154,6 +109,16 @@ mod tests {
                 domain::shared::error::DomainError::InvariantViolation("invalid regex")
             })?;
             Ok(regex.is_match(text))
+        }
+
+        fn validate_and_cache(
+            &self,
+            pattern: &str,
+        ) -> Result<(), domain::shared::error::DomainError> {
+            Regex::new(pattern).map_err(|_| {
+                domain::shared::error::DomainError::InvariantViolation("matching rule pattern is invalid")
+            })?;
+            Ok(())
         }
     }
 
@@ -183,14 +148,22 @@ mod tests {
 
     #[test]
     fn new_validates_rule() {
-        let entity = RuleEntity::new(sample_rule("a", "ANi", 1, r"^\[ANi\].*$")).expect("entity");
+        let entity =
+            RuleEntity::new(sample_rule("a", "ANi", 1, r"^\[ANi\].*$"), &TestRegexProvider)
+                .expect("entity");
 
         assert_eq!(entity.read_data().id.0, "a");
+        assert_eq!(entity.read_data().name, "ANi");
+        assert_eq!(entity.read_data().order, 1);
+        assert_eq!(entity.read_data().pattern, r"^\[ANi\].*$");
+        assert!(entity.read_data().active);
     }
 
     #[test]
     fn new_rejects_invalid_regex() {
-        let error = RuleEntity::new(sample_rule("a", "broken", 1, "[")).expect_err("invalid regex");
+        let error =
+            RuleEntity::new(sample_rule("a", "broken", 1, "["), &TestRegexProvider)
+                .expect_err("invalid regex");
 
         assert_eq!(
             error.to_string(),
@@ -200,10 +173,13 @@ mod tests {
 
     #[test]
     fn rule_list_validation_rejects_duplicate_order() {
-        let error = validate_rule_list(&[
-            sample_rule("a", "ANi", 1, r"^\[ANi\].*$"),
-            sample_rule("b", "Lilith", 1, r"^\[Lilith\].*$"),
-        ])
+        let error = validate_rule_list(
+            &[
+                sample_rule("a", "ANi", 1, r"^\[ANi\].*$"),
+                sample_rule("b", "Lilith", 1, r"^\[Lilith\].*$"),
+            ],
+            &TestRegexProvider,
+        )
         .expect_err("duplicate order");
 
         assert_eq!(
@@ -217,16 +193,21 @@ mod tests {
         let mut inactive = sample_rule("b", "Lilith", 1, r"^\[Lilith\].*$");
         inactive.active = false;
 
-        validate_rule_list(&[sample_rule("a", "ANi", 1, r"^\[ANi\].*$"), inactive])
-            .expect("inactive duplicate order");
+        let rules = &[sample_rule("a", "ANi", 1, r"^\[ANi\].*$"), inactive];
+        let result = validate_rule_list(rules, &TestRegexProvider);
+        assert!(result.is_ok());
     }
 
     #[test]
     fn merge_or_reject_rejects_active_name_conflict() {
-        let mut entity = RuleEntity::new(sample_rule("a", "ANi", 1, r"^\[ANi\].*$")).expect("entity");
+        let mut entity =
+            RuleEntity::new(sample_rule("a", "ANi", 1, r"^\[ANi\].*$"), &TestRegexProvider)
+                .expect("entity");
         let existing = sample_rule("b", "ANi", 2, r"^\[ANi\].*$");
 
-        let error = entity.merge_or_reject(&existing).expect_err("active conflict");
+        let error = entity
+            .merge_or_reject(&existing)
+            .expect_err("active conflict");
 
         assert_eq!(
             error.to_string(),
@@ -236,7 +217,9 @@ mod tests {
 
     #[test]
     fn merge_or_reject_adopts_inactive_id() {
-        let mut entity = RuleEntity::new(sample_rule("new-id", "Lilith", 3, r"^\[Lilith\].*$")).expect("entity");
+        let mut entity =
+            RuleEntity::new(sample_rule("new-id", "Lilith", 3, r"^\[Lilith\].*$"), &TestRegexProvider)
+                .expect("entity");
         let mut existing = sample_rule("old-id", "Lilith", 2, r"^\[Lilith\].*$");
         existing.active = false;
 
@@ -247,7 +230,9 @@ mod tests {
 
     #[test]
     fn match_title_uses_rule_regex() {
-        let entity = RuleEntity::new(sample_rule("ani", "ANi", 1, r"^\[ANi\].*")).expect("entity");
+        let entity =
+            RuleEntity::new(sample_rule("ani", "ANi", 1, r"^\[ANi\].*"), &TestRegexProvider)
+                .expect("entity");
         let title = snapshot_title("[ANi]");
 
         let matched = entity
@@ -256,5 +241,190 @@ mod tests {
             .expect("matched");
 
         assert_eq!(matched.id.0, "ani");
+    }
+
+    #[test]
+    fn new_rejects_empty_id() {
+        let error =
+            RuleEntity::new(sample_rule("", "ANi", 1, r"^\[ANi\].*$"), &TestRegexProvider)
+                .expect_err("empty id");
+
+        assert_eq!(
+            error.to_string(),
+            "domain invariant violation: matching rule id cannot be empty"
+        );
+    }
+
+    #[test]
+    fn new_rejects_empty_name() {
+        let error =
+            RuleEntity::new(sample_rule("a", "", 1, r"^\[ANi\].*$"), &TestRegexProvider)
+                .expect_err("empty name");
+
+        assert_eq!(
+            error.to_string(),
+            "domain invariant violation: matching rule name cannot be empty"
+        );
+    }
+
+    #[test]
+    fn new_rejects_empty_pattern() {
+        let error =
+            RuleEntity::new(sample_rule("a", "ANi", 1, ""), &TestRegexProvider)
+                .expect_err("empty pattern");
+
+        assert_eq!(
+            error.to_string(),
+            "domain invariant violation: matching rule pattern cannot be empty"
+        );
+    }
+
+    #[test]
+    fn rule_list_validation_rejects_duplicate_id() {
+        let error = validate_rule_list(
+            &[
+                sample_rule("a", "ANi", 1, r"^\[ANi\].*$"),
+                sample_rule("a", "Lilith", 2, r"^\[Lilith\].*$"),
+            ],
+            &TestRegexProvider,
+        )
+        .expect_err("duplicate id");
+
+        assert_eq!(
+            error.to_string(),
+            "domain invariant violation: matching rule id must be unique"
+        );
+    }
+
+    #[test]
+    fn match_title_returns_none_when_not_matched() {
+        let entity =
+            RuleEntity::new(sample_rule("ani", "ANi", 1, r"^\[NoMatch\].*"), &TestRegexProvider)
+                .expect("entity");
+        let title = snapshot_title("[ANi]");
+
+        let matched = entity
+            .match_title(&TestRegexProvider, &title)
+            .expect("match");
+
+        assert!(matched.is_none());
+    }
+
+    #[test]
+    fn deactivate_sets_active_false() {
+        let mut entity =
+            RuleEntity::new(sample_rule("a", "ANi", 1, r"^\[ANi\].*$"), &TestRegexProvider)
+                .expect("entity");
+
+        entity.deactivate();
+
+        assert!(!entity.read_data().active);
+    }
+
+    #[test]
+    fn set_active_sets_active_true() {
+        let mut entity =
+            RuleEntity::new(sample_rule("a", "ANi", 1, r"^\[ANi\].*$"), &TestRegexProvider)
+                .expect("entity");
+        entity.deactivate();
+
+        entity.set_active();
+
+        assert!(entity.read_data().active);
+    }
+
+    #[test]
+    fn merge_or_reject_self_update_preserves_id() {
+        let mut entity =
+            RuleEntity::new(sample_rule("a", "ANi", 1, r"^\[ANi\].*$"), &TestRegexProvider)
+                .expect("entity");
+        let existing = sample_rule("a", "ANi", 1, r"^\[ANi\].*$");
+
+        entity.merge_or_reject(&existing).expect("self-update");
+
+        assert_eq!(entity.read_data().id.0, "a");
+    }
+
+    #[test]
+    fn deactivate_is_idempotent() {
+        let mut entity =
+            RuleEntity::new(sample_rule("a", "ANi", 1, r"^\[ANi\].*$"), &TestRegexProvider)
+                .expect("entity");
+
+        entity.deactivate();
+        assert!(!entity.read_data().active);
+
+        entity.deactivate();
+        assert!(!entity.read_data().active);
+    }
+
+    #[test]
+    fn set_active_is_idempotent() {
+        let mut entity =
+            RuleEntity::new(sample_rule("a", "ANi", 1, r"^\[ANi\].*$"), &TestRegexProvider)
+                .expect("entity");
+        entity.set_active();
+
+        entity.set_active();
+        assert!(entity.read_data().active);
+
+        entity.set_active();
+        assert!(entity.read_data().active);
+    }
+
+    #[test]
+    fn new_rejects_whitespace_only_fields() {
+        let error = RuleEntity::new(sample_rule("  ", "ANi", 1, r"^\[ANi\].*$"), &TestRegexProvider)
+            .expect_err("whitespace id");
+        assert_eq!(
+            error.to_string(),
+            "domain invariant violation: matching rule id cannot be empty"
+        );
+
+        let error = RuleEntity::new(sample_rule("a", "  ", 1, r"^\[ANi\].*$"), &TestRegexProvider)
+            .expect_err("whitespace name");
+        assert_eq!(
+            error.to_string(),
+            "domain invariant violation: matching rule name cannot be empty"
+        );
+
+        let error =
+            RuleEntity::new(sample_rule("a", "ANi", 1, "  "), &TestRegexProvider)
+                .expect_err("whitespace pattern");
+        assert_eq!(
+            error.to_string(),
+            "domain invariant violation: matching rule pattern cannot be empty"
+        );
+    }
+
+    #[test]
+    fn rule_list_validation_accepts_empty_list() {
+        let result = validate_rule_list(&[], &TestRegexProvider);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn rule_list_validation_accepts_valid_list() {
+        let rules = &[
+            sample_rule("a", "ANi", 1, r"^\[ANi\].*$"),
+            sample_rule("b", "Lilith", 2, r"^\[Lilith\].*$"),
+        ];
+        let result = validate_rule_list(rules, &TestRegexProvider);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn into_snapshot_returns_inner_data() {
+        let entity =
+            RuleEntity::new(sample_rule("ani", "ANi", 1, r"^\[ANi\].*$"), &TestRegexProvider)
+                .expect("entity");
+
+        let snapshot = entity.into_snapshot();
+
+        assert_eq!(snapshot.id.0, "ani");
+        assert_eq!(snapshot.name, "ANi");
+        assert_eq!(snapshot.order, 1);
+        assert_eq!(snapshot.pattern, r"^\[ANi\].*$");
+        assert!(snapshot.active);
     }
 }

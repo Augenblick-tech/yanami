@@ -40,10 +40,7 @@ impl RegistrationCodes {
         })
     }
 
-    pub async fn load(
-        &self,
-        code: &str,
-    ) -> Result<Option<RegistrationCodeEntity<'_>>, DomainError> {
+    pub async fn load(&self, code: &str) -> Result<Option<RegistrationCodeEntity>, DomainError> {
         let value = RegistrationCodeValue(code.trim().to_string());
         if value.0.is_empty() {
             return Err(DomainError::InvariantViolation(
@@ -54,14 +51,14 @@ impl RegistrationCodes {
             .repository
             .find_registration_code(&value)
             .await?
-            .map(|snapshot| RegistrationCodeEntity::new(snapshot, self.clock.as_ref())))
+            .map(RegistrationCodeEntity::new))
     }
 
     pub async fn create(
         &self,
         valid_for_seconds: i64,
         remaining_uses: u32,
-    ) -> Result<RegistrationCodeEntity<'_>, DomainError> {
+    ) -> Result<RegistrationCodeEntity, DomainError> {
         if valid_for_seconds <= 0 {
             return Err(DomainError::InvariantViolation(
                 "registration code ttl must be positive",
@@ -80,10 +77,10 @@ impl RegistrationCodes {
             remaining_uses,
         };
         self.repository.save_registration_code(&snapshot).await?;
-        Ok(RegistrationCodeEntity::new(snapshot, self.clock.as_ref()))
+        Ok(RegistrationCodeEntity::new(snapshot))
     }
 
-    pub async fn save(&self, entity: &RegistrationCodeEntity<'_>) -> Result<(), DomainError> {
+    pub async fn save(&self, entity: &RegistrationCodeEntity) -> Result<(), DomainError> {
         self.repository
             .save_registration_code(entity.snapshot())
             .await
@@ -208,7 +205,7 @@ mod tests {
             .await
             .expect("load")
             .expect("issued code");
-        updated.consume_once().expect("consume");
+        updated.consume_once(100).expect("consume");
         codes.save(&updated).await.expect("save consumed code");
         assert_eq!(updated.snapshot().remaining_uses, 1);
 

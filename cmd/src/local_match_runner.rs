@@ -13,7 +13,7 @@ pub fn spawn_local_match_runner(subscription_service: Arc<SubscriptionService>) 
         loop {
             tokio::time::sleep(Duration::from_secs(1)).await;
             if let Err(error) = subscription_service.process_one_local_match().await {
-                tracing::error!(?error, "local_match_runner: process_one_local_match failed");
+                tracing::warn!(?error, "local_match_runner: process_one_local_match failed");
             }
         }
     });

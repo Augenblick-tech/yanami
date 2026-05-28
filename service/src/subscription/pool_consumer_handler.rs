@@ -1,23 +1,21 @@
 use std::sync::Arc;
 
-use domain::{
-    anime::AnimeId,
-    subscription::{SearchPoolRepository, SubscriptionSearchState},
-};
+use domain::{anime::AnimeId, subscription::SubscriptionSearchState};
 use feed::contracts::{FeedData, SearchPoolEventHandler};
 use subscription::entity::SubscriptionAnimeEntity;
+use subscription::search_pool::SearchPool;
 
 use crate::subscription::service::SubscriptionService;
 
-pub struct SearchPoolHandler {
+pub struct SearchPoolEventProcessor {
     subscription_service: Arc<SubscriptionService>,
-    search_pool: Arc<dyn SearchPoolRepository>,
+    search_pool: Arc<SearchPool>,
 }
 
-impl SearchPoolHandler {
+impl SearchPoolEventProcessor {
     pub fn new(
         subscription_service: Arc<SubscriptionService>,
-        search_pool: Arc<dyn SearchPoolRepository>,
+        search_pool: Arc<SearchPool>,
     ) -> Self {
         Self {
             subscription_service,
@@ -27,7 +25,7 @@ impl SearchPoolHandler {
 }
 
 #[async_trait::async_trait]
-impl SearchPoolEventHandler for SearchPoolHandler {
+impl SearchPoolEventHandler for SearchPoolEventProcessor {
     async fn on_search_started(&self, anime_id: AnimeId) {
         if let Err(error) = self
             .subscription_service

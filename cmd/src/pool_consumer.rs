@@ -2,9 +2,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use domain::{feed::FeedSourceId, shared::error::DomainError, subscription::SearchPoolRepository};
+use domain::{feed::FeedSourceId, shared::error::DomainError};
 use feed::contracts::SearchPoolEventHandler;
 use infra::rss::HttpFeedFetcher;
+use subscription::search_pool::SearchPool;
 
 const INITIAL_BACKOFF: Duration = Duration::from_secs(30);
 const MAX_BACKOFF: Duration = Duration::from_secs(1800);
@@ -16,7 +17,7 @@ struct FeedBackoff {
 }
 
 pub fn spawn_pool_consumer(
-    search_pool: Arc<dyn SearchPoolRepository>,
+    search_pool: Arc<SearchPool>,
     http_feed: Arc<HttpFeedFetcher>,
     handlers: Vec<Arc<dyn SearchPoolEventHandler>>,
 ) {
@@ -66,18 +67,11 @@ pub fn spawn_pool_consumer(
 
             match http_feed.fetch_url(&entry.search_url).await {
                 Ok(feed_data) => {
-                    if let Err(error) = search_pool.delete_sub_links_by_pool(entry.id).await {
+                    if let Err(error) = search_pool.consume_entry(&entry).await {
                         tracing::error!(
                             pool_id = entry.id,
                             ?error,
-                            "pool_consumer: delete sub links failed"
-                        );
-                    }
-                    if let Err(error) = search_pool.delete_entry(entry.id).await {
-                        tracing::error!(
-                            pool_id = entry.id,
-                            ?error,
-                            "pool_consumer: delete entry failed"
+                            "pool_consumer: consume entry failed"
                         );
                     }
                     for handler in &handlers {
@@ -85,7 +79,7 @@ pub fn spawn_pool_consumer(
                             .on_entry_succeeded(entry.anime_id, feed_data.clone())
                             .await;
                     }
-                    tracing::info!(
+                    tracing::debug!(
                         anime_id = %entry.anime_id.0,
                         keyword = %entry.keyword,
                         feed_id = %feed_id.0,
@@ -109,18 +103,11 @@ pub fn spawn_pool_consumer(
                             ?error,
                             "pool_consumer: fatal error, deleting entry"
                         );
-                        if let Err(e) = search_pool.delete_sub_links_by_pool(entry.id).await {
+                        if let Err(e) = search_pool.consume_entry(&entry).await {
                             tracing::error!(
                                 pool_id = entry.id,
                                 ?e,
-                                "pool_consumer: delete sub links failed"
-                            );
-                        }
-                        if let Err(e) = search_pool.delete_entry(entry.id).await {
-                            tracing::error!(
-                                pool_id = entry.id,
-                                ?e,
-                                "pool_consumer: delete entry failed"
+                                "pool_consumer: consume entry failed"
                             );
                         }
                         for handler in &handlers {

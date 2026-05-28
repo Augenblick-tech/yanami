@@ -4,7 +4,7 @@ use axum::{
     http::StatusCode,
     middleware,
     response::IntoResponse,
-    routing::{get, post, put},
+    routing::{delete, get, post, put},
     Router,
 };
 use utoipa::OpenApi;
@@ -58,7 +58,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         )
         .route(
             "/space/rules/:rule_id",
-            put(handler::update_rule).delete(handler::delete_rule),
+            delete(handler::delete_rule),
         )
         .route(
             "/space/feeds",

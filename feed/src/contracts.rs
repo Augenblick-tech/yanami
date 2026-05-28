@@ -27,9 +27,7 @@ pub struct ResolvedFeedSource {
 
 #[async_trait]
 pub trait FeedFetcher: Send + Sync {
-    async fn fetch(&self, source: &FeedSource) -> Result<FeedData, DomainError>;
-
-    async fn search(&self, source: &FeedSource, keyword: &str) -> Result<FeedData, DomainError>;
+    async fn fetch_url(&self, url: &str) -> Result<FeedData, DomainError>;
 }
 
 #[async_trait]

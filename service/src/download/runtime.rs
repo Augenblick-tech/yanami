@@ -18,10 +18,7 @@ use domain::{
     user::UserId,
 };
 
-use crate::download::{
-    contracts::UserDownloadExecutor,
-    shared::error::ApplicationError,
-};
+use crate::download::{contracts::UserDownloadExecutor, shared::error::ApplicationError};
 
 pub type ResolveDriverKeyFuture =
     Pin<Box<dyn Future<Output = Result<Option<String>, ApplicationError>> + Send>>;
@@ -105,9 +102,7 @@ impl RoutingUserDownloadExecutor {
             ));
         };
 
-        driver
-            .download(user_id, request)
-            .await?;
+        driver.download(user_id, request).await?;
         Ok(())
     }
 }
@@ -230,11 +225,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use async_trait::async_trait;
-    use domain::{
-        download::DownloadRequest,
-        shared::error::DomainError,
-        user::UserId,
-    };
+    use domain::{download::DownloadRequest, shared::error::DomainError, user::UserId};
 
     use super::*;
     use crate::download::shared::error::ApplicationError;
@@ -264,10 +255,7 @@ mod tests {
 
     #[async_trait]
     impl UserDownloadDriverBindingStore for InMemoryDriverBindingStore {
-        async fn find_driver_key(
-            &self,
-            user_id: UserId,
-        ) -> Result<Option<String>, DomainError> {
+        async fn find_driver_key(&self, user_id: UserId) -> Result<Option<String>, DomainError> {
             *self.reads.lock().expect("lock reads") += 1;
             Ok(self
                 .values

@@ -9,7 +9,6 @@ use anime::{
 use async_trait::async_trait;
 use domain::anime::capability::{AnimeLockCap, AnimeMetadataUpdateCap};
 use domain::feed::capability::FeedSourceWriterCap;
-use domain::rule::capability::RuleWriterCap;
 use domain::shared::biz::{BizContext, BizFactory};
 use domain::space::capability::SpaceAutoSubscribeCap;
 use domain::subscription::capability::{
@@ -37,7 +36,7 @@ use domain::{
 };
 use feed::{
     contracts::{FeedData, FeedFetcher, FetchedFeedItem, ResolveFeedSource, ResolvedFeedSource},
-    Feeds, FeedCaps, Resources,
+    FeedCaps, Feeds, Resources,
 };
 use service::{
     job::{CheckMissingEpisodesJob, FetchResourcesJob, Job, MatchResourcesJob},
@@ -46,7 +45,7 @@ use service::{
 use space::{SpaceCaps, Spaces};
 use subscription::{
     action::{MatchedResource, RunMatchedResource},
-    missing_episodes::MissingEpisodeChecker,
+    missing_episodes::MissingEpisodePolicy,
     SubscriptionAnimes, SubscriptionCaps,
 };
 
@@ -175,23 +174,6 @@ impl AnimeStateRepository for NoopAnimeStateRepository {
     }
 }
 
-struct NoopRuleWriter;
-
-#[async_trait]
-impl RuleWriterCap for NoopRuleWriter {
-    async fn write_rule(
-        &self,
-        _scope: (&str, i64),
-        _rule_id: &MatchingRuleId,
-        _name: &str,
-        _order: u32,
-        _pattern: &str,
-        _active: bool,
-    ) -> Result<(), DomainError> {
-        Ok(())
-    }
-}
-
 struct NoopFeedSourceWriter;
 
 #[async_trait]
@@ -284,6 +266,16 @@ impl domain::rule::RegexProvider for StubRegexProvider {
         let regex = regex::Regex::new(pattern)
             .map_err(|_| domain::shared::error::DomainError::InvariantViolation("invalid regex"))?;
         Ok(regex.is_match(text))
+    }
+
+    fn validate_and_cache(
+        &self,
+        pattern: &str,
+    ) -> Result<(), domain::shared::error::DomainError> {
+        regex::Regex::new(pattern).map_err(|_| {
+            domain::shared::error::DomainError::InvariantViolation("matching rule pattern is invalid")
+        })?;
+        Ok(())
     }
 }
 
@@ -864,7 +856,6 @@ fn resolve_feed_source() -> Arc<ResolveFeedSource> {
 #[derive(Default)]
 struct StubFeedFetcher {
     fetch_data: Mutex<Vec<FeedData>>,
-    search_data: Mutex<Vec<FeedData>>,
 }
 
 impl StubFeedFetcher {
@@ -875,36 +866,16 @@ impl StubFeedFetcher {
     fn with_fetch_data(data: Vec<FeedData>) -> Arc<Self> {
         Arc::new(Self {
             fetch_data: Mutex::new(data),
-            search_data: Mutex::new(vec![]),
         })
     }
 }
 
 #[async_trait]
 impl FeedFetcher for StubFeedFetcher {
-    async fn fetch(&self, source: &FeedSource) -> Result<FeedData, DomainError> {
+    async fn fetch_url(&self, _url: &str) -> Result<FeedData, DomainError> {
         let data = self.fetch_data.lock().expect("fetch data").first().cloned();
         Ok(data.unwrap_or_else(|| FeedData {
-            source_key: source
-                .source_key
-                .clone()
-                .unwrap_or_else(|| "dmhy-source".to_string()),
-            items: vec![],
-        }))
-    }
-
-    async fn search(&self, source: &FeedSource, _keyword: &str) -> Result<FeedData, DomainError> {
-        let data = self
-            .search_data
-            .lock()
-            .expect("search data")
-            .first()
-            .cloned();
-        Ok(data.unwrap_or_else(|| FeedData {
-            source_key: source
-                .source_key
-                .clone()
-                .unwrap_or_else(|| "dmhy-source".to_string()),
+            source_key: "dmhy-source".to_string(),
             items: vec![],
         }))
     }
@@ -1037,11 +1008,7 @@ fn build_service_with_rules_action_and_records(
             writer: Arc::new(NoopFeedSourceWriter),
         },
     ));
-    let rule_caps = rule::RuleCaps {
-        writer: Arc::new(NoopRuleWriter),
-    };
     let rules = Arc::new(rule::Rules::new(
-        rule_caps,
         space_rules,
         Arc::new(StubRegexProvider),
     ));
@@ -1075,7 +1042,7 @@ fn build_service_with_rules_action_and_records(
         feeds,
         rules,
         resources,
-        missing_episode_policy: Arc::new(MissingEpisodeChecker),
+        missing_episode_policy: Arc::new(MissingEpisodePolicy),
         run_matched_resource,
     }))
 }

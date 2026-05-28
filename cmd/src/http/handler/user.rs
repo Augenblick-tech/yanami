@@ -49,12 +49,12 @@ pub async fn login(
 )]
 pub async fn change_password(
     State(state): State<Arc<AppState>>,
-    Extension(_user): Extension<AuthenticatedUser>,
+    Extension(user): Extension<AuthenticatedUser>,
     Json(request): Json<ChangePasswordRequest>,
 ) -> Result<Json<ApiResponse<ChangePasswordResponse>>, ApiError> {
     let outcome = state
         .user_service
-        .change_password(_user.user_id, request.old_password, request.new_password)
+        .change_password(user.user_id, request.old_password, request.new_password)
         .await?;
     Ok(Json(ApiResponse::ok(ChangePasswordResponse {
         user_id: outcome.user_id.0,

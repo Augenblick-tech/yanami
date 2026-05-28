@@ -2,9 +2,9 @@ use domain::{shared::error::DomainError, subscription::MissingEpisodeAssessment}
 
 use crate::episode_extractor::extract_episode_numbers;
 
-pub struct MissingEpisodeChecker;
+pub struct MissingEpisodePolicy;
 
-impl MissingEpisodeChecker {
+impl MissingEpisodePolicy {
     pub fn assess_missing_episodes(
         &self,
         release_titles: &[String],

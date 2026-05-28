@@ -1,17 +1,10 @@
 use std::path::{Component, Path};
 use std::sync::Arc;
 
-use domain::{
-    download::DownloadRequest,
-    shared::error::DomainError,
-    user::UserId,
-};
+use domain::{download::DownloadRequest, shared::error::DomainError, user::UserId};
 
 use crate::download::shared::error::ApplicationError;
-use crate::download::{
-    contracts::UserDownloadExecutor,
-    runtime::RoutingUserDownloadExecutor,
-};
+use crate::download::{contracts::UserDownloadExecutor, runtime::RoutingUserDownloadExecutor};
 
 /// 一次面向用户的下载请求。
 #[derive(Debug, Clone, PartialEq, Eq)]

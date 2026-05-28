@@ -2,8 +2,6 @@ use std::sync::Arc;
 
 use crate::{shared::biz::BizContext, shared::error::DomainError, space::SpaceId};
 
-pub mod capability;
-
 /// 规则稳定标识。
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct MatchingRuleId(pub String);
@@ -27,6 +25,8 @@ pub struct MatchingRule {
 /// 由基础设施层提供实现，可内建缓存避免重复编译。
 pub trait RegexProvider: Send + Sync {
     fn is_match(&self, pattern: &str, text: &str) -> Result<bool, DomainError>;
+    fn validate_and_cache(&self, pattern: &str) -> Result<(), DomainError>;
+    fn evict_pattern(&self, _pattern: &str) {}
 }
 
 /// Rule context 下的团队规则仓储端口。

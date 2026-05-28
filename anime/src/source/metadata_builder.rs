@@ -13,17 +13,18 @@ use domain::{
     shared::error::DomainError,
 };
 
-use super::tmdb_matcher::{select_air_date, select_tmdb_result};
+use super::tmdb_selector::{select_air_date, select_tmdb_result};
 
+// SAFETY: 以下正则在编译期已知有效
 static SEASON_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new("第[0-9]+期").expect("season regex"));
-static EN_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new("[Ss]eason.*?$").expect("en regex"));
+    LazyLock::new(|| Regex::new("第[0-9]+期").expect("season regex")); // SAFETY: 编译期已知有效的正则字面量
+static EN_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new("[Ss]eason.*?$").expect("en regex")); // SAFETY: 编译期已知有效的正则字面量
 static EN_ND_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\d+.*?[Ss]eason.*?$").expect("en-nd regex"));
+    LazyLock::new(|| Regex::new(r"\d+.*?[Ss]eason.*?$").expect("en-nd regex")); // SAFETY: 编译期已知有效的正则字面量
 static END_NUMBER_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\d+$").expect("end-number regex"));
+    LazyLock::new(|| Regex::new(r"\d+$").expect("end-number regex")); // SAFETY: 编译期已知有效的正则字面量
 static COUR_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"第\d+クール$").expect("cour regex"));
+    LazyLock::new(|| Regex::new(r"第\d+クール$").expect("cour regex")); // SAFETY: 编译期已知有效的正则字面量
 
 pub async fn build_anime_metadata(
     raw_items: &[AnimeMetadataSeed],

@@ -3,8 +3,8 @@ use std::sync::Arc;
 use domain::{
     shared::biz::BizContext,
     shared::error::DomainError,
-    user::{User, UserId, UserRepository, Username},
     user::capability::{UserInfoWriterCap, UserPasswordChangerCap},
+    user::{User, UserId, UserRepository, Username},
 };
 
 use crate::{
@@ -76,11 +76,7 @@ impl Users {
             .map(|snapshot| self.build_entity(snapshot)))
     }
 
-    pub async fn create(
-        &self,
-        username: &str,
-        password: &str,
-    ) -> Result<UserEntity, DomainError> {
+    pub async fn create(&self, username: &str, password: &str) -> Result<UserEntity, DomainError> {
         let username = validate_username(username)?;
         if self
             .repository
@@ -184,8 +180,8 @@ mod tests {
     use std::{collections::HashMap, sync::Mutex};
 
     use async_trait::async_trait;
+    use domain::user::capability::{UserInfoUpdate, UserInfoWriterCap, UserPasswordChangerCap};
     use domain::user::{PasswordHash, User, UserRole};
-    use domain::user::capability::{UserInfoWriterCap, UserInfoUpdate, UserPasswordChangerCap};
 
     use super::*;
 

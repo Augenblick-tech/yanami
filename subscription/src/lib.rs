@@ -7,6 +7,7 @@ pub mod episode_extractor;
 pub mod keywords;
 pub mod missing_episodes;
 pub mod save_path;
+pub mod search_pool;
 pub mod subscription_animes;
 
 pub mod shared {

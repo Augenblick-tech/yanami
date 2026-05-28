@@ -58,10 +58,7 @@ impl UserDownloads {
         user_id: UserId,
     ) -> Result<DownloadConfiguration, DomainError> {
         self.ensure_user_exists(user_id).await?;
-        let driver_key = self
-            .drivers
-            .find_driver_key(user_id)
-            .await?;
+        let driver_key = self.drivers.find_driver_key(user_id).await?;
         let qbit_profile = self
             .qbit_profiles
             .find_qbit_profile(user_id)
@@ -88,9 +85,7 @@ impl UserDownloads {
     ) -> Result<String, DomainError> {
         self.ensure_user_exists(user_id).await?;
         let driver_key = validate_driver_key(&driver_key)?;
-        self.drivers
-            .save_driver_key(user_id, &driver_key)
-            .await?;
+        self.drivers.save_driver_key(user_id, &driver_key).await?;
         (self.invalidate_user_runtime)(user_id);
         Ok(driver_key)
     }
@@ -105,8 +100,7 @@ impl UserDownloads {
     ) -> Result<(), DomainError> {
         self.ensure_user_exists(user_id).await?;
         let profile = validate_qbit_profile(&endpoint, &username, &secret, &download_path)?;
-        (self.verify_qbit_profile)(profile.clone())
-            .await?;
+        (self.verify_qbit_profile)(profile.clone()).await?;
         self.qbit_profiles
             .save_qbit_profile(user_id, &profile)
             .await?;

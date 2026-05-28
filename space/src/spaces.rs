@@ -4,8 +4,8 @@ use std::sync::Arc;
 use crate::space_entity::SpaceEntity;
 use domain::{
     shared::{biz::BizContext, error::DomainError, identifier::IdSequence},
-    space::{PersonalSpaceBinding, SpaceId, SpaceRepository},
     space::capability::SpaceAutoSubscribeCap,
+    space::{PersonalSpaceBinding, SpaceId, SpaceRepository},
     user::UserId,
 };
 
@@ -185,8 +185,8 @@ mod tests {
 
     use async_trait::async_trait;
 
-    use domain::space::Space;
     use domain::space::capability::SpaceAutoSubscribeCap;
+    use domain::space::Space;
 
     use super::*;
 

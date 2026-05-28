@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use chrono::Utc;
+use domain::user::{AccessToken, AccessTokenIssuer};
 use domain::{
     shared::biz::BizContext,
     shared::error::DomainError,
@@ -9,7 +10,6 @@ use domain::{
 };
 use jsonwebtoken::{encode, EncodingKey, Header};
 use serde::Serialize;
-use domain::user::{AccessToken, AccessTokenIssuer};
 use sha2::{Digest, Sha256};
 use tokio::sync::Mutex;
 use user::gateway::{EpochClock, PasswordService, RegistrationCodeGenerator, UserIdGenerator};

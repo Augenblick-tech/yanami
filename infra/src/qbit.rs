@@ -396,10 +396,7 @@ impl CachedQbitProfileLoader {
             return Ok(profile);
         }
 
-        let profile = self
-            .db
-            .load_user_qbit_download_profile(user_id)
-            .await?;
+        let profile = self.db.load_user_qbit_download_profile(user_id).await?;
         self.with_cache_write(|cache| {
             cache.insert(
                 user_id,

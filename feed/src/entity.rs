@@ -1,9 +1,6 @@
 use std::{collections::HashSet, sync::OnceLock};
 
-use domain::{
-    feed::FeedSource,
-    shared::error::DomainError,
-};
+use domain::{feed::FeedSource, shared::error::DomainError};
 
 use regex::Regex;
 
@@ -32,7 +29,12 @@ impl FeedEntity {
     }
 
     pub async fn fetch(&mut self, fetcher: &dyn FeedFetcher) -> Result<FeedData, DomainError> {
-        let data = fetcher.fetch(&self.source).await?;
+        let url = self
+            .source
+            .site_url
+            .as_deref()
+            .ok_or(DomainError::InvariantViolation("feed has no site url"))?;
+        let data = fetcher.fetch_url(url).await?;
         self.update_source_key_from_feed_data(&data);
         Ok(data)
     }
@@ -42,9 +44,24 @@ impl FeedEntity {
         keyword: &str,
         fetcher: &dyn FeedFetcher,
     ) -> Result<FeedData, DomainError> {
-        let data = fetcher.search(&self.source, keyword).await?;
+        let template = self
+            .source
+            .search_url
+            .as_deref()
+            .ok_or(DomainError::InvariantViolation("feed has no search url"))?;
+        let url = template.replacen("{}", keyword, 1);
+        let data = fetcher.fetch_url(&url).await?;
         self.update_source_key_from_feed_data(&data);
         Ok(data)
+    }
+
+    pub fn build_search_url(&self, keyword: &str) -> Result<String, DomainError> {
+        let template = self
+            .source
+            .search_url
+            .as_deref()
+            .ok_or(DomainError::InvariantViolation("feed has no search url"))?;
+        Ok(template.replacen("{}", keyword, 1))
     }
 
     /// 判断标题是否为合集包，合集包不应进入资源处理流程。
@@ -55,6 +72,7 @@ impl FeedEntity {
         static PATTERN: OnceLock<Regex> = OnceLock::new();
         let re = PATTERN.get_or_init(|| {
             Regex::new(r"\[\d+\s*-\s*\d+\]").expect("invalid collection pack regex")
+            // SAFETY: 编译期已知有效的正则字面量
         });
         re.is_match(title)
     }
@@ -174,26 +192,9 @@ mod tests {
 
     #[async_trait]
     impl FeedFetcher for NoopFeedFetcher {
-        async fn fetch(&self, source: &FeedSource) -> Result<FeedData, DomainError> {
+        async fn fetch_url(&self, _url: &str) -> Result<FeedData, DomainError> {
             Ok(FeedData {
-                source_key: source
-                    .source_key
-                    .clone()
-                    .unwrap_or_else(|| "source-key".to_string()),
-                items: vec![],
-            })
-        }
-
-        async fn search(
-            &self,
-            source: &FeedSource,
-            _keyword: &str,
-        ) -> Result<FeedData, DomainError> {
-            Ok(FeedData {
-                source_key: source
-                    .source_key
-                    .clone()
-                    .unwrap_or_else(|| "source-key".to_string()),
+                source_key: "source-key".to_string(),
                 items: vec![],
             })
         }

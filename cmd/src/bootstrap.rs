@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use anime::{animes::Animes, source::AnimeSourceFactory, AnimeCaps};
-use domain::download::UserDownloadDriver;
 use anyhow::Result;
 use axum::serve;
+use domain::download::UserDownloadDriver;
 use infra::{anime_source::BangumiSingleSource, bangumi::BangumiClient, tmdb::TmdbClient};
-use subscription::missing_episodes::MissingEpisodeChecker;
+use subscription::{missing_episodes::MissingEpisodePolicy, search_pool::SearchPool};
 
 use feed::{Feeds as FeedsContext, Resources as ResourceContext};
 use infra::{
@@ -13,7 +13,7 @@ use infra::{
     noop_download::NoopDownloadDriver,
     qbit::{LiveQbitProfileVerifier, QbitDownloadDriver, UserBoundQbitDownloadDriver},
     rss::HttpFeedFetcher,
-    rule_runtime::{CachingRegexProvider, CachingRuleRuntime},
+    rule_runtime::CachingRegexProvider,
     user::{
         JwtAccessTokenIssuer, LegacySha256PasswordService, SqliteUserIdGenerator, SystemEpochClock,
     },
@@ -36,7 +36,7 @@ use service::{
     job::{CheckMissingEpisodesJob, FetchResourcesJob, Job, SyncAnimeCalendarJob},
     rule::service::RuleService,
     space::service::SpaceService,
-    subscription::pool_consumer_handler::SearchPoolHandler,
+    subscription::pool_consumer_handler::SearchPoolEventProcessor,
     subscription::resume_handler::ResumeCompletedSubscriptions,
     subscription::service::{SubscriptionService, SubscriptionServiceDependencies},
     system::service::SystemService,
@@ -85,6 +85,7 @@ pub async fn run(config: SchedulerConfig) -> Result<()> {
         missing_eps_job.name(),
         fetch_resources_job.name(),
     );
+    // SAFETY: 启动阶段 job 名称重复是致命错误，不应继续运行
     ensure_unique_job_names(job_names).unwrap_or_else(|error| {
         panic!("failed to initialize scheduled jobs: error={error}, jobs={job_names:?}")
     });
@@ -95,12 +96,14 @@ pub async fn run(config: SchedulerConfig) -> Result<()> {
     let fetch_resources_handle =
         scheduler.spawn_scheduled(fetch_resources_job, config.jobs.fetch_resources.clone());
 
-    let pool_handler = Arc::new(SearchPoolHandler::new(
+    let search_pool = Arc::new(SearchPool::new(database.clone()));
+
+    let pool_handler = Arc::new(SearchPoolEventProcessor::new(
         runtime.subscription_service.clone(),
-        database.clone(),
+        search_pool.clone(),
     ));
     crate::pool_consumer::spawn_pool_consumer(
-        database.clone(),
+        search_pool,
         runtime.http_feed.clone(),
         vec![pool_handler],
     );
@@ -278,7 +281,6 @@ pub(crate) async fn build_runtime(
     database: Arc<SqliteDb>,
     config: &SchedulerConfig,
 ) -> Result<RuntimeServices> {
-    let rule_runtime = Arc::new(CachingRuleRuntime::new(database.clone()));
     let qbit_dispatcher = Arc::new(QbitDownloadDriver::new());
     let qbit_driver = Arc::new(UserBoundQbitDownloadDriver::from_sqlite(
         database.clone(),
@@ -321,11 +323,7 @@ pub(crate) async fn build_runtime(
             writer: database.clone(),
         },
     ));
-    let rule_caps = rule::RuleCaps {
-        writer: database.clone(),
-    };
     let rules = Arc::new(Rules::new(
-        rule_caps,
         database.clone(),
         Arc::new(CachingRegexProvider::default()),
     ));
@@ -390,7 +388,7 @@ pub(crate) async fn build_runtime(
             feeds: feeds_impl.clone(),
             rules: rules.clone(),
             resources: resources.clone(),
-            missing_episode_policy: Arc::new(MissingEpisodeChecker),
+            missing_episode_policy: Arc::new(MissingEpisodePolicy),
             run_matched_resource: build_run_matched_resource(matched_resource_action),
         }));
     let resume_handler = Arc::new(ResumeCompletedSubscriptions::new(
@@ -407,7 +405,6 @@ pub(crate) async fn build_runtime(
         database,
         http_feed,
         token_issuer,
-        rule_runtime,
         download_cache_invalidator,
         download_executor,
         user_accounts,
@@ -443,7 +440,6 @@ pub(crate) struct RuntimeServices {
     pub(crate) database: Arc<SqliteDb>,
     pub(crate) http_feed: Arc<HttpFeedFetcher>,
     token_issuer: Arc<JwtAccessTokenIssuer>,
-    rule_runtime: Arc<CachingRuleRuntime>,
     download_cache_invalidator: Arc<CompositeUserDownloadRuntimeCacheInvalidator>,
     download_executor: Arc<RoutingUserDownloadExecutor>,
     user_accounts: Arc<Users>,
@@ -468,10 +464,7 @@ pub(crate) fn build_http_state_with_qbit_verifier(
     application_key: &str,
     qbit_profile_verifier: Arc<VerifyQbitProfile>,
 ) -> AppState {
-    let rule_service = Arc::new(RuleService::new(runtime.rules.clone(), {
-        let runtime = runtime.rule_runtime.clone();
-        Arc::new(move |space_id| runtime.invalidate_space_rules(space_id))
-    }));
+    let rule_service = Arc::new(RuleService::new(runtime.rules.clone()));
     let user_download = Arc::new(UserDownload::new(runtime.download_executor.clone()));
     let available_drivers: Vec<String> = runtime
         .download_executor

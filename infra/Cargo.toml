@@ -10,6 +10,7 @@ async-trait = "0.1.81"
 base32 = "0.5.1"
 base64 = "0.22.1"
 chrono = "0.4.38"
+dashmap = "6"
 jsonwebtoken = "9.3.0"
 regex = "1.10.6"
 reqwest = { version = "0.12.5", default-features = false, features = ["charset", "http2", "macos-system-configuration", "cookies", "json", "multipart", "rustls-tls", "gzip", "brotli"] }

@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::io::Cursor;
 use std::time::Duration;
 
@@ -23,44 +24,27 @@ impl HttpFeedFetcher {
     }
 }
 
-impl HttpFeedFetcher {
-    pub async fn fetch_feed(&self, source: &FeedSource) -> Result<FeedData, DomainError> {
-        let feed_url = resolve_feed_url(source, None)?;
-        self.load_feed(&feed_url).await
-    }
-}
-
-impl HttpFeedFetcher {
-    pub async fn search_feed(
-        &self,
-        source: &FeedSource,
-        keyword: &str,
-    ) -> Result<FeedData, DomainError> {
-        let feed_url = resolve_feed_url(source, Some(keyword))?;
-        self.load_feed(&feed_url).await
-    }
-}
-
 #[async_trait]
 impl FeedFetcher for HttpFeedFetcher {
-    async fn fetch(&self, source: &FeedSource) -> Result<FeedData, DomainError> {
-        self.fetch_feed(source).await
-    }
-
-    async fn search(&self, source: &FeedSource, keyword: &str) -> Result<FeedData, DomainError> {
-        self.search_feed(source, keyword).await
+    async fn fetch_url(&self, url: &str) -> Result<FeedData, DomainError> {
+        self.fetch_url(url).await
     }
 }
+
+/// resolve_source 在只有 search_url 时，用这个值替换占位符以获得可请求的 RSS 页面。
+const FALLBACK_SEARCH_KEYWORD: &str = "anime";
 
 impl HttpFeedFetcher {
     pub async fn resolve_source(
         &self,
         source: &FeedSource,
     ) -> Result<ResolvedFeedSource, DomainError> {
-        let feed_url = if source.site_url.is_some() {
-            resolve_feed_url(source, None)?
-        } else {
-            resolve_feed_url(source, Some(""))?
+        let feed_url: Cow<'_, str> = match source.site_url.as_deref() {
+            Some(url) => url.into(),
+            None => match source.search_url.as_deref() {
+                Some(template) => template.replacen("{}", FALLBACK_SEARCH_KEYWORD, 1).into(),
+                None => return Err(DomainError::InvariantViolation("feed has no url")),
+            },
         };
         let channel = self.fetch_channel(&feed_url).await?;
         resolve_source_from_channel(&channel)
@@ -112,23 +96,6 @@ impl HttpFeedFetcher {
                 items.push(resource);
             }
         }
-        Ok(FeedData {
-            source_key: source.source_key,
-            items,
-        })
-    }
-
-    async fn load_feed(&self, feed_url: &str) -> Result<FeedData, DomainError> {
-        let channel = self.fetch_channel(feed_url).await?;
-        let source = resolve_source_from_channel(&channel)?;
-
-        let mut items = Vec::new();
-        for item in channel.items() {
-            if let Some(resource) = self.map_item(item).await? {
-                items.push(resource);
-            }
-        }
-
         Ok(FeedData {
             source_key: source.source_key,
             items,
@@ -251,25 +218,6 @@ impl HttpFeedFetcher {
     }
 }
 
-fn resolve_feed_url(source: &FeedSource, keyword: Option<&str>) -> Result<String, DomainError> {
-    if let Some(keyword) = keyword {
-        let template = source
-            .search_url
-            .as_deref()
-            .ok_or(DomainError::InvariantViolation(
-                "feed search template is not configured",
-            ))?;
-        render_search_template(template, keyword)
-    } else {
-        source
-            .site_url
-            .clone()
-            .ok_or(DomainError::InvariantViolation(
-                "feed source url is not configured",
-            ))
-    }
-}
-
 fn resolve_source_from_channel(channel: &Channel) -> Result<ResolvedFeedSource, DomainError> {
     let channel_title = channel.title().trim();
     if channel_title.is_empty() {
@@ -303,19 +251,6 @@ fn body_prefix(content: &[u8]) -> String {
         .take(MAX_CHARS)
         .collect::<String>();
     text.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
-fn render_search_template(template: &str, keyword: &str) -> Result<String, DomainError> {
-    if template.contains("{}") {
-        return Ok(template.replacen("{}", keyword, 1));
-    }
-    if template.contains("{0}") {
-        return Ok(template.replacen("{0}", keyword, 1));
-    }
-
-    Err(DomainError::InvariantViolation(
-        "feed search template placeholder is missing",
-    ))
 }
 
 fn parse_pub_date(item: &Item) -> Option<i64> {
@@ -352,19 +287,6 @@ mod tests {
         assert!(!data.items.is_empty());
         assert!(data.items[0].source_url.starts_with("magnet:?"));
         assert!(data.items[0].torrent_content.is_none());
-    }
-
-    #[test]
-    fn renders_search_template_with_supported_placeholders() {
-        assert_eq!(
-            render_search_template("https://a/{}", "frieren").expect("render"),
-            "https://a/frieren"
-        );
-        assert_eq!(
-            render_search_template("https://a/{0}", "frieren").expect("render"),
-            "https://a/frieren"
-        );
-        assert!(render_search_template("https://a/no-placeholder", "frieren").is_err());
     }
 
     #[test]

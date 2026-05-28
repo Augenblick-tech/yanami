@@ -17,7 +17,7 @@ use domain::{
 };
 use feed::{FeedEntity, FeedListQuery, Feeds, ResourceListQuery, Resources};
 use space::Spaces;
-use subscription::missing_episodes::MissingEpisodeChecker;
+use subscription::missing_episodes::MissingEpisodePolicy;
 use subscription::{
     action::{MatchedResource, RunMatchedResource},
     entity::SubscriptionAnimeEntity,
@@ -55,7 +55,7 @@ pub struct SubscriptionService {
     feeds: Arc<Feeds>,
     rules: Arc<rule::Rules>,
     resources: Arc<Resources>,
-    missing_episode_policy: Arc<MissingEpisodeChecker>,
+    missing_episode_policy: Arc<MissingEpisodePolicy>,
     run_matched_resource: Arc<RunMatchedResource>,
 }
 
@@ -68,7 +68,7 @@ pub struct SubscriptionServiceDependencies {
     pub feeds: Arc<Feeds>,
     pub rules: Arc<rule::Rules>,
     pub resources: Arc<Resources>,
-    pub missing_episode_policy: Arc<MissingEpisodeChecker>,
+    pub missing_episode_policy: Arc<MissingEpisodePolicy>,
     pub run_matched_resource: Arc<RunMatchedResource>,
 }
 
@@ -135,10 +135,10 @@ impl SubscriptionService {
     }
 
     pub async fn match_resources(&self) -> Result<MatchResourcesOutcome, ApplicationError> {
-        let since = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs() as i64)
-            .unwrap_or(0)
+        let since = std::time::UNIX_EPOCH
+            .elapsed()
+            .unwrap_or_default()
+            .as_secs() as i64
             - MATCH_WINDOW_SECONDS;
         let resources = self
             .resources
@@ -280,10 +280,10 @@ impl SubscriptionService {
 
         // Step 2: 加载 sources（前缀读，不需要 biz）
         let sources = self.search_sources_for_space(space_id).await?;
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs() as i64)
-            .unwrap_or(0);
+        let now = std::time::UNIX_EPOCH
+            .elapsed()
+            .unwrap_or_default()
+            .as_secs() as i64;
 
         // Step 3: 开 biz，entity 决策 + 建池同事务
         let biz = self.biz_factory.open_biz().await?;
@@ -305,7 +305,7 @@ impl SubscriptionService {
         if !needs_network {
             tracing::trace!("biz #{biz_id}: commit (no network needed)");
             biz.commit().await?;
-            tracing::info!(
+            tracing::debug!(
                 anime_id = %anime_id.0,
                 matched_local,
                 progress = %entity.read_data().progress,
@@ -318,22 +318,18 @@ impl SubscriptionService {
         // 需创建搜索池
         let mut all_entries: Vec<(FeedSourceId, Vec<SearchPoolEntryData>)> = Vec::new();
         for source in &sources {
-            let source_data = source.read_data();
-            let Some(search_template) = source_data.search_url.as_deref() else {
-                continue;
-            };
-            let feed_id = source_data.id.clone();
-
-            let entries: Vec<SearchPoolEntryData> = keywords
-                .iter()
-                .map(|keyword| SearchPoolEntryData {
+            let feed_id = source.read_data().id.clone();
+            let mut entries = Vec::new();
+            for keyword in &keywords {
+                let search_url = source.build_search_url(keyword)?;
+                entries.push(SearchPoolEntryData {
                     anime_id,
                     feed_id: feed_id.clone(),
                     keyword: keyword.clone(),
-                    search_url: render_search_url(search_template, keyword),
+                    search_url,
                     created_at: now,
-                })
-                .collect();
+                });
+            }
 
             all_entries.push((feed_id, entries));
         }
@@ -360,12 +356,10 @@ impl SubscriptionService {
         tracing::trace!("biz #{biz_id}: commit");
         biz.commit().await?;
 
-        tracing::info!(
+        let pool_entry_count = pool_ids.len();
+        tracing::debug!(
             anime_id = %anime_id.0,
-            matched_local,
-            progress = %entity.read_data().progress,
-            planned,
-            pool_entries = all_entries.iter().map(|(_, e)| e.len()).sum::<usize>(),
+            pool_entry_count,
             "process_one_local_match: local insufficient, search pool created"
         );
         Ok(true)
@@ -507,16 +501,6 @@ impl SubscriptionService {
         subscription: SubscriptionAnime,
         resource: &Resource,
     ) -> Result<bool, ApplicationError> {
-        if !self.resource_visible_to_subscription().await? {
-            tracing::trace!(
-                resource_id = %resource.id.0,
-                resource_title = %resource.title,
-                anime_id = %subscription.anime_id.0,
-                "apply_resource_to_subscription: resource not visible to subscription, skipping"
-            );
-            return Ok(false);
-        }
-
         let Some(mut entity) = self
             .subscriptions
             .load(
@@ -541,10 +525,10 @@ impl SubscriptionService {
             .into_snapshot()
             .metadata;
         let keywords = subscription_keywords(&metadata);
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs() as i64)
-            .unwrap_or(0);
+        let now = std::time::UNIX_EPOCH
+            .elapsed()
+            .unwrap_or_default()
+            .as_secs() as i64;
         let matched_rule = self
             .match_subscription_rule(&subscription, &resource.title)
             .await?;
@@ -599,7 +583,7 @@ impl SubscriptionService {
                 }
                 self.subscriptions.save(&entity).await?;
 
-                tracing::info!(
+                tracing::debug!(
                     anime_id = %subscription.anime_id.0,
                     resource_id = %resource.id.0,
                     resource_title = %resource.title,
@@ -620,10 +604,6 @@ impl SubscriptionService {
                 Ok(false)
             }
         }
-    }
-
-    async fn resource_visible_to_subscription(&self) -> Result<bool, ApplicationError> {
-        Ok(true)
     }
 
     async fn search_sources_for_space(
@@ -776,15 +756,5 @@ impl SubscriptionService {
         let searching_anime_count = self.search_pool.count_distinct_anime().await?;
         let pending_link_count = self.search_pool.count_pending_links().await?;
         Ok((searching_anime_count, pending_link_count))
-    }
-}
-
-fn render_search_url(template: &str, keyword: &str) -> String {
-    if template.contains("{}") {
-        template.replacen("{}", keyword, 1)
-    } else if template.contains("{0}") {
-        template.replacen("{0}", keyword, 1)
-    } else {
-        template.to_string()
     }
 }

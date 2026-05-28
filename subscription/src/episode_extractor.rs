@@ -3,6 +3,7 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
+// SAFETY: 编译期已知有效的正则字面量
 static EPISODE_PATTERN: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\d+(\.\d+)?").expect("episode regex"));
 

@@ -305,8 +305,7 @@ impl AnimeService {
                     )
                 })?;
                 let offset = offsets.entry(record.anime_id).or_insert(0);
-                let episode = progress.saturating_sub(*offset);
-                *offset += 1;
+                let episode = SubscriptionAnimeEntity::compute_display_episode(progress, offset);
                 Ok(LatestAnimeView {
                     metadata,
                     episode,
@@ -576,7 +575,7 @@ impl<'a>
         let anime_data = anime.read_data();
         let progress = subscription
             .and_then(|item| u32::try_from(item.read_data().progress).ok())
-            .unwrap_or(0);
+            .unwrap_or(0); // 无订阅时进度为 0
         let matched_rule_name = subscription.and_then(|item| {
             item.read_records()
                 .last()

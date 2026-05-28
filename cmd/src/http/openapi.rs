@@ -26,7 +26,6 @@ use crate::http::{error::ErrorResponse, handler, model::*};
         handler::set_subscription_active,
         handler::get_rules,
         handler::create_rule,
-        handler::update_rule,
         handler::delete_rule,
         handler::get_feeds,
         handler::create_feed,

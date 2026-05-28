@@ -1,8 +1,8 @@
 use domain::{
     anime::AnimeId,
     shared::error::DomainError,
-    space::{AutoSubscribeDecision, Space, SpaceId},
     space::capability::SpaceAutoSubscribeCap,
+    space::{AutoSubscribeDecision, Space, SpaceId},
 };
 
 /// 订阅空间聚合根。

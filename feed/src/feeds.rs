@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use domain::{
-    feed::{FeedSource, FeedSourceId, SpaceFeedRepository},
     feed::capability::FeedSourceWriterCap,
+    feed::{FeedSource, FeedSourceId, SpaceFeedRepository},
     shared::biz::BizContext,
     shared::error::DomainError,
     space::SpaceId,
@@ -116,10 +116,7 @@ impl Feeds {
             deduplicate_by_source_key(&mut sources)?;
         }
         validate_source_set(&sources)?;
-        sources
-            .into_iter()
-            .map(FeedEntity::new)
-            .collect()
+        sources.into_iter().map(FeedEntity::new).collect()
     }
 
     async fn resolve_source(&self, mut source: FeedSource) -> Result<FeedSource, DomainError> {
@@ -141,8 +138,8 @@ fn merge_single_source(sources: &mut Vec<FeedSource>, incoming: FeedSource) -> F
         .iter()
         .position(|source| source.id.0 == incoming.id.0)
     {
-        sources[index] = incoming.clone();
-        return incoming;
+        sources[index] = incoming;
+        return sources[index].clone();
     }
 
     if let Some(incoming_key) = incoming.source_key.as_deref() {
@@ -229,8 +226,8 @@ mod tests {
     };
 
     use async_trait::async_trait;
-    use domain::feed::{FeedSource, FeedSourceId};
     use domain::feed::capability::FeedSourceUpdate;
+    use domain::feed::{FeedSource, FeedSourceId};
 
     use crate::contracts::{FeedData, FeedFetcher, ResolvedFeedSource};
 
@@ -327,26 +324,9 @@ mod tests {
 
     #[async_trait]
     impl FeedFetcher for NoopFeedFetcher {
-        async fn fetch(&self, source: &FeedSource) -> Result<FeedData, DomainError> {
+        async fn fetch_url(&self, _url: &str) -> Result<FeedData, DomainError> {
             Ok(FeedData {
-                source_key: source
-                    .source_key
-                    .clone()
-                    .unwrap_or_else(|| source.id.0.clone()),
-                items: vec![],
-            })
-        }
-
-        async fn search(
-            &self,
-            source: &FeedSource,
-            _keyword: &str,
-        ) -> Result<FeedData, DomainError> {
-            Ok(FeedData {
-                source_key: source
-                    .source_key
-                    .clone()
-                    .unwrap_or_else(|| source.id.0.clone()),
+                source_key: "source-key".to_string(),
                 items: vec![],
             })
         }

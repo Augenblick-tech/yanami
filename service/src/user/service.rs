@@ -219,7 +219,11 @@ mod tests {
                 let mut updated = user.clone();
                 updated.password_hash = PasswordHash(new_hash);
                 drop(users);
-                self.users.items.lock().expect("lock users").insert(user_id, updated);
+                self.users
+                    .items
+                    .lock()
+                    .expect("lock users")
+                    .insert(user_id, updated);
             }
             Ok(())
         }

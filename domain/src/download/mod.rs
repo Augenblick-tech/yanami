@@ -13,21 +13,14 @@ pub struct DownloadRequest {
 #[async_trait]
 pub trait UserDownloadDriver: Send + Sync {
     fn driver_key(&self) -> &'static str;
-    async fn download(
-        &self,
-        user_id: UserId,
-        request: &DownloadRequest,
-    ) -> Result<(), DomainError>;
+    async fn download(&self, user_id: UserId, request: &DownloadRequest)
+        -> Result<(), DomainError>;
 }
 
 #[async_trait]
 pub trait UserDownloadDriverBindingStore: Send + Sync {
     async fn find_driver_key(&self, user_id: UserId) -> Result<Option<String>, DomainError>;
-    async fn save_driver_key(
-        &self,
-        user_id: UserId,
-        driver_key: &str,
-    ) -> Result<(), DomainError>;
+    async fn save_driver_key(&self, user_id: UserId, driver_key: &str) -> Result<(), DomainError>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

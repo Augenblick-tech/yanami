@@ -55,32 +55,6 @@ pub async fn create_rule(
     Ok(Json(ApiResponse::ok(outcome.rule.into())))
 }
 
-/// 修改单条空间规则。
-#[utoipa::path(
-    put,
-    path = "/api/v1/space/rules/{rule_id}",
-    security(("bearer_auth" = [])),
-    params(("rule_id" = String, Path, description = "规则标识")),
-    request_body = MatchingRuleRequest,
-    responses((status = 200, description = "修改成功，返回规则。"))
-)]
-pub async fn update_rule(
-    State(state): State<Arc<AppState>>,
-    Extension(user): Extension<AuthenticatedUser>,
-    Path(rule_id): Path<String>,
-    Json(request): Json<MatchingRuleRequest>,
-) -> Result<Json<ApiResponse<MatchingRuleView>>, ApiError> {
-    let space_id = state
-        .space_service
-        .resolve_personal_space(user.user_id)
-        .await?;
-    let outcome = state
-        .rule_service
-        .save_rule(space_id, request.into_domain(rule_id))
-        .await?;
-    Ok(Json(ApiResponse::ok(outcome.rule.into())))
-}
-
 /// 失活单条空间规则。
 #[utoipa::path(
     delete,

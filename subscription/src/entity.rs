@@ -218,6 +218,13 @@ impl SubscriptionAnimeEntity {
         }
     }
 
+    /// 根据累计进度和已有记录数量计算当前记录的显示剧集号。
+    pub fn compute_display_episode(progress: u32, cumulative_offset: &mut u32) -> u32 {
+        let ep = progress.saturating_sub(*cumulative_offset);
+        *cumulative_offset += 1;
+        ep
+    }
+
     pub fn match_resource(
         &self,
         resource: &Resource,

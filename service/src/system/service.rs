@@ -1,10 +1,7 @@
 use std::sync::Arc;
 
 use domain::{
-    shared::biz::BizFactory,
-    space::SpaceId,
-    system::SystemInfrastructureInitializer,
-    user::UserId,
+    shared::biz::BizFactory, space::SpaceId, system::SystemInfrastructureInitializer, user::UserId,
 };
 use space::Spaces;
 use user::users::Users;

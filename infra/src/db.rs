@@ -9,6 +9,10 @@ use std::{
 use anime::repository::{AnimeRepository, AnimeSnapshot};
 use async_trait::async_trait;
 use chrono::Datelike;
+use domain::download::{
+    UserDownloadDriverBindingStore, UserQbitDownloadProfile, UserQbitDownloadProfileStore,
+};
+use domain::system::SystemInfrastructureInitializer;
 use domain::{
     anime::{
         AirDate, AnimeId, AnimeListQuery, AnimeMetadata, AnimeMetadataRepository,
@@ -33,10 +37,6 @@ use domain::{
     user::{PasswordHash, User, UserId, UserRepository, UserRole, Username},
 };
 use serde::{Deserialize, Serialize};
-use domain::download::{
-    UserDownloadDriverBindingStore, UserQbitDownloadProfile, UserQbitDownloadProfileStore,
-};
-use domain::system::SystemInfrastructureInitializer;
 use sha1::{Digest, Sha1};
 use sqlx::{
     pool::PoolConnection, query, query_as, sqlite::SqlitePoolOptions, Acquire, Pool, QueryBuilder,
@@ -3658,36 +3658,6 @@ impl SpaceRuleRepository for SqliteDb {
 }
 
 #[async_trait]
-impl domain::rule::capability::RuleWriterCap for SqliteDb {
-    async fn write_rule(
-        &self,
-        scope: (&str, i64),
-        rule_id: &domain::rule::MatchingRuleId,
-        name: &str,
-        order: u32,
-        pattern: &str,
-        active: bool,
-    ) -> Result<(), DomainError> {
-        let _guard = self.write_lock.lock().await;
-        query(
-            r#"UPDATE "matching_rule" SET name = $1, rule_order = $2, pattern = $3, active = $4
-               WHERE id = $5 AND owner_scope = $6 AND scope_id = $7"#,
-        )
-        .bind(name)
-        .bind(i64::from(order))
-        .bind(pattern)
-        .bind(active)
-        .bind(&rule_id.0)
-        .bind(scope.0)
-        .bind(scope.1)
-        .execute(&self.pool)
-        .await
-        .map_err(|e| DomainError::external("rule writer cap failed", e))?;
-        Ok(())
-    }
-}
-
-#[async_trait]
 impl SpaceRuleRepository for SqliteBizDb {
     async fn find_active_space_rules(
         &self,
@@ -3766,36 +3736,6 @@ impl SpaceRuleRepository for SqliteBizDb {
 }
 
 #[async_trait]
-impl domain::rule::capability::RuleWriterCap for SqliteBizDb {
-    async fn write_rule(
-        &self,
-        scope: (&str, i64),
-        rule_id: &domain::rule::MatchingRuleId,
-        name: &str,
-        order: u32,
-        pattern: &str,
-        active: bool,
-    ) -> Result<(), DomainError> {
-        let mut state = self.biz.state.lock().await;
-        query(
-            r#"UPDATE "matching_rule" SET name = $1, rule_order = $2, pattern = $3, active = $4
-               WHERE id = $5 AND owner_scope = $6 AND scope_id = $7"#,
-        )
-        .bind(name)
-        .bind(i64::from(order))
-        .bind(pattern)
-        .bind(active)
-        .bind(&rule_id.0)
-        .bind(scope.0)
-        .bind(scope.1)
-        .execute(&mut *state.connection)
-        .await
-        .map_err(|e| DomainError::external("biz rule writer cap failed", e))?;
-        Ok(())
-    }
-}
-
-#[async_trait]
 impl domain::feed::capability::FeedSourceWriterCap for SqliteDb {
     async fn write_source(
         &self,
@@ -3852,15 +3792,13 @@ impl domain::user::capability::UserInfoWriterCap for SqliteDb {
     ) -> Result<(), DomainError> {
         let _guard = self.write_lock.lock().await;
         let role = encode_user_role(info.role);
-        query(
-            r#"UPDATE "user" SET username = $1, chatacter = $2 WHERE id = $3"#,
-        )
-        .bind(&info.username)
-        .bind(role)
-        .bind(user_id.0)
-        .execute(&self.pool)
-        .await
-        .map_err(|e| DomainError::external("user info writer cap failed", e))?;
+        query(r#"UPDATE "user" SET username = $1, chatacter = $2 WHERE id = $3"#)
+            .bind(&info.username)
+            .bind(role)
+            .bind(user_id.0)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| DomainError::external("user info writer cap failed", e))?;
         Ok(())
     }
 }
@@ -3874,15 +3812,13 @@ impl domain::user::capability::UserInfoWriterCap for SqliteBizDb {
     ) -> Result<(), DomainError> {
         let mut state = self.biz.state.lock().await;
         let role = encode_user_role(info.role);
-        query(
-            r#"UPDATE "user" SET username = $1, chatacter = $2 WHERE id = $3"#,
-        )
-        .bind(&info.username)
-        .bind(role)
-        .bind(user_id.0)
-        .execute(&mut *state.connection)
-        .await
-        .map_err(|e| DomainError::external("biz user info writer cap failed", e))?;
+        query(r#"UPDATE "user" SET username = $1, chatacter = $2 WHERE id = $3"#)
+            .bind(&info.username)
+            .bind(role)
+            .bind(user_id.0)
+            .execute(&mut *state.connection)
+            .await
+            .map_err(|e| DomainError::external("biz user info writer cap failed", e))?;
         Ok(())
     }
 }
@@ -3931,14 +3867,12 @@ impl domain::space::capability::SpaceAutoSubscribeCap for SqliteDb {
         auto_subscribe: bool,
     ) -> Result<(), DomainError> {
         let _guard = self.write_lock.lock().await;
-        query(
-            r#"UPDATE "subscription_space" SET auto_subscribe = $1 WHERE id = $2"#,
-        )
-        .bind(auto_subscribe)
-        .bind(space_id.0)
-        .execute(&self.pool)
-        .await
-        .map_err(|e| DomainError::external("space auto subscribe cap failed", e))?;
+        query(r#"UPDATE "subscription_space" SET auto_subscribe = $1 WHERE id = $2"#)
+            .bind(auto_subscribe)
+            .bind(space_id.0)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| DomainError::external("space auto subscribe cap failed", e))?;
         Ok(())
     }
 }
@@ -3951,14 +3885,12 @@ impl domain::space::capability::SpaceAutoSubscribeCap for SqliteBizDb {
         auto_subscribe: bool,
     ) -> Result<(), DomainError> {
         let mut state = self.biz.state.lock().await;
-        query(
-            r#"UPDATE "subscription_space" SET auto_subscribe = $1 WHERE id = $2"#,
-        )
-        .bind(auto_subscribe)
-        .bind(space_id.0)
-        .execute(&mut *state.connection)
-        .await
-        .map_err(|e| DomainError::external("biz space auto subscribe cap failed", e))?;
+        query(r#"UPDATE "subscription_space" SET auto_subscribe = $1 WHERE id = $2"#)
+            .bind(auto_subscribe)
+            .bind(space_id.0)
+            .execute(&mut *state.connection)
+            .await
+            .map_err(|e| DomainError::external("biz space auto subscribe cap failed", e))?;
         Ok(())
     }
 }
@@ -4525,12 +4457,9 @@ impl UserDownloadDriverBindingStore for SqliteDb {
         self.load_user_download_driver_key(user_id).await
     }
 
-    async fn save_driver_key(
-        &self,
-        user_id: UserId,
-        driver_key: &str,
-    ) -> Result<(), DomainError> {
-        self.save_user_download_driver_key(user_id, driver_key).await
+    async fn save_driver_key(&self, user_id: UserId, driver_key: &str) -> Result<(), DomainError> {
+        self.save_user_download_driver_key(user_id, driver_key)
+            .await
     }
 }
 
@@ -5282,11 +5211,11 @@ fn build_source_key(value: &str) -> String {
 mod db_tests {
     use std::sync::Arc;
 
+    use crate::SystemService;
     use domain::anime::{
         AirDate, AnimeMetadataRepository, AnimeTitleSet, BroadcastWeekday, PlannedEpisodeCount,
         SeasonNumber,
     };
-    use crate::SystemService;
     use space::{SpaceCaps, Spaces};
     use tempfile::NamedTempFile;
     use user::users::{UserCaps, Users};

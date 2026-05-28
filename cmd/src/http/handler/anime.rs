@@ -42,7 +42,7 @@ pub async fn list_animes(
         progress_state: query.progress_state,
         keyword: query.keyword,
         year: query.year,
-        month: query.month.map(normalize_month),
+        month: query.month.map(|m| ((m - 1) / 3) * 3 + 1),
         page,
         page_size,
     };
@@ -554,16 +554,6 @@ pub async fn update_anime(
         outcome.item,
         DisplayLanguagePreference::default(),
     ))))
-}
-
-fn normalize_month(month: u32) -> u32 {
-    match month {
-        1..=3 => 1,
-        4..=6 => 4,
-        7..=9 => 7,
-        10..=12 => 10,
-        _ => 1,
-    }
 }
 
 fn language_preference<'a>(
