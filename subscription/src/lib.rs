@@ -9,6 +9,7 @@ pub mod missing_episodes;
 pub mod save_path;
 pub mod search_pool;
 pub mod subscription_animes;
+pub mod subscription_anime_entity;
 
 pub mod shared {
     pub mod error;

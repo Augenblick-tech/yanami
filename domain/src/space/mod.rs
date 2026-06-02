@@ -65,6 +65,8 @@ pub trait SpaceRepository: Send + Sync {
         space_ids: &[SpaceId],
     ) -> Result<Vec<(SpaceId, UserId)>, DomainError>;
 
+    async fn list_spaces_rules(&self, space_id: SpaceId) -> Result<(), DomainError>;
+
     fn with_biz(&self, _: &BizContext) -> Result<std::sync::Arc<dyn SpaceRepository>, DomainError> {
         Err(DomainError::InvariantViolation(
             "space repository does not support biz context",
