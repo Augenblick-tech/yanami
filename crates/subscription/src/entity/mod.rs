@@ -1,0 +1,12 @@
+pub mod cap;
+pub mod episode_entity;
+pub mod model;
+pub mod rule_entity;
+pub mod rules;
+pub mod search_mandate_entity;
+pub mod search_mandates;
+pub mod space_rules;
+pub mod sub_anime_entity;
+pub mod sub_anime_episode;
+pub mod sub_anime_matcher;
+pub mod sub_animes;

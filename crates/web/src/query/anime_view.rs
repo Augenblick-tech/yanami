@@ -1,0 +1,197 @@
+use sqlx::{Pool, Row, Sqlite};
+use anyhow::Result;
+
+use crate::model::{AnimeResponse, AnimeSubInfo, Page, PageAnimeRequest};
+
+#[derive(Clone)]
+pub struct AnimeViewQuery {
+    pub pool: Pool<Sqlite>,
+}
+
+impl AnimeViewQuery {
+    pub fn new(pool: Pool<Sqlite>) -> Self {
+        Self { pool }
+    }
+
+    pub async fn page_anime_views(
+        &self,
+        req: &PageAnimeRequest,
+        space_id: i64,
+        page: usize,
+        page_size: usize,
+    ) -> Result<Page<Vec<AnimeResponse>>> {
+        let mut qb =
+            sqlx::QueryBuilder::new("WITH base AS ( SELECT a.id, a.air_weekday, a.air_date ");
+
+        let mut has_keyword = false;
+        let mut fts_str = String::new();
+        let mut seq_chars = String::new();
+
+        if let Some(kw) = &req.keyword {
+            let tokens = anime::entity::model::AnimeTitle::to_keywords(kw);
+            if !tokens.is_empty() {
+                has_keyword = true;
+                fts_str = tokens.join(" ");
+                seq_chars = tokens.iter().flat_map(|s| s.chars()).collect();
+            }
+        }
+
+        if has_keyword {
+            qb.push(", fts_agg.rank AS rank ");
+        } else {
+            qb.push(", 0 AS rank ");
+        }
+
+        qb.push(" FROM anime a ");
+
+        if has_keyword {
+            qb.push(
+                " JOIN (SELECT t.anime_id, MIN(fts.rank) as rank 
+                FROM anime_title t 
+                JOIN anime_alias_fts fts ON t.id = fts.rowid 
+                WHERE anime_alias_fts MATCH ",
+            );
+            qb.push_bind(fts_str);
+            qb.push(" GROUP BY t.anime_id) fts_agg ON a.id = fts_agg.anime_id ");
+        }
+
+        qb.push(" LEFT JOIN sub_anime sa ON sa.anime_id = a.id AND sa.space_id = ");
+        qb.push_bind(space_id);
+
+        qb.push(" WHERE 1=1 ");
+
+        if has_keyword {
+            let like_pattern: String = format!(
+                "%{}%",
+                seq_chars
+                    .chars()
+                    .map(|c| c.to_string())
+                    .collect::<Vec<_>>()
+                    .join("%")
+            );
+            qb.push(
+                " AND EXISTS (SELECT 1 FROM anime_title t2 WHERE t2.anime_id = a.id AND t2.match_name LIKE ",
+            );
+            qb.push_bind(like_pattern);
+            qb.push(" ESCAPE '\\' ) ");
+        }
+
+        if let Some(year) = req.year {
+            qb.push(" AND a.air_year = ");
+            qb.push_bind(year);
+        }
+
+        if let Some(month) = req.month {
+            qb.push(" AND a.air_month = ");
+            qb.push_bind(month);
+        }
+
+        let status = req.status.map(|s| s != 0).or(req.subscription);
+        if let Some(is_sub) = status {
+            if is_sub {
+                qb.push(" AND sa.id IS NOT NULL ");
+            } else {
+                qb.push(" AND sa.id IS NULL ");
+            }
+        }
+
+        if let Some(search_status) = req.search_status {
+            qb.push(" AND sa.search_status = ");
+            qb.push_bind(search_status);
+        }
+
+        qb.push(" ), paginated AS ( SELECT *, COUNT(*) OVER() AS total_count FROM base ");
+
+        if has_keyword {
+            qb.push(" ORDER BY rank ASC ");
+        } else {
+            qb.push(" ORDER BY air_date DESC, id DESC ");
+        }
+
+        let offset = (page - 1) * page_size;
+
+        qb.push(" LIMIT ");
+        qb.push_bind(page_size as i64);
+        qb.push(" OFFSET ");
+        qb.push_bind(offset as i64);
+        qb.push(" ) ");
+
+        qb.push(
+            "SELECT 
+                p.id AS anime_id,
+                p.air_weekday,
+                p.air_date,
+                p.total_count,
+                sa.id AS sub_anime_id,
+                sa.search_status,
+                sa.progress,
+                (SELECT name FROM anime_title t WHERE t.anime_id = p.id AND t.is_origin = 1 LIMIT 1) AS origin_name,
+                ",
+        );
+
+        if let Some(lang) = &req.lang {
+            qb.push("(SELECT name FROM anime_title t WHERE t.anime_id = p.id AND t.lang_target = ");
+            qb.push_bind(lang);
+            qb.push(" LIMIT 1) AS lang_name, ");
+        } else {
+            qb.push("NULL AS lang_name, ");
+        }
+
+        qb.push(
+            "
+                (SELECT planned_ep_count FROM anime_season s WHERE s.anime_id = p.id ORDER BY season_number ASC LIMIT 1) AS eps,
+                (SELECT description FROM anime_season s WHERE s.anime_id = p.id ORDER BY season_number ASC LIMIT 1) AS desc
+            FROM paginated p
+            LEFT JOIN sub_anime sa ON sa.anime_id = p.id AND sa.space_id = "
+        );
+        qb.push_bind(space_id);
+
+        let query = qb.build();
+        let rows = query.fetch_all(&self.pool).await?;
+
+        let mut data = Vec::new();
+        let mut total = 0;
+
+        for row in rows {
+            if total == 0 {
+                total = row.get::<i64, _>("total_count") as u64;
+            }
+
+            let anime_id = row.get::<i64, _>("anime_id");
+            let origin_name = row.get::<String, _>("origin_name");
+
+            let lang_name: Option<String> = row.try_get("lang_name").unwrap_or(None);
+
+            let desc = row.get::<Option<String>, _>("desc").unwrap_or_default();
+            let air_date = row.get::<Option<String>, _>("air_date").unwrap_or_default();
+            let air_weekday = row.get::<i64, _>("air_weekday");
+            let eps = row.get::<Option<i32>, _>("eps").unwrap_or(0) as u32;
+
+            let sub_anime_id: Option<i64> = row.get("sub_anime_id");
+
+            let sub_info = sub_anime_id.map(|id| AnimeSubInfo {
+                sub_anime_id: id,
+                search_status: row.get::<i32, _>("search_status"),
+                progress: row.get::<i32, _>("progress") as u32,
+            });
+
+            data.push(AnimeResponse {
+                id: anime_id,
+                name: origin_name,
+                name_target: lang_name,
+                desc,
+                air_date,
+                air_weekday,
+                eps,
+                sub_info,
+            });
+        }
+
+        Ok(Page {
+            page,
+            page_size,
+            total,
+            data,
+        })
+    }
+}

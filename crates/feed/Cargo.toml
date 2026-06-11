@@ -1,0 +1,28 @@
+[package]
+name = "feed"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+base32 = { workspace = true }
+chrono = { workspace = true }
+common = { path = "../common" }
+formatx = { workspace = true }
+hex = { workspace = true }
+regex = { workspace = true }
+reqwest = { workspace = true }
+rss = { workspace = true }
+serde = { workspace = true }
+serde_bencode = { workspace = true }
+sha1 = { workspace = true }
+tracing = { workspace = true }
+url = { workspace = true }
+sqlx = { workspace = true }
+thiserror = { workspace = true }
+dashmap = { workspace = true }
+
+[dev-dependencies]
+serde_json = "1"
+tokio = { version = "1.39.2", features = ["macros", "rt"] }

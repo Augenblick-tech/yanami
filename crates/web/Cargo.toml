@@ -1,0 +1,30 @@
+[package]
+name = "web"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+common = { path = "../common" }
+user = { path = "../user" }
+anime = { path = "../anime" }
+subscription = { path = "../subscription" }
+resource = { path = "../resource" }
+feed = { path = "../feed" }
+
+anyhow = { workspace = true }
+axum = "0.8.9"
+jsonwebtoken = { version = "10.4.0", features = ["rust_crypto"] }
+serde = { workspace = true }
+tracing = { workspace = true }
+utoipa = { version = "5.5.0", features = ["axum_extras", "chrono"] }
+chrono = { workspace = true }
+utoipa-swagger-ui = { version = "9.0.2", features = ["axum", "reqwest"] }
+utoipa-redoc = { version = "6.0.0", features = ["axum"] }
+dashmap = { workspace = true }
+reqwest = { workspace = true }
+regex = { workspace = true }
+sqlx = { workspace = true }
+serde_json.workspace = true
+
+[lints]
+workspace = true

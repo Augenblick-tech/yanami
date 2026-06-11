@@ -1,40 +1,120 @@
-# 追番service
+# Yanami
 
-简化追番流程，自动化订阅新番更新
+## 模块
 
-> 服务启动后会通过bangumi获取当前正在更新的番剧列表  
-> 在tmdb上查出来对应番的季度信息和日语原名、简中翻译、繁中翻译  
-> 通过配置的RSS全站订阅链接和搜索链接去轮询更新  
-> 将从RSS获取到的种子资源和预设的番剧规则进行匹配，命中规则便推送qbit下载  
-> 通过识别番剧的剧集和记录下载历史，来判断番剧是否更新完结，是则停止监听更新
+```mermaid
+flowchart LR
+    cmd["cmd\nserver / http / bootstrap"]
+    app["app\nuse cases / orchestration"]
+    domain["domain\ntraits / dto / value objects"]
+    anime["anime\nanime policies / metadata composition"]
+    rule["rule\nrule validation / matching runtime"]
+    job["job\nscheduler / guard / registry"]
+    infra["infra\nsqlite / rss / bangumi / tmdb / yuc / qbit / secret"]
 
-## 1.0版本
+    cmd --> app
+    cmd --> anime
+    cmd --> rule
+    cmd --> job
+    cmd --> infra
+    app --> domain
+    anime --> domain
+    rule --> domain
+    job --> domain
+    infra --> domain
+    infra --> app
+    infra --> anime
+```
 
-### 功能
+## 运行链路
 
-- [x] 增删RSS订阅
-- [x] 增删预设规则
-  - [x] 按优先级匹配规则
-  - [x] 命中过规则则不再匹配其他规则
-- [x] 增删追番规则
-- [x] 用户访问权限管理
-- [x] 推送qbit下载
-- [x] 番剧完结自动停止
+```mermaid
+flowchart LR
+    yuc["Yuc"]
+    bgm["Bangumi"]
+    tmdb["TMDB"]
+    rss["RSS"]
+    qbit["qBittorrent"]
+    http["HTTP API"]
+    cmd["cmd"]
+    app["app"]
+    db["SQLite"]
 
-### 运行
+    yuc --> cmd
+    bgm --> cmd
+    tmdb --> cmd
+    rss --> cmd
+    http --> cmd
+    cmd --> app
+    app --> db
+    app --> qbit
+```
 
-`cargo run -- --addr 127.0.0.1:1234 --mode debug --key yanami --db-path sqlite://yanami.db?mode=rwc`
+## Crate
 
-#### 启动配置
+| crate | 职责 |
+| --- | --- |
+| `domain` | 通用领域抽象、仓储 trait、数据传递模型 |
+| `app` | 用例编排、聚合根入口、跨领域流程 |
+| `anime` | 番剧元数据组合、订阅与缺集策略 |
+| `rule` | 规则校验、规则匹配运行时 |
+| `job` | 定时任务配置、调度、并发防重 |
+| `infra` | SQLite、RSS、Bangumi、TMDB、Yuc、qBittorrent、密钥实现 |
+| `cmd` | 配置读取、依赖装配、HTTP 服务、任务初始化 |
+
+## 启动
+
+```bash
+cargo run -p cmd -- --config config.toml
+```
+
+默认监听地址：
+
+```text
+127.0.0.1:1234
+```
+
+## 配置
 
 ```toml
 addr = "127.0.0.1:1234"
-mode = "debug"
-key = "your_yanami_service_auth_key"
 db_path = "sqlite://yanami.db?mode=rwc"
-tmdb_token = "your_tmdb_key"
+key = "replace-me"
+tmdb_token = "replace-me"
+mode = "info"
+token_ttl_seconds = 2592000
+sources = ["yuc", "bgm", "tmdb"]
+
+[jobs.sync_anime_calendar]
+enabled = true
+interval_seconds = 43200
+
+[jobs.check_missing_episodes]
+enabled = true
+interval_seconds = 86400
+
+[jobs.poll_collected_releases]
+enabled = true
+interval_seconds = 300
+
+[jobs.backfill_anime_subscriptions]
+enabled = true
+interval_seconds = 300
 ```
 
-### 接口
-OpenApi: `http://127.0.0.1:1234/redoc`  
-SwaggerUI: `http://127.0.0.1:1234/swagger-ui`
+## 文档
+
+| 类型 | 地址 |
+| --- | --- |
+| OpenAPI | `http://127.0.0.1:1234/openapi.json` |
+| ReDoc | `http://127.0.0.1:1234/redoc` |
+| Swagger UI | `http://127.0.0.1:1234/swagger-ui` |
+| 架构图 | [`docs/项目架构图.md`](docs/项目架构图.md) |
+
+## 测试
+
+```bash
+cargo test
+cargo test -p cmd
+cargo test -p infra
+```

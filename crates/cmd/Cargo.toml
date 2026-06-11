@@ -1,0 +1,31 @@
+[package]
+name = "cmd"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anime = { path = "../anime" }
+subscription = { path = "../subscription" }
+feed = { path = "../feed" }
+job = { path = "../job" }
+user = { path = "../user" }
+resource = { path = "../resource" }
+web = { path = "../web" }
+tokio = { workspace = true }
+reqwest = { workspace = true }
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+regex = { workspace = true }
+sqlx = { workspace = true }
+anyhow = { workspace = true }
+dashmap = { workspace = true }
+tracing = { workspace = true }
+futures = { workspace = true }
+chrono = { workspace = true }
+mimalloc = "0.1.52"
+serde = { workspace = true }
+clap = { workspace = true }
+toml = { workspace = true }
+axum = "0.8.9"
+
+[lints]
+workspace = true

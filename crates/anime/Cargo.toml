@@ -1,0 +1,23 @@
+[package]
+name = "anime"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+async-trait = { workspace = true }
+chrono = { workspace = true }
+futures = { workspace = true }
+regex = { workspace = true }
+tracing = { workspace = true }
+common = { path = "../common" }
+unicode-normalization = { workspace = true }
+sqlx = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+scraper = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1.39.2", features = ["macros", "rt-multi-thread"] }

@@ -1,4 +1,9 @@
 /target
-yanami.redb
-anna/src/main.rs
+*yanami*.db*
 config.toml
+docs
+*.log
+*.json
+*.md
+*.db
+config.dev*
