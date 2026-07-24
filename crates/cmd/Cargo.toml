@@ -12,7 +12,7 @@ user = { path = "../user" }
 resource = { path = "../resource" }
 web = { path = "../web" }
 tokio = { workspace = true }
-tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "registry"] }
 anyhow = { workspace = true }
 tracing = { workspace = true }
 futures = { workspace = true }

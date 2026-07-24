@@ -11,6 +11,13 @@ use user::entity::model::{DownloadConfig, DownloaderConfig, QbitConfig, UserRole
 use utoipa::ToSchema;
 
 #[derive(Debug, Deserialize, ToSchema)]
+pub struct LogLevelRequest {
+    /// 日志级别，如 "info", "debug", "trace" 或更复杂的 EnvFilter 字符串
+    #[schema(example = "debug")]
+    pub level: String,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct LoginRequest {
     /// 用户名
     #[schema(example = "admin")]

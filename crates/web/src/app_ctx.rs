@@ -65,6 +65,8 @@ pub struct Repo {
     pub mandate_repo: Arc<SearchMandateSqliteClient>,
 }
 
+pub type LogLevelReloader = Arc<dyn Fn(String) -> Result<(), String> + Send + Sync>;
+
 #[derive(Clone)]
 pub struct Caps {
     pub matcher: RegexRuleMatcher,
@@ -75,6 +77,7 @@ pub struct Caps {
     pub bgm_client: Arc<BgmClient>,
     pub jwt: Arc<JwtAccessTokenIssuer>,
     pub jwt_decoder: Arc<JwtDecoder>,
+    pub log_level_reloader: LogLevelReloader,
 }
 
 #[derive(Clone)]
@@ -105,7 +108,7 @@ pub struct AppContext {
 }
 
 impl AppContext {
-    pub async fn new(db_filename: &str, auth_config: AuthConfig, tmdb_token: String) -> Self {
+    pub async fn new(db_filename: &str, auth_config: AuthConfig, tmdb_token: String, log_level_reloader: LogLevelReloader) -> Self {
         let mut headers = HeaderMap::new();
         headers.insert(
             USER_AGENT,
@@ -137,7 +140,7 @@ impl AppContext {
             tmdb_token,
         };
 
-        let (repo, caps) = Self::init_repo_and_caps(&base);
+        let (repo, caps) = Self::init_repo_and_caps(&base, log_level_reloader);
 
         let roots = Self::init_roots(&repo, &caps);
         let queries = Queries {
@@ -154,7 +157,7 @@ impl AppContext {
         }
     }
 
-    fn init_repo_and_caps(base: &Base) -> (Repo, Caps) {
+    fn init_repo_and_caps(base: &Base, log_level_reloader: LogLevelReloader) -> (Repo, Caps) {
         let matcher = RegexRuleMatcher::new(base.regex_cache.clone());
         let downloader_manager = Arc::new(DownloaderManager::new(base.http_client.clone()));
         let access_policy = BackoffPolicy::new();
@@ -203,6 +206,7 @@ impl AppContext {
                 bgm_client,
                 jwt,
                 jwt_decoder,
+                log_level_reloader,
             },
         )
     }

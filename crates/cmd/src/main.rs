@@ -4,14 +4,28 @@ use web::app_ctx::{AppContext, AuthConfig};
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
-    tracing_subscriber::fmt::init();
-    init().await;
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+    let (filter, reload_handle) = tracing_subscriber::reload::Layer::new(filter);
+    
+    tracing_subscriber::registry()
+        .with(filter)
+        .with(tracing_subscriber::fmt::layer())
+        .init();
+
+    init(reload_handle).await;
 }
 
-async fn init() {
+async fn init(reload_handle: tracing_subscriber::reload::Handle<tracing_subscriber::EnvFilter, tracing_subscriber::Registry>) {
     let config = cmd::config::AppConfig::load().expect("failed to load configuration");
+
+    let reloader: std::sync::Arc<dyn Fn(String) -> Result<(), String> + Send + Sync> = std::sync::Arc::new(move |filter: String| {
+        reload_handle.reload(&filter).map_err(|e| e.to_string())
+    });
 
     let ctx = AppContext::new(
         &config.database.path,
@@ -20,6 +34,7 @@ async fn init() {
             expire: std::time::Duration::from_secs(config.auth.jwt_expire_seconds),
         },
         config.external.tmdb_token.clone(),
+        reloader,
     )
     .await;
     let ctx = std::sync::Arc::new(ctx);

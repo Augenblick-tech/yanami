@@ -21,6 +21,7 @@ pub fn route(ctx: Arc<AppContext>) -> Router {
     let admin = Router::new()
         .route("/feed", post(feed::add))
         .route("/feed/{feed_id}", delete(feed::delete).put(feed::edit))
+        .route("/system/log-level", put(stat::set_log_level))
         .layer(middleware::from_fn(require_admin));
 
     let auth = Router::new()
@@ -90,9 +91,11 @@ async fn api_not_found() -> impl IntoResponse {
         user::get_auto_sub,
         user::login,
         stat::get_system_stat,
+        stat::set_log_level,
     ),
     components(
         schemas(
+            crate::model::LogLevelRequest,
             crate::model::LoginRequest,
             crate::model::ChangePasswordRequest,
             crate::model::AutoSubRequest,
