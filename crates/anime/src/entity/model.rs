@@ -14,10 +14,6 @@ pub struct AnimeListQuery {
     pub year: Option<i32>,
     /// 季度月份，只允许 1、4、7、10。
     pub month: Option<u32>,
-    /// 页码
-    pub page: Option<usize>,
-    /// 页数量
-    pub page_size: Option<usize>,
 }
 
 #[derive(PartialEq, Eq, Debug, Clone, Serialize, Deserialize)]
@@ -307,12 +303,4 @@ pub struct AnimeSearchResult {
     pub name: String,
     pub name_cn: Option<String>,
     pub id: i64,
-}
-
-#[derive(Clone)]
-pub struct Page<T> {
-    pub page: usize,
-    pub page_size: usize,
-    pub total: u64,
-    pub data: T,
 }

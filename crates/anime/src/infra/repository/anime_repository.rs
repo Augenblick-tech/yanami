@@ -5,7 +5,7 @@ use crate::{
         cap::{AnimeConsumer, AnimeRepository},
         model::{
             AnimeBaseData, AnimeIdType, AnimeListQuery, AnimeMetadata, AnimeProps,
-            AnimeSourceTarget, Page,
+            AnimeSourceTarget,
         },
     },
     infra::repository::client::AnimeSqliteClient,
@@ -17,18 +17,13 @@ use sqlx::{QueryBuilder, Row};
 
 #[async_trait]
 impl AnimeRepository for AnimeSqliteClient {
-    async fn list(&self, query: &AnimeListQuery) -> Result<Page<Vec<AnimeProps>>> {
+    async fn list(&self, query: &AnimeListQuery) -> Result<Vec<AnimeProps>> {
         let mut qb = self.build_full_anime_query(query);
         let rows = qb
             .build()
             .fetch_all(&self.pool)
             .await
             .context("failed to execute unified anime query")?;
-
-        let total = rows
-            .first()
-            .map(|r| r.try_get::<i64, _>("total_count").unwrap_or(0))
-            .unwrap_or(0) as u64;
 
         let mut data = Vec::with_capacity(rows.len());
 
@@ -37,15 +32,7 @@ impl AnimeRepository for AnimeSqliteClient {
             data.push(props);
         }
 
-        let page = query.page.unwrap_or(1).max(1);
-        let page_size = query.page_size.unwrap_or(usize::MAX);
-
-        Ok(Page {
-            page,
-            page_size,
-            total,
-            data,
-        })
+        Ok(data)
     }
 
     async fn range(&self, query: &AnimeListQuery, consumer: &mut dyn AnimeConsumer) -> Result<()> {

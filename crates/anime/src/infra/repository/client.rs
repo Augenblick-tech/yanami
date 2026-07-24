@@ -538,11 +538,7 @@ impl AnimeSqliteClient {
 
         qb.push(" ), ");
 
-        let page = query.page.unwrap_or(1).max(1);
-        let page_size = query.page_size.unwrap_or(usize::MAX);
-        let offset = (page - 1) * page_size;
-
-        qb.push(" paginated AS ( SELECT *, COUNT(*) OVER() AS total_count FROM base ");
+        qb.push(" paginated AS ( SELECT * FROM base ");
 
         if has_keyword {
             qb.push(" ORDER BY rank ASC ");
@@ -550,10 +546,6 @@ impl AnimeSqliteClient {
             qb.push(" ORDER BY air_date DESC, id DESC ");
         }
 
-        qb.push(" LIMIT ");
-        qb.push_bind(page_size as i64);
-        qb.push(" OFFSET ");
-        qb.push_bind(offset as i64);
         qb.push(" ), ");
 
         qb.push(
@@ -594,7 +586,6 @@ impl AnimeSqliteClient {
                 p.air_date,
                 p.air_quarter,
                 p.is_locked,
-                p.total_count,
                 COALESCE(t.titles, '[]') AS titles,
                 COALESCE(e.external_links, '[]') AS external_links,
                 COALESCE(s.seasons, '[]') AS seasons

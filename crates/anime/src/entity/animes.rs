@@ -5,7 +5,7 @@ use common::shared::error::Error;
 use crate::entity::{
     anime_entity::AnimeEntity,
     cap::AnimeRepository,
-    model::{AnimeBaseData, AnimeListQuery, AnimeMetadata, AnimeProps, Page},
+    model::{AnimeBaseData, AnimeListQuery, AnimeMetadata, AnimeProps},
 };
 
 #[derive(Clone)]
@@ -30,23 +30,13 @@ impl Animes {
             .collect())
     }
 
-    pub async fn list(&self, query: AnimeListQuery) -> Result<Page<Vec<AnimeEntity>>, Error> {
-        let data = self
+    pub async fn list(&self, query: AnimeListQuery) -> Result<Vec<AnimeEntity>, Error> {
+        let list = self
             .repo
             .list(&query)
             .await
             .map_err(|e| Error::external("animes list anime_entity failed", e))?;
-        let list = data
-            .data
-            .into_iter()
-            .map(|i| AnimeEntity::new(i.data))
-            .collect();
-        Ok(Page {
-            page: data.page,
-            page_size: data.page_size,
-            total: data.total,
-            data: list,
-        })
+        Ok(list.into_iter().map(|i| AnimeEntity::new(i.data)).collect())
     }
 
     pub async fn range<F>(&self, query: &AnimeListQuery, mut f: F) -> Result<(), Error>

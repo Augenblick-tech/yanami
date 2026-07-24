@@ -4,7 +4,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 
 use crate::entity::model::{
-    AnimeBaseData, AnimeListQuery, AnimeMetadata, AnimeProps, AnimeSearchResult, Page,
+    AnimeBaseData, AnimeListQuery, AnimeMetadata, AnimeProps, AnimeSearchResult,
 };
 
 pub trait AnimeConsumer: Send {
@@ -22,7 +22,7 @@ where
 
 #[async_trait]
 pub trait AnimeRepository: Send + Sync {
-    async fn list(&self, query: &AnimeListQuery) -> Result<Page<Vec<AnimeProps>>>;
+    async fn list(&self, query: &AnimeListQuery) -> Result<Vec<AnimeProps>>;
 
     async fn range(&self, query: &AnimeListQuery, consumer: &mut dyn AnimeConsumer) -> Result<()>;
 

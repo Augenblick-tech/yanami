@@ -12,12 +12,8 @@ user = { path = "../user" }
 resource = { path = "../resource" }
 web = { path = "../web" }
 tokio = { workspace = true }
-reqwest = { workspace = true }
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
-regex = { workspace = true }
-sqlx = { workspace = true }
 anyhow = { workspace = true }
-dashmap = { workspace = true }
 tracing = { workspace = true }
 futures = { workspace = true }
 chrono = { workspace = true }
