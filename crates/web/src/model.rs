@@ -63,12 +63,33 @@ pub struct PageAnimeRequest {
     pub page: Option<usize>,
     pub page_size: Option<usize>,
     pub keyword: Option<String>,
+    /// 目标语言名称过滤。
+    ///
+    /// 支持传入以下字符串（不区分大小写）：
+    /// - 日语: `jp`, `ja`
+    /// - 简体中文: `zh_cn`, `cn`, `zh-hans`
+    /// - 繁体中文: `zh_tw`, `tw`, `zh-hant`
+    /// - 英语: `en`
+    /// - 韩语: `kr`, `ko`
+    /// - 其他自定义语言代码亦可（如 `fr`）
+    #[schema(example = "zh_cn")]
     pub lang: Option<String>,
     pub year: Option<i32>,
     pub month: Option<u32>,
     pub subscription: Option<bool>,
+    /// 搜索补全状态过滤:
+    /// - 0 = 不搜索 (NotSearch)
+    /// - 1 = 等待中 (Pending)
+    /// - 2 = 匹配中 (Matching)
+    /// - 3 = 搜索中 (Searching)
+    #[schema(example = 0)]
     pub search_status: Option<i64>,
-    // 订阅状态
+    /// 订阅状态过滤:
+    /// - 1 = 已订阅 (Subscribed, 等同于 subscription = true)
+    /// - 2 = 已完结 (Completed, 更新进度 >= 总集数)
+    /// - 3 = 未开始 (Not Started, 进度 = 0)
+    /// - 4 = 更新中 (Updating, 0 < 进度 < 总集数)
+    #[schema(example = 1)]
     pub status: Option<i64>,
 }
 
@@ -79,6 +100,8 @@ pub struct AnimeResponse {
     pub name_target: Option<String>,
     pub desc: String,
     pub air_date: String,
+    /// 放送星期几 (数字1-7代表周一到周日)
+    #[schema(example = 1)]
     pub air_weekday: i64,
     pub eps: u32,
     pub sub_info: Option<AnimeSubInfo>,
@@ -87,6 +110,8 @@ pub struct AnimeResponse {
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct AnimeSubInfo {
     pub sub_anime_id: i64,
+    /// 搜索状态: 0=不搜索(NotSearch), 1=等待中(Pending), 2=匹配中(Matching), 3=搜索中(Searching)
+    #[schema(example = 0)]
     pub search_status: i32,
     pub progress: u32,
 }
@@ -114,10 +139,46 @@ impl<T: Serialize> ApiResponse<T> {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
+pub struct RecentEpisodeResponse {
+    /// 原始番名
+    pub origin_name: String,
+    /// 对应语言的番名
+    pub lang_name: Option<String>,
+    /// 剧集集数
+    #[schema(example = 1.0)]
+    pub ep_num: Option<f64>,
+    /// 匹配规则名
+    pub rule_name: Option<String>,
+    /// 更新时间 (Unix 时间戳)
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct RecentEpisodeQuery {
+    /// 目标语言名称。
+    ///
+    /// 支持传入以下字符串（不区分大小写）：
+    /// - 日语: `jp`, `ja`
+    /// - 简体中文: `zh_cn`, `cn`, `zh-hans`
+    /// - 繁体中文: `zh_tw`, `tw`, `zh-hant`
+    /// - 英语: `en`
+    /// - 韩语: `kr`, `ko`
+    /// - 其他自定义语言代码亦可（如 `fr`）
+    #[schema(example = "zh_cn")]
+    pub lang: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct SearchStatusRequest {
+    pub enable: bool,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
 pub struct LoginResponse {
     /// 用户标识
     pub user_id: i64,
-    /// 用户角色：admin / user
+    /// 用户角色：1=管理员(Admin), 2=普通用户(User)
+    #[schema(example = 1)]
     pub role: u8,
     /// JWT 访问令牌
     pub access_token: String,
@@ -327,7 +388,11 @@ pub struct EpisodeItem {
     pub id: i64,
     pub title: String,
     pub url: String,
+    /// 剧集状态: 0=未下载(Pending), 1=已完成(Downloaded)
+    #[schema(example = 0)]
     pub status: i32,
+    /// 剧集集数
+    #[schema(example = 1.0)]
     pub ep_num: Option<f64>,
 }
 
@@ -357,6 +422,15 @@ pub struct CreateAnimeRequest {
     pub metadata: AnimeMetadataItem,
     /// 是否锁定元数据 (锁定后自动任务将不再覆盖这些数据)
     pub lock: bool,
+}
+
+/// 编辑番剧请求
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct EditAnimeRequest {
+    /// 番剧完整元数据
+    pub metadata: AnimeMetadataItem,
+    /// 是否锁定元数据 (锁定后自动任务将不再覆盖这些数据)
+    pub lock: Option<bool>,
 }
 
 /// 番剧搜索结果项
@@ -423,11 +497,17 @@ impl From<AnimeAirWeekdayItem> for AnimeAirWeekday {
 /// 语言目标
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub enum AnimeLangTargetItem {
+    /// 日语
     JP,
+    /// 简体中文
     ZhCn,
+    /// 繁体中文
     ZhTw,
+    /// 英语
     EN,
+    /// 韩语
     KR,
+    /// 其他语言 (附带语言代码字符串)
     Other(String),
 }
 
@@ -718,6 +798,10 @@ pub struct QuarterStat {
     pub total_count: i64,
     /// 当前用户在该季度订阅的番剧总数
     pub sub_count: i64,
+    /// 订阅了但更新进度为0（未开始）的番剧数
+    pub not_started_count: i64,
+    /// 更新进度大于0但未完结（更新中）的番剧数
+    pub updating_count: i64,
     /// 当前用户在该季度已经标记为“完结”状态（即已达到预定集数）的番剧数
     pub completed_count: i64,
     /// 搜索状态为“不搜索”的番剧数

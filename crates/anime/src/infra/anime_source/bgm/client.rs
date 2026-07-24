@@ -212,9 +212,10 @@ impl BgmClient {
 
         let eps_num = subject.total_episodes.unwrap_or_else(|| {
             if let Some(eps) = infobox.get("话数")
-                && let Some(eps) = eps.as_u64() {
-                    return eps as u32;
-                }
+                && let Some(eps) = eps.as_u64()
+            {
+                return eps as u32;
+            }
             0
         });
 
@@ -338,7 +339,7 @@ pub fn is_str_match(query: &str, tmdb_title: &str) -> f64 {
     }
 
     let distance = prev_row[tmdb_len];
-    
+
     (max_len - distance) as f64 / max_len as f64
 }
 

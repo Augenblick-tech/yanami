@@ -4,8 +4,8 @@ use crate::app_ctx::AppContext;
 use crate::{
     error::ApiError,
     model::{
-        AnimeMetadataItem, AnimeResponse, ApiResponse, CreateAnimeRequest, Page, PageAnimeRequest,
-        SearchAnimeItem, SearchAnimeQuery,
+        AnimeMetadataItem, AnimeResponse, ApiResponse, CreateAnimeRequest, EditAnimeRequest, Page,
+        PageAnimeRequest, SearchAnimeItem, SearchAnimeQuery,
     },
 };
 use anime::entity::model::AnimeMetadata;
@@ -44,7 +44,11 @@ pub async fn list(
     };
     let page = request.page.unwrap_or(1).max(1);
     let page_size = request.page_size.unwrap_or(10).max(1);
-    let result = ctx.queries.anime_view.page_anime_views(&request, user_entity.space_id(), page, page_size).await?;
+    let result = ctx
+        .queries
+        .anime_view
+        .page_anime_views(&request, user_entity.space_id(), page, page_size)
+        .await?;
     Ok(Json(ApiResponse::ok(result)))
 }
 
@@ -140,4 +144,56 @@ pub async fn create(
     }
 
     Ok(Json(ApiResponse::ok(entity.id())))
+}
+
+/// 编辑番剧
+#[utoipa::path(
+    put,
+    path = "/api/v1/anime/{anime_id}",
+    operation_id = "anime_edit",
+    tag = "Anime",
+    summary = "编辑番剧",
+    description = "手动编辑番剧的元数据。\n\n调用此接口需要在请求头中携带有效的 JWT Token。",
+    params(
+        ("anime_id" = i64, Path, description = "番剧 ID")
+    ),
+    request_body = EditAnimeRequest,
+    responses(
+        (status = 200, description = "编辑成功"),
+        (status = 400, description = "请求参数校验失败"),
+        (status = 401, description = "未授权：未提供 Token，或 Token 已过期/无效"),
+        (status = 404, description = "未找到该番剧"),
+        (status = 500, description = "服务器内部错误"),
+    ),
+    security(
+        ("jwt" = [])
+    )
+)]
+pub async fn edit(
+    State(ctx): State<Arc<AppContext>>,
+    Path(anime_id): Path<i64>,
+    Json(request): Json<EditAnimeRequest>,
+) -> Result<Json<ApiResponse<()>>, ApiError> {
+    let mut entity = ctx
+        .roots
+        .animes
+        .get(anime_id)
+        .await?
+        .ok_or_else(|| ApiError::not_found("anime not found"))?;
+
+    let metadata: AnimeMetadata = request.metadata.into();
+
+    entity.force_update_metadata(&metadata);
+
+    if let Some(lock) = request.lock {
+        if lock {
+            entity.lock();
+        } else {
+            entity.unlock();
+        }
+    }
+
+    ctx.roots.animes.save(&entity).await?;
+
+    Ok(Json(ApiResponse::ok(())))
 }

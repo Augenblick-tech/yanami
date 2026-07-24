@@ -231,7 +231,10 @@ impl AnimeRepository for AnimeSqliteClient {
         Ok(())
     }
 
-    async fn sync_metadata_with_not_lock(&self, metadata: Vec<AnimeMetadata>) -> Result<Vec<AnimeProps>> {
+    async fn sync_metadata_with_not_lock(
+        &self,
+        metadata: Vec<AnimeMetadata>,
+    ) -> Result<Vec<AnimeProps>> {
         let mut bgm_to_meta = HashMap::new();
         let mut bgm_ids = Vec::new();
         for meta in &metadata {
@@ -283,9 +286,12 @@ impl AnimeRepository for AnimeSqliteClient {
                 match self.insert(meta).await {
                     Ok(prop) => {
                         props.push(prop);
-                    },
+                    }
                     Err(e) => {
-                        tracing::error!("sync_metadata_with_not_lock insert metadata failed, {}", e);
+                        tracing::error!(
+                            "sync_metadata_with_not_lock insert metadata failed, {}",
+                            e
+                        );
                     }
                 }
             }

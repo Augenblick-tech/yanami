@@ -156,24 +156,26 @@ impl crate::entity::cap::AnimeSeasonalProvider for BgmClient {
 
             // 补充番剧原名信息
             if let Some(title) = titles.iter_mut().find(|i| i.origin)
-                && let AnimeLangTarget::Other(_) = title.target {
-                    if let Some(c) = tmdb_data.inner.origin_country.first() {
-                        title.target = AnimeLangTarget::from(c.as_str());
-                    }
-                    if let AnimeLangTarget::Other(_) = title.target {
-                        title.target =
-                            AnimeLangTarget::from(tmdb_data.inner.original_language.as_str());
-                    }
-                    origin_type = title.target.clone();
+                && let AnimeLangTarget::Other(_) = title.target
+            {
+                if let Some(c) = tmdb_data.inner.origin_country.first() {
+                    title.target = AnimeLangTarget::from(c.as_str());
                 }
+                if let AnimeLangTarget::Other(_) = title.target {
+                    title.target =
+                        AnimeLangTarget::from(tmdb_data.inner.original_language.as_str());
+                }
+                origin_type = title.target.clone();
+            }
 
             let infobox = subject.parse_infobox();
 
             let eps_num = subject.total_episodes.unwrap_or_else(|| {
                 if let Some(eps) = infobox.get("话数")
-                    && let Some(eps) = eps.as_u64() {
-                        return eps as u32;
-                    }
+                    && let Some(eps) = eps.as_u64()
+                {
+                    return eps as u32;
+                }
                 0
             });
 

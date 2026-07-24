@@ -6,8 +6,8 @@ use crate::{
     app_ctx::AppContext,
     error::ApiError,
     model::{
-        AccessTokenClaims, ApiResponse, AutoSubRequest, AutoSubResponse, ChangePasswordRequest, DownloaderSettings,
-        LoginOutcome, LoginRequest, LoginResponse,
+        AccessTokenClaims, ApiResponse, AutoSubRequest, AutoSubResponse, ChangePasswordRequest,
+        DownloaderSettings, LoginOutcome, LoginRequest, LoginResponse,
     },
 };
 

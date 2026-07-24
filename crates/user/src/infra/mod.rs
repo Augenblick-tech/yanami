@@ -1,3 +1,3 @@
-pub mod repository;
-pub mod downloader_manager;
 mod downloader;
+pub mod downloader_manager;
+pub mod repository;

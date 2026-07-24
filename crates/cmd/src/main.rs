@@ -11,7 +11,7 @@ async fn main() {
     let filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
     let (filter, reload_handle) = tracing_subscriber::reload::Layer::new(filter);
-    
+
     tracing_subscriber::registry()
         .with(filter)
         .with(tracing_subscriber::fmt::layer())
@@ -20,12 +20,18 @@ async fn main() {
     init(reload_handle).await;
 }
 
-async fn init(reload_handle: tracing_subscriber::reload::Handle<tracing_subscriber::EnvFilter, tracing_subscriber::Registry>) {
+async fn init(
+    reload_handle: tracing_subscriber::reload::Handle<
+        tracing_subscriber::EnvFilter,
+        tracing_subscriber::Registry,
+    >,
+) {
     let config = cmd::config::AppConfig::load().expect("failed to load configuration");
 
-    let reloader: std::sync::Arc<dyn Fn(String) -> Result<(), String> + Send + Sync> = std::sync::Arc::new(move |filter: String| {
-        reload_handle.reload(&filter).map_err(|e| e.to_string())
-    });
+    let reloader: std::sync::Arc<dyn Fn(String) -> Result<(), String> + Send + Sync> =
+        std::sync::Arc::new(move |filter: String| {
+            reload_handle.reload(&filter).map_err(|e| e.to_string())
+        });
 
     let ctx = AppContext::new(
         &config.database.path,

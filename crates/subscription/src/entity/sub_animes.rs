@@ -46,7 +46,10 @@ impl SubAnimes {
     }
 
     pub async fn unsub(&self, entity: &SubAnimeEntity) -> Result<(), Error> {
-        self.repo.delete(entity.id()).await.map_err(|e| Error::external("unsub anime failed", e))?;
+        self.repo
+            .delete(entity.id())
+            .await
+            .map_err(|e| Error::external("unsub anime failed", e))?;
         Ok(())
     }
 

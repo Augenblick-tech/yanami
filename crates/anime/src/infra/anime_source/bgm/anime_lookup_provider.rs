@@ -50,16 +50,16 @@ impl AnimeLookupProvider for BgmClient {
         let mut origin_type = AnimeLangTarget::Other("unknown".to_string());
         // 补充番剧原名信息
         if let Some(title) = titles.iter_mut().find(|i| i.origin)
-            && let AnimeLangTarget::Other(_) = title.target {
-                if let Some(c) = tmdb_data.inner.origin_country.first() {
-                    title.target = AnimeLangTarget::from(c.as_str());
-                }
-                if let AnimeLangTarget::Other(_) = title.target {
-                    title.target =
-                        AnimeLangTarget::from(tmdb_data.inner.original_language.as_str());
-                }
-                origin_type = title.target.clone();
+            && let AnimeLangTarget::Other(_) = title.target
+        {
+            if let Some(c) = tmdb_data.inner.origin_country.first() {
+                title.target = AnimeLangTarget::from(c.as_str());
             }
+            if let AnimeLangTarget::Other(_) = title.target {
+                title.target = AnimeLangTarget::from(tmdb_data.inner.original_language.as_str());
+            }
+            origin_type = title.target.clone();
+        }
 
         let infobox = subject.parse_infobox();
 

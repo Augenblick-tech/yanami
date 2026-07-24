@@ -11,7 +11,11 @@ use tracing::info;
 use user::entity::users::Users;
 
 use crate::task::{
-    check_missing_episodes_task::check_missing_episodes_task, download_task::download_task, get_resource_task::get_resource_and_match_task, search_task::{local_match_task, search_task}, sync_calendar_task::sync_calendar_task,
+    check_missing_episodes_task::check_missing_episodes_task,
+    download_task::download_task,
+    get_resource_task::get_resource_and_match_task,
+    search_task::{local_match_task, search_task},
+    sync_calendar_task::sync_calendar_task,
 };
 
 pub async fn setup(

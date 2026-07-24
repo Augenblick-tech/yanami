@@ -25,14 +25,13 @@ pub async fn check_missing_episodes_task(sub_animes: SubAnimes) -> Result<()> {
         let sub_anime_eps = sub_animes.as_eps(&sub_anime_entity).await;
         match sub_anime_eps.check_missing_episodes().await {
             Ok(missing) => {
-                if missing
-                    && sub_anime_entity.enable_search() {
-                        info!(
-                            "check_missing_episodes_task will enable {} search",
-                            sub_anime_entity.id()
-                        );
-                        save_list.push(sub_anime_entity);
-                    }
+                if missing && sub_anime_entity.enable_search() {
+                    info!(
+                        "check_missing_episodes_task will enable {} search",
+                        sub_anime_entity.id()
+                    );
+                    save_list.push(sub_anime_entity);
+                }
             }
             Err(e) => {
                 error!(

@@ -265,10 +265,11 @@ fn parse_entries(
         let mut table_el = None;
         while let Some(node) = parent {
             if let scraper::node::Node::Element(el) = node.value()
-                && el.name() == "table" {
-                    table_el = ElementRef::wrap(node);
-                    break;
-                }
+                && el.name() == "table"
+            {
+                table_el = ElementRef::wrap(node);
+                break;
+            }
             parent = node.parent();
         }
 

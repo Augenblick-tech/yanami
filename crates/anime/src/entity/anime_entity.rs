@@ -15,7 +15,6 @@ impl AnimeEntity {
     }
 
     pub fn title(&self) -> Option<&str> {
-        
         self.data
             .metadata
             .titles

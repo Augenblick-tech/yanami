@@ -1,9 +1,9 @@
 use crate::{
     app_ctx::AppContext,
     error::ApiError,
-    model::{AccessTokenClaims, ApiResponse, SystemStatResponse, LogLevelRequest},
+    model::{AccessTokenClaims, ApiResponse, LogLevelRequest, SystemStatResponse},
 };
-use axum::{extract::State, Extension, Json};
+use axum::{Extension, Json, extract::State};
 use feed::entity::cap::FeedAccessPolicy;
 use std::sync::Arc;
 
@@ -42,7 +42,6 @@ pub async fn get_system_stat(
     Ok(Json(ApiResponse::ok(stat)))
 }
 
-
 /// 修改系统日志级别
 #[utoipa::path(
     put,
@@ -68,7 +67,11 @@ pub async fn set_log_level(
     Json(req): Json<LogLevelRequest>,
 ) -> Result<Json<ApiResponse<()>>, ApiError> {
     if let Err(e) = (ctx.caps.log_level_reloader)(req.level.clone()) {
-        return Err(ApiError::new(axum::http::StatusCode::BAD_REQUEST, 400, format!("failed to reload log level: {}", e)));
+        return Err(ApiError::new(
+            axum::http::StatusCode::BAD_REQUEST,
+            400,
+            format!("failed to reload log level: {}", e),
+        ));
     }
     tracing::info!("log level reloaded to: {}", req.level);
     Ok(Json(ApiResponse::ok(())))

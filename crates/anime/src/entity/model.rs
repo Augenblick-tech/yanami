@@ -106,8 +106,8 @@ impl From<&str> for AnimeLangTarget {
         let v = s.as_str();
         match v {
             "jp" | "ja" => AnimeLangTarget::JP,
-            "zh_cn" | "cn" | "zh-hans" => AnimeLangTarget::ZhCn,
-            "zh_tw" | "tw" | "zh-hant" => AnimeLangTarget::ZhTw,
+            "zh_cn" | "zh-cn" | "cn" | "zh-hans" => AnimeLangTarget::ZhCn,
+            "zh_tw" | "zh-tw" | "tw" | "zh-hant" => AnimeLangTarget::ZhTw,
             "en" | "us" | "us_en" => AnimeLangTarget::EN,
             "kr" | "ko" => AnimeLangTarget::KR,
             _ => AnimeLangTarget::Other(s),

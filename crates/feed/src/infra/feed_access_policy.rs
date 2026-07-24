@@ -64,7 +64,10 @@ impl FeedAccessPolicy for BackoffPolicy {
                 if entry.value().deadline > now {
                     let dur = entry.value().deadline.duration_since(now);
                     let sys_deadline = sys_now + dur;
-                    let ts = sys_deadline.duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64;
+                    let ts = sys_deadline
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs() as i64;
                     Some((*entry.key(), ts))
                 } else {
                     None
@@ -90,9 +93,10 @@ impl FeedAccessPolicy for BackoffPolicy {
                 let now = Instant::now();
                 // 如果已经有有效的退避记录（未到期），则忽略本次调用，不延长时间
                 if let Some(entry) = self.cache.get(&feed_id)
-                    && entry.deadline > now {
-                        return;
-                    }
+                    && entry.deadline > now
+                {
+                    return;
+                }
                 // 无记录或已过期，执行退避更新
                 self.cache
                     .entry(feed_id)

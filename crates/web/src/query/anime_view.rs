@@ -1,7 +1,8 @@
-use sqlx::{Pool, Row, Sqlite};
 use anyhow::Result;
+use sqlx::{Pool, Row, Sqlite};
 
-use crate::model::{AnimeResponse, AnimeSubInfo, Page, PageAnimeRequest};
+use crate::model::{AnimeResponse, AnimeSubInfo, Page, PageAnimeRequest, RecentEpisodeResponse};
+use anime::entity::model::AnimeLangTarget;
 
 #[derive(Clone)]
 pub struct AnimeViewQuery {
@@ -86,12 +87,29 @@ impl AnimeViewQuery {
             qb.push_bind(month);
         }
 
-        let status = req.status.map(|s| s != 0).or(req.subscription);
-        if let Some(is_sub) = status {
+        if let Some(is_sub) = req.subscription {
             if is_sub {
-                qb.push(" AND sa.id IS NOT NULL ");
+                qb.push(" AND sa.space_id IS NOT NULL ");
             } else {
-                qb.push(" AND sa.id IS NULL ");
+                qb.push(" AND sa.space_id IS NULL ");
+            }
+        }
+
+        if let Some(st) = req.status {
+            match st {
+                1 => {
+                    qb.push(" AND sa.space_id IS NOT NULL ");
+                }
+                2 => {
+                    qb.push(" AND sa.space_id IS NOT NULL AND sa.progress >= COALESCE((SELECT planned_ep_count FROM anime_season s WHERE s.anime_id = a.id ORDER BY season_number ASC LIMIT 1), 9999) ");
+                }
+                3 => {
+                    qb.push(" AND sa.space_id IS NOT NULL AND sa.progress = 0 ");
+                }
+                4 => {
+                    qb.push(" AND sa.space_id IS NOT NULL AND sa.progress > 0 AND sa.progress < COALESCE((SELECT planned_ep_count FROM anime_season s WHERE s.anime_id = a.id ORDER BY season_number ASC LIMIT 1), 9999) ");
+                }
+                _ => {}
             }
         }
 
@@ -130,8 +148,9 @@ impl AnimeViewQuery {
         );
 
         if let Some(lang) = &req.lang {
+            let target_lang_db: String = AnimeLangTarget::from(lang.as_str()).into();
             qb.push("(SELECT name FROM anime_title t WHERE t.anime_id = p.id AND t.lang_target = ");
-            qb.push_bind(lang);
+            qb.push_bind(target_lang_db);
             qb.push(" LIMIT 1) AS lang_name, ");
         } else {
             qb.push("NULL AS lang_name, ");
@@ -193,5 +212,60 @@ impl AnimeViewQuery {
             total,
             data,
         })
+    }
+
+    pub async fn recent_episodes(
+        &self,
+        space_id: i64,
+        lang: Option<String>,
+    ) -> Result<Vec<RecentEpisodeResponse>> {
+        let mut qb = sqlx::QueryBuilder::new(
+            "SELECT
+                e.ep_num,
+                e.updated_at,
+                r.name AS rule_name,
+                (SELECT t.name FROM anime_title t WHERE t.anime_id = sa.anime_id AND t.is_origin = 1 LIMIT 1) AS origin_name,
+                "
+        );
+
+        if let Some(l) = lang {
+            let target_lang_db: String = AnimeLangTarget::from(l.as_str()).into();
+            qb.push("(SELECT t.name FROM anime_title t WHERE t.anime_id = sa.anime_id AND t.lang_target = ");
+            qb.push_bind(target_lang_db);
+            qb.push(" LIMIT 1) AS lang_name ");
+        } else {
+            qb.push("NULL AS lang_name ");
+        }
+
+        qb.push(
+            "FROM sub_anime_episode e
+            JOIN sub_anime sa ON sa.id = e.sub_anime_id
+            LEFT JOIN rule r ON r.id = sa.rule_id
+            WHERE sa.space_id = ",
+        );
+        qb.push_bind(space_id);
+        qb.push(" ORDER BY e.updated_at DESC LIMIT 10");
+
+        let query = qb.build();
+        let rows = query.fetch_all(&self.pool).await?;
+
+        let mut data = Vec::with_capacity(rows.len());
+        for row in rows {
+            let origin_name = row.get::<String, _>("origin_name");
+            let lang_name: Option<String> = row.try_get("lang_name").unwrap_or(None);
+            let ep_num: Option<f64> = row.try_get("ep_num").unwrap_or(None);
+            let rule_name: Option<String> = row.try_get("rule_name").unwrap_or(None);
+            let updated_at = row.get::<i64, _>("updated_at");
+
+            data.push(RecentEpisodeResponse {
+                origin_name,
+                lang_name,
+                ep_num,
+                rule_name,
+                updated_at,
+            });
+        }
+
+        Ok(data)
     }
 }

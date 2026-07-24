@@ -26,7 +26,7 @@ use sqlx::{
     sqlite::{SqliteConnectOptions, SqlitePoolOptions},
 };
 use subscription::{
-    entity::{search_mandates::SearchMandates, sub_animes::SubAnimes, rules::Rules},
+    entity::{rules::Rules, search_mandates::SearchMandates, sub_animes::SubAnimes},
     infra::{
         regex::RegexRuleMatcher,
         repository::client::{RuleSqliteClient, SearchMandateSqliteClient, SubAnimeSqliteClient},
@@ -108,7 +108,12 @@ pub struct AppContext {
 }
 
 impl AppContext {
-    pub async fn new(db_filename: &str, auth_config: AuthConfig, tmdb_token: String, log_level_reloader: LogLevelReloader) -> Self {
+    pub async fn new(
+        db_filename: &str,
+        auth_config: AuthConfig,
+        tmdb_token: String,
+        log_level_reloader: LogLevelReloader,
+    ) -> Self {
         let mut headers = HeaderMap::new();
         headers.insert(
             USER_AGENT,
@@ -235,10 +240,7 @@ impl AppContext {
                 access_policy.clone(),
             ),
             anime_source: AnimeSources::new(caps.bgm_client.clone(), vec![caps.bgm_client.clone()]),
-            rules: Rules::new(
-                repo.rule_repo.clone(),
-                matcher.clone(),
-            ),
+            rules: Rules::new(repo.rule_repo.clone(), matcher.clone()),
         }
     }
 
@@ -288,6 +290,10 @@ impl AppContext {
 
         tx.commit().await.expect("init database commit failed");
 
-        self.roots.users.init_admin_user().await.expect("init admin user failed")
+        self.roots
+            .users
+            .init_admin_user()
+            .await
+            .expect("init admin user failed")
     }
 }

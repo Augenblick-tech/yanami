@@ -80,9 +80,10 @@ impl TmdbClient {
             .collect::<Vec<_>>();
         let date = find_closest_date(&dates, air_date);
         if let Some(date) = date
-            && let Some(v) = series.seasons.iter().find(|i| i.air_date == Some(date)) {
-                return Some(v.inner.season_number);
-            }
+            && let Some(v) = series.seasons.iter().find(|i| i.air_date == Some(date))
+        {
+            return Some(v.inner.season_number);
+        }
         None
     }
 

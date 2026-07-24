@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use axum::{
+    Router,
     http::StatusCode,
     middleware,
     response::IntoResponse,
     routing::{delete, get, post, put},
-    Router,
 };
 use utoipa::OpenApi;
 use utoipa_redoc::{Redoc, Servable};
@@ -29,12 +29,18 @@ pub fn route(ctx: Arc<AppContext>) -> Router {
         .route("/anime/search", get(anime::search))
         .route("/anime/bgm/{bgm_id}", get(anime::bgm_info))
         .route("/anime/create", post(anime::create))
+        .route("/anime/{anime_id}", put(anime::edit))
         .route("/feed", get(feed::list))
         .route("/rule", post(rule::add).get(rule::list))
         .route("/rule/{rule_id}", put(rule::edit).delete(rule::delete))
         .route("/subscription", post(subscription::add))
+        .route("/subscription/recent", get(subscription::recent_episodes))
         .route("/subscription/{id}", delete(subscription::delete))
         .route("/subscription/{id}/episode", get(subscription::list_eps))
+        .route(
+            "/subscription/{id}/search_status",
+            post(subscription::set_search_status),
+        )
         .route("/stat", get(stat::get_system_stat))
         .route(
             "/user/download/config",
@@ -45,7 +51,10 @@ pub fn route(ctx: Arc<AppContext>) -> Router {
             delete(user::delete_download_config),
         )
         .route("/user/password", post(user::change_password))
-        .route("/user/auto_sub", post(user::toggle_auto_sub).get(user::get_auto_sub))
+        .route(
+            "/user/auto_sub",
+            post(user::toggle_auto_sub).get(user::get_auto_sub),
+        )
         .merge(admin)
         .layer(middleware::from_fn_with_state(ctx.clone(), require_auth));
 
@@ -58,6 +67,7 @@ pub fn route(ctx: Arc<AppContext>) -> Router {
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
         .merge(Redoc::with_url("/redoc", ApiDoc::openapi()))
         .nest("/api/v1", api)
+        .fallback(crate::handler::static_files::static_handler)
         .with_state(ctx)
 }
 
@@ -72,6 +82,7 @@ async fn api_not_found() -> impl IntoResponse {
         anime::search,
         anime::bgm_info,
         anime::create,
+        anime::edit,
         feed::add,
         feed::list,
         feed::delete,
@@ -83,6 +94,8 @@ async fn api_not_found() -> impl IntoResponse {
         subscription::add,
         subscription::delete,
         subscription::list_eps,
+        subscription::recent_episodes,
+        subscription::set_search_status,
         user::list_download_config,
         user::save_download_config,
         user::delete_download_config,
@@ -101,6 +114,10 @@ async fn api_not_found() -> impl IntoResponse {
             crate::model::AutoSubRequest,
             crate::model::AutoSubResponse,
             crate::model::CreateSubscriptionRequest,
+            crate::model::RecentEpisodeResponse,
+            crate::model::RecentEpisodeQuery,
+            crate::model::SearchStatusRequest,
+            crate::model::EditAnimeRequest,
             crate::model::PageAnimeRequest,
             crate::error::ErrorResponse,
             crate::model::AnimeResponse,

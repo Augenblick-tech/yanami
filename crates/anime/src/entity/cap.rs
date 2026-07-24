@@ -36,7 +36,10 @@ pub trait AnimeRepository: Send + Sync {
 
     async fn set_lock(&self, anime_id: i64, lock: bool) -> Result<()>;
 
-    async fn sync_metadata_with_not_lock(&self, metadata: Vec<AnimeMetadata>) -> Result<Vec<AnimeProps>>;
+    async fn sync_metadata_with_not_lock(
+        &self,
+        metadata: Vec<AnimeMetadata>,
+    ) -> Result<Vec<AnimeProps>>;
 }
 
 #[async_trait]

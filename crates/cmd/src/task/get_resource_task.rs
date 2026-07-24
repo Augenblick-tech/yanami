@@ -19,13 +19,14 @@ pub async fn get_resource_and_match_task(
         match feed_entity.list().await {
             Ok(res) => {
                 if let Success(res) = res
-                    && let Err(e) = resources.just_save(res).await {
-                        error!(
-                            "get resource task save {} data failed, {}",
-                            feed_entity.id(),
-                            e
-                        );
-                    }
+                    && let Err(e) = resources.just_save(res).await
+                {
+                    error!(
+                        "get resource task save {} data failed, {}",
+                        feed_entity.id(),
+                        e
+                    );
+                }
             }
             Err(e) => {
                 error!(

@@ -52,9 +52,9 @@ impl TaskScheduler {
                             .is_running
                             .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
                             .is_err()
-                        {
-                            continue;
-                        }
+                    {
+                        continue;
+                    }
 
                     //  准备执行上下文
                     let is_running = task.is_running.clone();

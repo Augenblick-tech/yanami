@@ -93,7 +93,8 @@ impl Users {
             .repo
             .find_by_space_id(space_id)
             .await
-            .map_err(|e| Error::external("users get user by space_id failed", e))?.map(|i| UserEntity::new(i.data)))
+            .map_err(|e| Error::external("users get user by space_id failed", e))?
+            .map(|i| UserEntity::new(i.data)))
     }
 
     // 初始化管理员用户，用户名: moexco，密码随机，输出到标准输出

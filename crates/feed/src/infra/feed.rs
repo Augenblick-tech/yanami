@@ -355,9 +355,9 @@ fn extract_pub_date(item: &Item) -> Option<i64> {
     if let Some(val) = item.pub_date()
         && let Ok(dt) = chrono::DateTime::parse_from_rfc2822(val)
             .or_else(|_| chrono::DateTime::parse_from_rfc3339(val))
-        {
-            return Some(dt.timestamp());
-        }
+    {
+        return Some(dt.timestamp());
+    }
 
     let ext_val = item
         .extensions()
@@ -371,9 +371,9 @@ fn extract_pub_date(item: &Item) -> Option<i64> {
     if let Some(val) = ext_val
         && let Ok(naive) = chrono::NaiveDateTime::parse_from_str(val, "%Y-%m-%dT%H:%M:%S%.f")
             .or_else(|_| chrono::NaiveDateTime::parse_from_str(val, "%Y-%m-%dT%H:%M:%S"))
-        {
-            return Some(naive.and_utc().timestamp());
-        }
+    {
+        return Some(naive.and_utc().timestamp());
+    }
 
     None
 }

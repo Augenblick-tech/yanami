@@ -24,6 +24,8 @@ dashmap = { workspace = true }
 reqwest = { workspace = true }
 regex = { workspace = true }
 sqlx = { workspace = true }
+rust-embed = "8.5"
+mime_guess = "2.0"
 
 [lints]
 workspace = true

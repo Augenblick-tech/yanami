@@ -601,9 +601,7 @@ impl AnimeSqliteClient {
 
     // 构建拉平并聚合番剧详细属性的查询
     // filter_applier 用于传入额外的where条件
-    pub(super) fn build_anime_details_query<F>(
-        filter_applier: F,
-    ) -> QueryBuilder<sqlx::Sqlite>
+    pub(super) fn build_anime_details_query<F>(filter_applier: F) -> QueryBuilder<sqlx::Sqlite>
     where
         F: FnOnce(&mut QueryBuilder<sqlx::Sqlite>),
     {

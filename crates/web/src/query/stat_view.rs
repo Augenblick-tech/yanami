@@ -1,5 +1,5 @@
-use sqlx::{Pool, Sqlite};
 use anyhow::Result;
+use sqlx::{Pool, Sqlite};
 
 #[derive(Clone)]
 pub struct StatQuery {
@@ -23,10 +23,11 @@ impl StatQuery {
         let total_anime_count = total_anime_row.0;
 
         // 2. 获取当前用户订阅的番剧数
-        let sub_anime_row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM sub_anime WHERE space_id = ?")
-            .bind(space_id)
-            .fetch_one(&self.pool)
-            .await?;
+        let sub_anime_row: (i64,) =
+            sqlx::query_as("SELECT COUNT(*) FROM sub_anime WHERE space_id = ?")
+                .bind(space_id)
+                .fetch_one(&self.pool)
+                .await?;
         let user_subscribed_count = sub_anime_row.0;
 
         // 3. 获取等待搜索的委托数
@@ -42,6 +43,8 @@ impl StatQuery {
                 a.air_quarter,
                 COUNT(1) AS total_count,
                 SUM(CASE WHEN sa.id IS NOT NULL THEN 1 ELSE 0 END) AS sub_count,
+                SUM(CASE WHEN sa.id IS NOT NULL AND sa.progress = 0 THEN 1 ELSE 0 END) AS not_started_count,
+                SUM(CASE WHEN sa.id IS NOT NULL AND sa.progress > 0 AND sa.progress < COALESCE((SELECT planned_ep_count FROM anime_season s WHERE s.anime_id = a.id ORDER BY season_number ASC LIMIT 1), 9999) THEN 1 ELSE 0 END) AS updating_count,
                 SUM(CASE WHEN sa.progress >= COALESCE((SELECT planned_ep_count FROM anime_season s WHERE s.anime_id = a.id ORDER BY season_number ASC LIMIT 1), 9999) THEN 1 ELSE 0 END) AS completed_count,
                 SUM(CASE WHEN sa.search_status = 0 THEN 1 ELSE 0 END) AS not_search_count,
                 SUM(CASE WHEN sa.search_status = 1 THEN 1 ELSE 0 END) AS pending_count,
@@ -64,6 +67,8 @@ impl StatQuery {
                 quarter: row.get::<i32, _>("air_quarter") as u32,
                 total_count: row.get::<i64, _>("total_count"),
                 sub_count: row.get::<i64, _>("sub_count"),
+                not_started_count: row.get::<i64, _>("not_started_count"),
+                updating_count: row.get::<i64, _>("updating_count"),
                 completed_count: row.get::<i64, _>("completed_count"),
                 not_search_count: row.get::<i64, _>("not_search_count"),
                 pending_count: row.get::<i64, _>("pending_count"),
