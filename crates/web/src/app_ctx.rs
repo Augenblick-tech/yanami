@@ -23,7 +23,7 @@ use reqwest::{
 use resource::{entity::resources::Resources, infra::repository::client::ResourceSqliteClient};
 use sqlx::{
     Pool, Sqlite,
-    sqlite::{SqliteConnectOptions, SqlitePoolOptions},
+    sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous},
 };
 use subscription::{
     entity::{rules::Rules, search_mandates::SearchMandates, sub_animes::SubAnimes},
@@ -129,14 +129,13 @@ impl AppContext {
 
         let base = Base {
             pool: SqlitePoolOptions::new()
-                .max_connections(1)
+                .max_connections(10)
                 .connect_with(
                     SqliteConnectOptions::new()
                         .filename(db_filename)
                         .create_if_missing(true)
-                        .page_size(0)
-                        .pragma("temp_store", "FILE")
-                        .pragma("cache_size", "0"),
+                        .journal_mode(SqliteJournalMode::Wal)
+                        .synchronous(SqliteSynchronous::Normal),
                 )
                 .await
                 .expect("connect db failed"),
