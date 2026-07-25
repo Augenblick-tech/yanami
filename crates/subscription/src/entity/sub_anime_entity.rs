@@ -49,7 +49,9 @@ impl SubAnimeEntity {
     }
 
     pub(super) fn update_progress(&mut self, eps: &[Episode]) {
-        let eps_numbers = eps.iter().filter_map(|i| i.ep_num).collect::<Vec<_>>();
+        let mut eps_numbers = eps.iter().filter_map(|i| i.ep_num).collect::<Vec<_>>();
+        eps_numbers.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        eps_numbers.dedup();
         self.data.progress = eps_numbers.len() as u32;
     }
 
