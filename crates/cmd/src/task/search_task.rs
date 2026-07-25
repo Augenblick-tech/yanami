@@ -122,6 +122,7 @@ pub async fn search_task(
 ) -> Result<()> {
     if let Some(mut mandate_entity) = search_mandates.get_one().await? {
         let data = mandate_entity.fetch().await?;
+        let anime_id = mandate_entity.anime_id();
         match data {
             feed::entity::model::FeedFetchResult::Retryable(error) => {
                 tracing::error!(
@@ -141,9 +142,9 @@ pub async fn search_task(
             _ => {}
         };
 
-        let mut sub_anime_entity_list = sub_animes
+        let sub_anime_entity_list = sub_animes
             .list(&SubAnimeListQuery {
-                anime_id: Some(mandate_entity.anime_id()),
+                anime_id: Some(anime_id),
                 space_id: None,
                 search_status: Some(SubAnimeSearchStatus::Searching),
                 sub_status: Some(SubAnimeStatus::Enable),
@@ -188,12 +189,23 @@ pub async fn search_task(
         };
 
         if done {
-            for entity in &mut sub_anime_entity_list {
-                entity.cancel_search();
-            }
-            if let Err(e) = sub_animes.saves(&sub_anime_entity_list).await {
-                tracing::error!("search task saves sub anime entity failed, {}", e);
-            }
+            let mut pending_sub_anime_entity_list = sub_animes
+                .list(&SubAnimeListQuery {
+                    anime_id: Some(anime_id),
+                    space_id: None,
+                    search_status: None,
+                    sub_status: None,
+                    limit: None,
+                })
+                .await
+                .unwrap_or_default();
+
+            pending_sub_anime_entity_list.retain_mut(|i| i.cancel_search());
+
+            if !pending_sub_anime_entity_list.is_empty()
+                && let Err(e) = sub_animes.saves(&pending_sub_anime_entity_list).await {
+                    tracing::error!("search task saves sub anime entity failed, {}", e);
+                }
         }
     }
 

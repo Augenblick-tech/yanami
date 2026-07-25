@@ -118,9 +118,12 @@ impl SubAnimeEntity {
         }
     }
 
-    pub fn cancel_search(&mut self) {
+    pub fn cancel_search(&mut self) -> bool {
         if self.data.search_status != SubAnimeSearchStatus::NotSearch {
             self.data.search_status = SubAnimeSearchStatus::NotSearch;
+            true
+        } else {
+            false
         }
     }
 
