@@ -27,6 +27,10 @@ pub struct CliArgs {
     #[arg(long)]
     pub jwt_secret: Option<String>,
 
+    /// 用于加密敏感信息的主密钥
+    #[arg(long)]
+    pub crypto_secret: Option<String>,
+
     /// TMDB API 读取权限的 Token
     #[arg(long)]
     pub tmdb_token: Option<String>,
@@ -36,8 +40,7 @@ pub struct CliArgs {
     pub data_dir: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     /// HTTP 服务器配置
     pub server: ServerConfig,
@@ -56,13 +59,13 @@ impl AppConfig {
     pub fn load() -> Result<Self> {
         let cli = CliArgs::parse();
 
-        let mut config = if cli.config.exists() {
+        let mut config: AppConfig = if cli.config.exists() {
             let config_str = fs::read_to_string(&cli.config)
-                .with_context(|| format!("无法读取配置文件 {:?}", cli.config))?;
+                .with_context(|| format!("failed to read config file {:?}", cli.config))?;
             toml::from_str(&config_str)
-                .with_context(|| format!("解析配置文件 {:?} 失败", cli.config))?
+                .with_context(|| format!("failed to parse config file {:?}", cli.config))?
         } else {
-            AppConfig::default()
+            anyhow::bail!("config file {:?} does not exist, please provide a complete config file", cli.config);
         };
 
         // 命令行参数覆盖配置文件
@@ -78,11 +81,32 @@ impl AppConfig {
         if let Some(jwt_secret) = cli.jwt_secret {
             config.auth.jwt_secret = jwt_secret;
         }
+        if let Some(crypto_secret) = cli.crypto_secret {
+            config.auth.crypto_secret = crypto_secret;
+        }
         if let Some(tmdb_token) = cli.tmdb_token {
             config.external.tmdb_token = tmdb_token;
         }
         if let Some(data_dir) = cli.data_dir {
             config.data_dir = data_dir;
+        }
+        if config.server.host.is_empty() {
+            anyhow::bail!("server.host is required and cannot be empty");
+        }
+        if config.database.path.is_empty() {
+            anyhow::bail!("database.path is required and cannot be empty");
+        }
+        if config.auth.jwt_secret.is_empty() {
+            anyhow::bail!("auth.jwt_secret is required and cannot be empty");
+        }
+        if config.auth.crypto_secret.is_empty() {
+            anyhow::bail!("auth.crypto_secret is required and cannot be empty");
+        }
+        if config.external.tmdb_token.is_empty() {
+            anyhow::bail!("external.tmdb_token is required and cannot be empty");
+        }
+        if config.data_dir.is_empty() {
+            anyhow::bail!("data_dir is required and cannot be empty");
         }
 
         Ok(config)
@@ -117,27 +141,19 @@ pub struct DatabaseConfig {
 impl Default for DatabaseConfig {
     fn default() -> Self {
         Self {
-            path: "data.db".to_string(),
+            path: "yanami.db".to_string(),
         }
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
 pub struct AuthConfig {
     /// 用于签发 JWT Token 的密钥
     pub jwt_secret: String,
     /// JWT Token 的过期时间 (单位：秒)
     pub jwt_expire_seconds: u64,
-}
-
-impl Default for AuthConfig {
-    fn default() -> Self {
-        Self {
-            jwt_secret: "default_secret_key_change_me".to_string(),
-            jwt_expire_seconds: 3600,
-        }
-    }
+    /// 用于加密敏感信息 (如下载配置密码) 的主密钥
+    pub crypto_secret: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

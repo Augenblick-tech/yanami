@@ -35,4 +35,11 @@ pub trait DownloaderManager: Send + Sync {
         user_id: i64,
         config: &DownloaderConfig,
     ) -> Result<Arc<dyn DownloadProvider>>;
+
+    async fn validate_config(&self, config: &DownloaderConfig) -> Result<()>;
+}
+
+pub trait CryptoProvider: Send + Sync {
+    fn encrypt(&self, plain: &str) -> anyhow::Result<String>;
+    fn decrypt(&self, cipher: &str) -> anyhow::Result<String>;
 }

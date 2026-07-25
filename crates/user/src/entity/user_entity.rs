@@ -7,14 +7,18 @@ use common::shared::error::Error;
 
 use crate::entity::model::{DownloaderConfig, UserBaseData, UserRole};
 
+use std::sync::Arc;
+use crate::entity::cap::CryptoProvider;
+
 #[derive(Clone)]
 pub struct UserEntity {
     data: UserBaseData,
+    crypto_provider: Arc<dyn CryptoProvider>,
 }
 
 impl UserEntity {
-    pub(super) fn new(data: UserBaseData) -> Self {
-        Self { data }
+    pub(super) fn new(data: UserBaseData, crypto_provider: Arc<dyn CryptoProvider>) -> Self {
+        Self { data, crypto_provider }
     }
 
     pub(super) fn get_base_data(&self) -> &UserBaseData {
@@ -41,14 +45,17 @@ impl UserEntity {
         self.data.auto_sub
     }
 
-    // TODO: 返回加密密码
     pub fn get_download_config(&self) -> &Vec<DownloaderConfig> {
         &self.data.download_config
     }
 
-    // TODO: 返回明文密码
-    pub fn download_config(&self) -> Option<&DownloaderConfig> {
-        self.data.download_config.iter().find(|i| i.is_active())
+    pub fn download_config(&self) -> Result<Option<DownloaderConfig>, Error> {
+        let Some(c) = self.data.download_config.iter().find(|i| i.is_active()) else {
+            return Ok(None);
+        };
+        let mut clone = c.clone();
+        clone.decrypt_secrets(self.crypto_provider.as_ref())?;
+        Ok(Some(clone))
     }
 
     pub fn delete_download_config(&mut self, config_name: &str) {
@@ -79,8 +86,7 @@ impl UserEntity {
         Ok(())
     }
 
-    // TODO: 接收明文密码，加密后存储
-    pub fn save_download_config(&mut self, config: DownloaderConfig) {
+    pub fn save_download_config(&mut self, mut config: DownloaderConfig) -> Result<(), Error> {
         let new_is_active = config.is_active();
         let target_name = config.name().to_string();
         let mut target_index = None;
@@ -93,11 +99,14 @@ impl UserEntity {
             }
         }
 
+        config.encrypt_secrets(self.crypto_provider.as_ref())?;
+
         if let Some(index) = target_index {
             self.data.download_config[index] = config;
         } else {
             self.data.download_config.push(config);
         }
+        Ok(())
     }
 
     pub fn enable_auto_sub_anime(&mut self) {

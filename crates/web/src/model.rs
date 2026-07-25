@@ -38,6 +38,11 @@ pub struct ChangePasswordRequest {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
+pub struct SwitchActiveDownloaderRequest {
+    pub name: String,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct AutoSubRequest {
     /// 是否开启自动订阅
     #[schema(example = true)]

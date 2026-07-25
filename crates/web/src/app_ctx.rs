@@ -34,7 +34,10 @@ use subscription::{
 };
 use user::{
     entity::users::Users,
-    infra::{downloader_manager::DownloaderManager, repository::client::UserSqliteClient},
+    infra::{
+        crypto::AesCryptoProvider, downloader_manager::DownloaderManager,
+        repository::client::UserSqliteClient,
+    },
 };
 
 use crate::{middleware::auth::JwtDecoder, token_issuer::JwtAccessTokenIssuer};
@@ -43,6 +46,7 @@ use crate::{middleware::auth::JwtDecoder, token_issuer::JwtAccessTokenIssuer};
 pub struct AuthConfig {
     pub token: String,
     pub expire: Duration,
+    pub crypto_secret: String,
 }
 
 #[derive(Clone)]
@@ -78,6 +82,7 @@ pub struct Caps {
     pub jwt: Arc<JwtAccessTokenIssuer>,
     pub jwt_decoder: Arc<JwtDecoder>,
     pub log_level_reloader: LogLevelReloader,
+    pub crypto_provider: Arc<AesCryptoProvider>,
 }
 
 #[derive(Clone)]
@@ -182,6 +187,7 @@ impl AppContext {
         );
 
         let jwt_decoder = Arc::new(JwtDecoder::new(&base.auth_config.token));
+        let crypto_provider = Arc::new(AesCryptoProvider::new(&base.auth_config.crypto_secret));
 
         let anime_repo = Arc::new(AnimeSqliteClient::new(base.pool.clone()));
         let rule_repo = Arc::new(RuleSqliteClient::new(base.pool.clone(), matcher.clone()));
@@ -212,6 +218,7 @@ impl AppContext {
                 jwt,
                 jwt_decoder,
                 log_level_reloader,
+                crypto_provider,
             },
         )
     }
@@ -221,7 +228,11 @@ impl AppContext {
         let access_policy = Arc::new(caps.access_policy.clone());
         let matcher = Arc::new(caps.matcher.clone());
         Roots {
-            users: Users::new(repo.user_repo.clone(), caps.downloader_manager.clone()),
+            users: Users::new(
+                repo.user_repo.clone(),
+                caps.downloader_manager.clone(),
+                caps.crypto_provider.clone(),
+            ),
             animes: Animes::new(repo.anime_repo.clone()),
             sub_animes: SubAnimes::new(
                 repo.sub_anime_repo.clone(),

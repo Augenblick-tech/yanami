@@ -222,7 +222,10 @@ impl HttpFeedFetcher {
 }
 
 fn parse_feed(content: &[u8], feed_url: &str) -> Result<ParsedFeed, FeedFetchError> {
-    let channel = Channel::read_from(Cursor::new(content))
+    let parser = get_feed_parser(feed_url);
+    let xml_str = parser.preprocess_xml(content);
+
+    let channel = Channel::read_from(Cursor::new(xml_str.as_bytes()))
         .map_err(|e| FeedFetchError::InvalidData(e.to_string()))?;
 
     let channel_title = channel.title().trim();
@@ -244,11 +247,9 @@ fn parse_feed(content: &[u8], feed_url: &str) -> Result<ParsedFeed, FeedFetchErr
     let mut items = Vec::new();
 
     for item in channel.items() {
-        let Some(source_url) = item.link().map(str::trim).filter(|s| !s.is_empty()) else {
-            return Err(FeedFetchError::InvalidData(format!(
-                "item missing link: {}",
-                feed_url
-            )));
+        let Some(source_url) = parser.extract_source_url(item) else {
+            warn!(feed_url = %feed_url, title = ?item.title(), "skipping rss item missing source link");
+            continue;
         };
 
         let Some(title) = item.title().map(str::trim).filter(|s| !s.is_empty()) else {
@@ -258,43 +259,32 @@ fn parse_feed(content: &[u8], feed_url: &str) -> Result<ParsedFeed, FeedFetchErr
 
         // 过滤掉集合类资源
         if is_collection_resource(title) {
-            warn!(feed_url = %feed_url, title = %title, "skipping collection/batch resource");
+            tracing::debug!(feed_url = %feed_url, title = %title, "skipping collection/batch resource");
             continue;
         }
 
-        let Some(resource_url) = item.enclosure().map(|e| e.url()) else {
-            warn!(feed_url = %feed_url, title = %title, "skipping rss item without enclosure url");
+        let Some(resource_url) = parser.extract_resource_url(item) else {
+            warn!(feed_url = %feed_url, title = %title, "skipping rss item without resource url");
             continue;
         };
 
-        let info_hash = if resource_url.starts_with("magnet:?") {
-            match magnet_info_hash(resource_url) {
-                Ok(Some(hash)) => hash,
-                Ok(None) => {
-                    warn!(feed_url = %feed_url, title = %title, resource_url = %resource_url, "skipping magnet missing valid btih");
-                    continue;
-                }
-                Err(e) => {
-                    error!(feed_url = %feed_url, title = %title, resource_url = %resource_url, error = %e, "failed to extract info_hash from magnet");
-                    continue;
-                }
+        let info_hash = match parser.extract_info_hash(item, &resource_url) {
+            Ok(hash) => hash,
+            Err(e) => {
+                warn!(feed_url = %feed_url, title = %title, resource_url = %resource_url, error = %e, "failed to get info_hash");
+                continue;
             }
-        } else if Url::parse(resource_url).is_ok() {
-            [0u8; 20]
-        } else {
-            warn!(feed_url = %feed_url, title = %title, resource_url = %resource_url, "skipping unparseable resource url");
-            continue;
         };
 
-        let published_at = extract_pub_date(item).unwrap_or_else(|| {
+        let published_at = parser.extract_pub_date(item).unwrap_or_else(|| {
             warn!(feed_url = %feed_url, title = %title, pub_date_raw = ?item.pub_date(), "fallback to current time");
             Utc::now().timestamp()
         });
 
         items.push(ParsedItem {
             title: title.to_string(),
-            source_url: source_url.to_string(),
-            resource_url: resource_url.to_string(),
+            source_url,
+            resource_url,
             published_at,
             info_hash,
         });
@@ -349,31 +339,121 @@ fn torrent_info_hash(bytes: &[u8]) -> Result<[u8; 20], anyhow::Error> {
     Ok(hash)
 }
 
-fn extract_pub_date(item: &Item) -> Option<i64> {
-    if let Some(val) = item.pub_date()
-        && let Ok(dt) = chrono::DateTime::parse_from_rfc2822(val)
-            .or_else(|_| chrono::DateTime::parse_from_rfc3339(val))
-    {
-        return Some(dt.timestamp());
+trait FeedParser {
+    fn preprocess_xml(&self, content: &[u8]) -> String {
+        String::from_utf8_lossy(content).into_owned()
     }
 
-    let ext_val = item
-        .extensions()
-        .get("mikan")
-        .and_then(|m| m.get("torrent"))
-        .and_then(|v| v.first())
-        .and_then(|e| e.children().get("pubDate"))
-        .and_then(|v| v.first())
-        .and_then(|e| e.value());
-
-    if let Some(val) = ext_val
-        && let Ok(naive) = chrono::NaiveDateTime::parse_from_str(val, "%Y-%m-%dT%H:%M:%S%.f")
-            .or_else(|_| chrono::NaiveDateTime::parse_from_str(val, "%Y-%m-%dT%H:%M:%S"))
-    {
-        return Some(naive.and_utc().timestamp());
+    fn extract_source_url(&self, item: &Item) -> Option<String> {
+        item.link().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
     }
 
-    None
+    fn extract_resource_url(&self, item: &Item) -> Option<String> {
+        item.enclosure().map(|e| e.url().to_string())
+    }
+
+    fn extract_info_hash(&self, _item: &Item, resource_url: &str) -> Result<[u8; 20], String> {
+        if resource_url.starts_with("magnet:?") {
+            match magnet_info_hash(resource_url) {
+                Ok(Some(hash)) => Ok(hash),
+                Ok(None) => Err("skipping magnet missing valid btih".to_string()),
+                Err(e) => Err(format!("failed to extract info_hash from magnet: {}", e)),
+            }
+        } else if Url::parse(resource_url).is_ok() {
+            Ok([0u8; 20])
+        } else {
+            Err("skipping unparseable resource url".to_string())
+        }
+    }
+
+    fn extract_pub_date(&self, item: &Item) -> Option<i64> {
+        if let Some(val) = item.pub_date()
+            && let Ok(dt) = chrono::DateTime::parse_from_rfc2822(val)
+                .or_else(|_| chrono::DateTime::parse_from_rfc3339(val))
+        {
+            return Some(dt.timestamp());
+        }
+        None
+    }
+}
+
+struct DefaultParser;
+impl FeedParser for DefaultParser {}
+
+struct MikanParser;
+impl FeedParser for MikanParser {
+    fn preprocess_xml(&self, content: &[u8]) -> String {
+        let xml_str = String::from_utf8_lossy(content).into_owned();
+        // 修复 Mikan 的 RSS 数据：Mikan 移除了 'mikan' 前缀，转而对 `<torrent>` 使用默认命名空间。
+        // 由于 `rss` 库在解析时会直接丢弃没有前缀的非标准标签，因此我们必须在解析前将前缀重新注入。
+        let mut patched = xml_str.replace("<rss version=\"2.0\">", "<rss version=\"2.0\" xmlns:mikan=\"https://mikanani.me/0.1/\">");
+        patched = patched.replace("<torrent xmlns=\"https://mikanani.me/0.1/\">", "<mikan:torrent>");
+        patched = patched.replace("</torrent>", "</mikan:torrent>");
+        patched
+    }
+
+    fn extract_pub_date(&self, item: &Item) -> Option<i64> {
+        if let Some(timestamp) = DefaultParser.extract_pub_date(item) {
+            return Some(timestamp);
+        }
+
+        let ext_val = item
+            .extensions()
+            .get("mikan")
+            .or_else(|| item.extensions().get(""))
+            .or_else(|| item.extensions().get("torrent"))
+            .and_then(|m| m.get("torrent"))
+            .and_then(|v| v.first())
+            .and_then(|e| e.children().get("pubDate"))
+            .and_then(|v| v.first())
+            .and_then(|e| e.value());
+
+        if let Some(val) = ext_val {
+            let parsed = chrono::NaiveDateTime::parse_from_str(val, "%Y-%m-%dT%H:%M:%S.%f")
+                .or_else(|_| chrono::NaiveDateTime::parse_from_str(val, "%Y-%m-%dT%H:%M:%S"));
+            if let Ok(naive) = parsed {
+                return Some(naive.and_utc().timestamp());
+            }
+        }
+        None
+    }
+}
+
+struct NyaaParser;
+impl FeedParser for NyaaParser {
+    fn extract_source_url(&self, item: &Item) -> Option<String> {
+        item.guid().map(|g| g.value.trim().to_string())
+    }
+
+    fn extract_resource_url(&self, item: &Item) -> Option<String> {
+        item.link().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+    }
+
+    fn extract_info_hash(&self, item: &Item, resource_url: &str) -> Result<[u8; 20], String> {
+        if let Some(hash_str) = item
+            .extensions()
+            .get("nyaa")
+            .and_then(|m| m.get("infoHash"))
+            .and_then(|v| v.first())
+            .and_then(|e| e.value())
+            && let Ok(bytes) = hex::decode(hash_str)
+                && bytes.len() == 20 {
+                    let mut arr = [0u8; 20];
+                    arr.copy_from_slice(&bytes);
+                    return Ok(arr);
+                }
+        DefaultParser.extract_info_hash(item, resource_url)
+    }
+}
+
+fn get_feed_parser(feed_url: &str) -> Box<dyn FeedParser> {
+    if feed_url.contains("mikanani.me") {
+        Box::new(MikanParser)
+    } else if feed_url.contains("nyaa.si") {
+        Box::new(NyaaParser)
+    } else {
+        Box::new(DefaultParser)
+    }
 }
 
 #[derive(Debug, Deserialize)]

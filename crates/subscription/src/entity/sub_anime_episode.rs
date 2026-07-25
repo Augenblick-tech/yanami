@@ -69,6 +69,7 @@ impl SubAnimeEpsiodes {
                 .iter()
                 .any(|item| item.resource_id == i.resource_id)
             {
+                tracing::info!("sub anime matcher matched resource, sub_anime_id: {}, resource title: {}", i.sub_anime_id, i.title);
                 entity_eps_matched.push(i);
             }
         }

@@ -30,9 +30,9 @@ impl crate::entity::cap::AnimeSeasonalProvider for BgmClient {
         let items: Vec<BangumiItem> = res.json().await?;
         let mut result = vec![];
         for i in items {
-            // 没有官方网站的通常不是日漫，在这个来源大概是藏数据，直接过滤
+            // 没有官方网站的通常不是日漫，在这个来源大概是脏数据，直接过滤
             if matches!(i.official_site.as_deref(), None | Some("")) {
-                tracing::info!("bgm get calendar check {} not found official_site", i.title);
+                tracing::warn!("bgm get calendar check {} not found official_site", i.title);
                 continue;
             }
 

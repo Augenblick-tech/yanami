@@ -78,4 +78,19 @@ impl crate::entity::cap::DownloaderManager for DownloaderManager {
         };
         Ok(client)
     }
+
+    async fn validate_config(&self, config: &DownloaderConfig) -> Result<()> {
+        match config {
+            DownloaderConfig::Qbit(download_config) => {
+                // Qbit::new automatically attempts a login, serving as a connection test
+                let _ = Qbit::new(
+                    download_config.config.url.clone(),
+                    download_config.config.username.clone(),
+                    download_config.config.password.clone(),
+                )
+                .await?;
+                Ok(())
+            }
+        }
+    }
 }

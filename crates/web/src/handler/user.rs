@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use axum::{Extension, Json, extract::State};
+use user::entity::cap::DownloaderManager;
 
 use crate::{
     app_ctx::AppContext,
@@ -80,7 +81,7 @@ pub async fn list_download_config(
     let configs = user_entity.get_download_config();
     let configs = configs
         .iter()
-        .map(DownloaderSettings::from)
+        .map(|c| DownloaderSettings::from(c.clone().sanitized()))
         .collect::<Vec<_>>();
     Ok(Json(ApiResponse::ok(configs)))
 }
@@ -112,7 +113,46 @@ pub async fn save_download_config(
     let Some(mut user_entity) = ctx.roots.users.get(user.user_id).await? else {
         return Err(ApiError::forbidden("not found user"));
     };
-    user_entity.save_download_config(req.into());
+    let config: user::entity::model::DownloaderConfig = req.into();
+    ctx.caps
+        .downloader_manager
+        .validate_config(&config)
+        .await
+        .map_err(|e| ApiError::new(axum::http::StatusCode::BAD_REQUEST, 400, format!("download config validate failed: {}", e)))?;
+
+    user_entity.save_download_config(config)?;
+    ctx.roots.users.save(&user_entity).await?;
+    Ok(Json(ApiResponse::ok(())))
+}
+
+#[utoipa::path(
+    put,
+    path = "/api/v1/user/download/config/active",
+    operation_id = "user_switch_active_download_config",
+    tag = "User",
+    summary = "切换激活的下载配置",
+    description = "根据配置名称（`name`）切换当前用户激活的下载配置，该操作不触发配置连通性校验。\n\n调用此接口需要在请求头中携带有效的 JWT Token。",
+    request_body(content = crate::model::SwitchActiveDownloaderRequest, description = "需要激活的下载配置名称"),
+    responses(
+        (status = 200, description = "切换操作执行成功。返回数据的 `data` 字段为空。"),
+        (status = 400, description = "请求参数校验失败，或指定的配置不存在"),
+        (status = 401, description = "未授权：未提供 Token，或 Token 已过期/无效"),
+        (status = 403, description = "禁止访问：Token 鉴权通过但系统中找不到该对应的用户记录"),
+        (status = 409, description = "指定的下载配置未找到"),
+    ),
+    security(
+        ("jwt" = [])
+    )
+)]
+pub async fn switch_active_download_config(
+    State(ctx): State<Arc<AppContext>>,
+    Extension(user): Extension<AccessTokenClaims>,
+    Json(req): Json<crate::model::SwitchActiveDownloaderRequest>,
+) -> Result<Json<ApiResponse<()>>, ApiError> {
+    let Some(mut user_entity) = ctx.roots.users.get(user.user_id).await? else {
+        return Err(ApiError::forbidden("not found user"));
+    };
+    user_entity.enable_download_config(&req.name)?;
     ctx.roots.users.save(&user_entity).await?;
     Ok(Json(ApiResponse::ok(())))
 }

@@ -2,7 +2,7 @@ use common::shared::error::Error;
 use std::sync::Arc;
 
 use crate::entity::{
-    cap::{DownloaderManager, UserRepository},
+    cap::{DownloaderManager, UserRepository, CryptoProvider},
     downloader::Downloader,
     model::UserRole,
     user_entity::UserEntity,
@@ -12,16 +12,19 @@ use crate::entity::{
 pub struct Users {
     repo: Arc<dyn UserRepository>,
     downloader_manager: Arc<dyn DownloaderManager>,
+    crypto_provider: Arc<dyn CryptoProvider>,
 }
 
 impl Users {
     pub fn new(
         repo: Arc<dyn UserRepository>,
         downloader_manager: Arc<dyn DownloaderManager>,
+        crypto_provider: Arc<dyn CryptoProvider>,
     ) -> Self {
         Self {
             repo,
             downloader_manager,
+            crypto_provider,
         }
     }
 }
@@ -34,7 +37,7 @@ impl Users {
             .await
             .map_err(|e| Error::external("users get user failed", e))?;
         if let Some(props) = props {
-            Ok(Some(UserEntity::new(props.data)))
+            Ok(Some(UserEntity::new(props.data, self.crypto_provider.clone())))
         } else {
             Ok(None)
         }
@@ -47,7 +50,7 @@ impl Users {
             .await
             .map_err(|e| Error::external("users get user by username failed", e))?;
         if let Some(user) = user {
-            Ok(Some(UserEntity::new(user.data)))
+            Ok(Some(UserEntity::new(user.data, self.crypto_provider.clone())))
         } else {
             Ok(None)
         }
@@ -74,7 +77,7 @@ impl Users {
             .insert(username, &pwd, role, auto_sub)
             .await
             .map_err(|e| Error::external("users create user failed", e))?;
-        Ok(UserEntity::new(props.data))
+        Ok(UserEntity::new(props.data, self.crypto_provider.clone()))
     }
 
     pub async fn list_auto_sub(&self) -> Result<Vec<UserEntity>, Error> {
@@ -84,7 +87,7 @@ impl Users {
             .await
             .map_err(|e| Error::external("users list auto sub failed", e))?
             .into_iter()
-            .map(|i| UserEntity::new(i.data))
+            .map(|i| UserEntity::new(i.data, self.crypto_provider.clone()))
             .collect())
     }
 
@@ -94,7 +97,7 @@ impl Users {
             .find_by_space_id(space_id)
             .await
             .map_err(|e| Error::external("users get user by space_id failed", e))?
-            .map(|i| UserEntity::new(i.data)))
+            .map(|i| UserEntity::new(i.data, self.crypto_provider.clone())))
     }
 
     // 初始化管理员用户，用户名: moexco，密码随机，输出到标准输出
@@ -133,13 +136,13 @@ impl Users {
 impl Users {
     pub async fn as_downloader(&self, entity: &UserEntity) -> Result<Option<Downloader>, Error> {
         let user_id = entity.id();
-        let Some(config) = entity.download_config() else {
+        let Some(config) = entity.download_config()? else {
             return Ok(None);
         };
 
         let provider = self
             .downloader_manager
-            .get(user_id, config)
+            .get(user_id, &config)
             .await
             .map_err(|e| Error::external("download manager get provider failed", e))?;
         Ok(Some(Downloader::new(

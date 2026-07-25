@@ -111,7 +111,7 @@ impl BgmClient {
         if let Some(target) = target
             && max_score > 0.4
         {
-            tracing::info!(
+            tracing::debug!(
                 "matched {}, original_name {}, score {}",
                 &target.inner.original_name,
                 &original_title.name,

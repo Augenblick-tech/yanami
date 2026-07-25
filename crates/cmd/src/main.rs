@@ -38,6 +38,7 @@ async fn init(
         AuthConfig {
             token: config.auth.jwt_secret.clone(),
             expire: std::time::Duration::from_secs(config.auth.jwt_expire_seconds),
+            crypto_secret: config.auth.crypto_secret.clone(),
         },
         config.external.tmdb_token.clone(),
         reloader,

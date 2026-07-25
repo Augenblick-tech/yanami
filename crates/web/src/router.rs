@@ -47,6 +47,10 @@ pub fn route(ctx: Arc<AppContext>) -> Router {
             get(user::list_download_config).post(user::save_download_config),
         )
         .route(
+            "/user/download/config/active",
+            put(user::switch_active_download_config),
+        )
+        .route(
             "/user/download/config/{name}",
             delete(user::delete_download_config),
         )
@@ -99,6 +103,7 @@ async fn api_not_found() -> impl IntoResponse {
         user::list_download_config,
         user::save_download_config,
         user::delete_download_config,
+        user::switch_active_download_config,
         user::change_password,
         user::toggle_auto_sub,
         user::get_auto_sub,
@@ -111,6 +116,7 @@ async fn api_not_found() -> impl IntoResponse {
             crate::model::LogLevelRequest,
             crate::model::LoginRequest,
             crate::model::ChangePasswordRequest,
+            crate::model::SwitchActiveDownloaderRequest,
             crate::model::AutoSubRequest,
             crate::model::AutoSubResponse,
             crate::model::CreateSubscriptionRequest,

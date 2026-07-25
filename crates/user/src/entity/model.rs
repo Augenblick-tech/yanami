@@ -1,3 +1,4 @@
+use crate::entity::cap::CryptoProvider;
 use common::shared::error::Error;
 use serde::{Deserialize, Serialize};
 
@@ -56,6 +57,39 @@ impl DownloaderConfig {
         match self {
             DownloaderConfig::Qbit(download_config) => download_config.active = active,
         }
+    }
+
+    pub fn sanitized(self) -> Self {
+        match self {
+            DownloaderConfig::Qbit(mut c) => {
+                c.config.password = "************".to_string();
+                DownloaderConfig::Qbit(c)
+            }
+        }
+    }
+
+    pub fn encrypt_secrets(&mut self, crypto_provider: &dyn CryptoProvider) -> Result<(), Error> {
+        match self {
+            DownloaderConfig::Qbit(qbit) => {
+                let cipher = crypto_provider
+                    .encrypt(&qbit.config.password)
+                    .map_err(|e| Error::external("encrypt password failed", e))?;
+                qbit.config.password = cipher;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn decrypt_secrets(&mut self, crypto_provider: &dyn CryptoProvider) -> Result<(), Error> {
+        match self {
+            DownloaderConfig::Qbit(qbit) => {
+                let plain = crypto_provider
+                    .decrypt(&qbit.config.password)
+                    .map_err(|e| Error::external("decrypt password failed", e))?;
+                qbit.config.password = plain;
+            }
+        }
+        Ok(())
     }
 }
 
