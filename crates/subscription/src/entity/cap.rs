@@ -2,13 +2,13 @@ use crate::entity::model::{
     Episode, EpisodeBaseData, EpisodeProp, Mandate, SearchMandateProp, SubAnimeBaseData,
     SubAnimeListQuery, SubAnimeProps,
 };
-use crate::entity::model::{Rule, RuleBaseData, RuleQuery};
+use crate::entity::model::{Rule, RuleBaseData, RuleQuery, MatchResult};
 use anyhow::Result;
 use async_trait::async_trait;
 
 #[async_trait]
 pub trait SpaceRuleMatcher: Send + Sync {
-    fn is_match(&self, text: &str) -> (bool, i64);
+    fn is_match(&self, text: &str) -> MatchResult;
 }
 
 #[async_trait]

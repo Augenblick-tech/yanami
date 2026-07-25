@@ -2,7 +2,7 @@ use async_trait::async_trait;
 
 use crate::entity::{
     cap::{RuleMatcher, SpaceRuleMatcher},
-    model::RuleBaseData,
+    model::{RuleBaseData, MatchResult},
 };
 use std::sync::Arc;
 
@@ -61,7 +61,11 @@ impl RuleEntity {
 
 #[async_trait]
 impl SpaceRuleMatcher for RuleEntity {
-    fn is_match(&self, text: &str) -> (bool, i64) {
-        (self.is_match(text), self.id())
+    fn is_match(&self, text: &str) -> MatchResult {
+        MatchResult {
+            matched: self.is_match(text),
+            rule_id: self.id(),
+            rule_order: self.order(),
+        }
     }
 }

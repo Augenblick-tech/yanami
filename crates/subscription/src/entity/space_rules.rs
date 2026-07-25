@@ -4,7 +4,7 @@ use async_trait::async_trait;
 
 use crate::entity::{
     cap::{RuleMatcher, SpaceRuleMatcher},
-    model::RuleBaseData,
+    model::{RuleBaseData, MatchResult},
 };
 
 #[derive(Clone)]
@@ -22,12 +22,20 @@ impl SpaceRules {
 
 #[async_trait]
 impl SpaceRuleMatcher for SpaceRules {
-    fn is_match(&self, text: &str) -> (bool, i64) {
+    fn is_match(&self, text: &str) -> MatchResult {
         for i in &self.data {
             if self.matcher.is_match(&i.metadata.pattern, text) {
-                return (true, i.id);
+                return MatchResult {
+                    matched: true,
+                    rule_id: i.id,
+                    rule_order: i.metadata.order,
+                };
             }
         }
-        (false, 0)
+        MatchResult {
+            matched: false,
+            rule_id: 0,
+            rule_order: 0,
+        }
     }
 }

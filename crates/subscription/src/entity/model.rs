@@ -130,6 +130,13 @@ pub struct RuleProp {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MatchResult {
+    pub matched: bool,
+    pub rule_id: i64,
+    pub rule_order: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EpsiodeStatus {
     Pending,
     Downloaded,

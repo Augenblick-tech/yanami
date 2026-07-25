@@ -13,6 +13,8 @@ use crate::entity::{
 pub struct SubAnimeMatcher {
     id: i64,
     rule_id: Option<i64>,
+    candidate_rule_id: Option<i64>,
+    candidate_rule_order: Option<i64>,
     keywords: Vec<String>,
     eps: Vec<Epsiode>,
     eps_num: u32,
@@ -35,6 +37,8 @@ impl SubAnimeMatcher {
         Self {
             id,
             rule_id,
+            candidate_rule_id: None,
+            candidate_rule_order: None,
             eps_num,
             keywords,
             eps: vec![],
@@ -48,7 +52,7 @@ impl SubAnimeMatcher {
     }
 
     pub(super) fn get_rule_id(&self) -> Option<i64> {
-        self.rule_id
+        self.rule_id.or(self.candidate_rule_id)
     }
 
     pub(super) fn eps_number(&self) -> u32 {
@@ -75,11 +79,12 @@ impl SubAnimeMatcher {
             return Ok(true);
         }
 
-        // 过滤规则
-        let (matched, rule_id) = self.matcher.is_match(res.title());
-        if !matched {
-            return Ok(matched);
+        let result = self.matcher.is_match(res.title());
+        if !result.matched {
+            return Ok(result.matched);
         }
+        let rule_id = result.rule_id;
+        let order = result.rule_order;
         let mut title_match = false;
 
         // 匹配关键字
@@ -93,15 +98,31 @@ impl SubAnimeMatcher {
             return Ok(title_match);
         }
 
-        if let Some(id) = self.rule_id
-            && rule_id != id
-        {
-            return Err(Error::conflict(format!(
-                "sub anime matcher match resource failed, got matched rule id {}, but bind {}",
-                rule_id, id
-            )));
+        if let Some(current_rule_id) = self.rule_id {
+            if rule_id != current_rule_id {
+                return Err(Error::conflict(format!(
+                    "sub anime matcher match resource failed, got matched rule id {}, but bind {}",
+                    rule_id, current_rule_id
+                )));
+            }
+        } else {
+            if let Some(candidate_order) = self.candidate_rule_order {
+                if order < candidate_order {
+                    self.eps.clear();
+                    self.candidate_rule_id = Some(rule_id);
+                    self.candidate_rule_order = Some(order);
+                } else if order > candidate_order {
+                    return Ok(true);
+                } else {
+                    if self.candidate_rule_id != Some(rule_id) {
+                        return Ok(true);
+                    }
+                }
+            } else {
+                self.candidate_rule_id = Some(rule_id);
+                self.candidate_rule_order = Some(order);
+            }
         }
-        self.rule_id = Some(rule_id);
         self.eps.push(Epsiode {
             sub_anime_id: self.id,
             resource_id: *res.id(),
@@ -110,6 +131,6 @@ impl SubAnimeMatcher {
         });
 
 
-        Ok(matched)
+        Ok(true)
     }
 }
