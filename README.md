@@ -107,7 +107,7 @@ jwt_expire_seconds = 3600
 tmdb_token = "your-tmdb-token"
 ```
 
-*注：部分参数也可通过命令行覆盖，如 `--host`、`--port`、`--db-path` 等。*
+*注：部分参数也可通过命令行覆盖，如 `--host`、`--port`、`--db-path` 等。初始用户名密码会输出到标准输出*
 
 ## 文档
 
@@ -116,11 +116,3 @@ tmdb_token = "your-tmdb-token"
 | OpenAPI JSON | `http://127.0.0.1:3000/openapi.json` |
 | ReDoc | `http://127.0.0.1:3000/redoc` |
 | Swagger UI | `http://127.0.0.1:3000/swagger-ui` |
-
-## 测试
-
-```bash
-cargo test
-cargo test -p cmd
-cargo test -p web
-```
