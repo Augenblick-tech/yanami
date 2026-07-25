@@ -2,8 +2,8 @@ use crate::{
     app_ctx::AppContext,
     error::ApiError,
     model::{
-        AccessTokenClaims, ApiResponse, CreateSubscriptionRequest, EpisodeItem, RecentEpisodeQuery,
-        RecentEpisodeResponse, SearchStatusRequest,
+        AccessTokenClaims, ApiResponse, BindRuleRequest, CreateSubscriptionRequest, EpisodeItem,
+        RecentEpisodeQuery, RecentEpisodeResponse, SearchStatusRequest,
     },
 };
 use axum::{
@@ -232,6 +232,62 @@ pub async fn set_search_status(
     }
 
     ctx.roots.sub_animes.save(&entity).await?;
+
+    Ok(Json(ApiResponse::ok(())))
+}
+
+/// 手动绑定规则
+#[utoipa::path(
+    post,
+    path = "/api/v1/subscription/{id}/bind_rule",
+    operation_id = "subscription_bind_rule",
+    tag = "Subscription",
+    summary = "手动绑定规则",
+    description = "为指定番剧订阅手动绑定一个规则并清空历史剧集记录。\n\n调用此接口需要在请求头中携带有效的 JWT Token。",
+    params(
+        ("id" = i64, Path, description = "订阅记录的唯一 ID")
+    ),
+    request_body = BindRuleRequest,
+    responses(
+        (status = 200, description = "操作成功。返回数据的 `data` 字段为空。"),
+        (status = 400, description = "请求参数校验失败"),
+        (status = 401, description = "未授权：未提供 Token，或 Token 已过期/无效"),
+        (status = 403, description = "禁止访问：Token 鉴权通过但系统中找不到该对应的用户记录或越权操作"),
+        (status = 404, description = "资源不存在：未找到该订阅记录"),
+        (status = 500, description = "服务器内部错误"),
+    ),
+    security(
+        ("jwt" = [])
+    )
+)]
+pub async fn bind_rule(
+    State(ctx): State<Arc<AppContext>>,
+    Extension(user): Extension<AccessTokenClaims>,
+    Path(id): Path<i64>,
+    Json(req): Json<BindRuleRequest>,
+) -> Result<Json<ApiResponse<()>>, ApiError> {
+    let Some(user_entity) = ctx.roots.users.get(user.user_id).await? else {
+        return Err(ApiError::forbidden("not found user"));
+    };
+
+    let Some(entity) = ctx.roots.sub_animes.find_by_sub_anime_id(id).await? else {
+        return Err(ApiError::not_found("not found subscription"));
+    };
+
+    if entity.space_id() != user_entity.space_id() {
+        return Err(ApiError::forbidden("forbidden"));
+    }
+
+    let Some(rule_entity) = ctx.roots.rules.find(req.rule_id).await? else {
+        return Err(ApiError::not_found("not found rule"));
+    };
+
+    if rule_entity.space_id() != user_entity.space_id() {
+        return Err(ApiError::forbidden("forbidden"));
+    }
+
+    let eps_collection = ctx.roots.sub_animes.as_eps(&entity).await;
+    eps_collection.binding_rule(req.rule_id).await?;
 
     Ok(Json(ApiResponse::ok(())))
 }

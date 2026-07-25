@@ -69,7 +69,11 @@ impl SubAnimeEpsiodes {
                 .iter()
                 .any(|item| item.resource_id == i.resource_id)
             {
-                tracing::info!("sub anime matcher matched resource, sub_anime_id: {}, resource title: {}", i.sub_anime_id, i.title);
+                tracing::info!(
+                    "sub anime matcher matched resource, sub_anime_id: {}, resource title: {}",
+                    i.sub_anime_id,
+                    i.title
+                );
                 entity_eps_matched.push(i);
             }
         }
@@ -104,6 +108,35 @@ impl SubAnimeEpsiodes {
             .collect::<Vec<_>>();
 
         Ok(check_missing_episodes(&eps, self.eps))
+    }
+
+    pub async fn binding_rule(&self, rule_id: i64) -> Result<(), Error> {
+        let prop = self
+            .repo
+            .find_sub_anime(self.sub_anime_id)
+            .await
+            .map_err(|e| Error::external("sub anime eps load entity failed", e))?
+            .ok_or_else(|| Error::not_found("sub anime not found"))?;
+        let mut entity = SubAnimeEntity::new(prop.data, prop.extend);
+        let Some(binded_rule_id) = entity.get_rule_id() else {
+            entity.auto_bind_rule(rule_id)?;
+            self.repo
+                .update_sub_anime(entity.get_base_data())
+                .await
+                .map_err(|e| Error::external("sub anime eps bind rule save entity failed", e))?;
+            return Ok(());
+        };
+        if binded_rule_id == rule_id {
+            return Ok(());
+        }
+
+        // 清空现有的剧集并同步更新规则
+        self.repo
+            .binding_rule_and_clear_eps(self.sub_anime_id, rule_id)
+            .await
+            .map_err(|e| Error::external("sub anime eps bind rule clear eps failed", e))?;
+
+        Ok(())
     }
 }
 

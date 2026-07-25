@@ -33,6 +33,7 @@ pub trait SubAnimeRepository: Send + Sync {
         eps: &[Episode],
     ) -> Result<()>;
     async fn delete(&self, sub_anime: i64) -> Result<()>;
+    async fn binding_rule_and_clear_eps(&self, sub_anime: i64, rule_id: i64) -> Result<()>;
 }
 
 #[async_trait]

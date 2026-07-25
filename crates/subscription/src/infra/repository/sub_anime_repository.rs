@@ -282,4 +282,32 @@ impl SubAnimeRepository for SubAnimeSqliteClient {
         tx.commit().await?;
         Ok(())
     }
+
+    async fn binding_rule_and_clear_eps(&self, sub_anime: i64, rule_id: i64) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
+
+        let result = sqlx::query(
+            "UPDATE sub_anime 
+             SET rule_id = ?, progress = 0 
+             WHERE id = ? 
+               AND space_id = (SELECT space_id FROM rule WHERE id = ?)"
+        )
+        .bind(rule_id)
+        .bind(sub_anime)
+        .bind(rule_id)
+        .execute(&mut *tx)
+        .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(anyhow!("binding failed: sub_anime not found, rule not found, or space_id mismatch"));
+        }
+
+        sqlx::query("DELETE FROM sub_anime_episode WHERE sub_anime_id = ?")
+            .bind(sub_anime)
+            .execute(&mut *tx)
+            .await?;
+
+        tx.commit().await?;
+        Ok(())
+    }
 }

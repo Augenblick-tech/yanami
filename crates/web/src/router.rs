@@ -41,6 +41,10 @@ pub fn route(ctx: Arc<AppContext>) -> Router {
             "/subscription/{id}/search_status",
             post(subscription::set_search_status),
         )
+        .route(
+            "/subscription/{id}/bind_rule",
+            post(subscription::bind_rule),
+        )
         .route("/stat", get(stat::get_system_stat))
         .route(
             "/user/download/config",
@@ -100,6 +104,7 @@ async fn api_not_found() -> impl IntoResponse {
         subscription::list_eps,
         subscription::recent_episodes,
         subscription::set_search_status,
+        subscription::bind_rule,
         user::list_download_config,
         user::save_download_config,
         user::delete_download_config,
@@ -123,6 +128,7 @@ async fn api_not_found() -> impl IntoResponse {
             crate::model::RecentEpisodeResponse,
             crate::model::RecentEpisodeQuery,
             crate::model::SearchStatusRequest,
+            crate::model::BindRuleRequest,
             crate::model::EditAnimeRequest,
             crate::model::PageAnimeRequest,
             crate::error::ErrorResponse,

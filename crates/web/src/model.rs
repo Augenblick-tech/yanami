@@ -64,6 +64,13 @@ pub struct CreateSubscriptionRequest {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
+pub struct BindRuleRequest {
+    /// 规则 ID
+    #[schema(example = 1)]
+    pub rule_id: i64,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct PageAnimeRequest {
     pub page: Option<usize>,
     pub page_size: Option<usize>,
