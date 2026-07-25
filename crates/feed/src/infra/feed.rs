@@ -191,7 +191,7 @@ impl FeedFetcher for HttpFeedFetcher {
             )));
         }
 
-        Ok(build_source_key(title, link))
+        Ok(build_source_key(link))
     }
 }
 
@@ -240,7 +240,7 @@ fn parse_feed(content: &[u8], feed_url: &str) -> Result<ParsedFeed, FeedFetchErr
         )));
     }
 
-    let source_key = build_source_key(channel_title, channel_link);
+    let source_key = build_source_key(channel_link);
     let mut items = Vec::new();
 
     for item in channel.items() {
@@ -303,10 +303,8 @@ fn parse_feed(content: &[u8], feed_url: &str) -> Result<ParsedFeed, FeedFetchErr
     Ok(ParsedFeed { source_key, items })
 }
 
-fn build_source_key(title: &str, link: &str) -> String {
+fn build_source_key(link: &str) -> String {
     let mut hasher = Sha1::new();
-    hasher.update(title.trim().to_lowercase().as_bytes());
-    hasher.update(b"\n");
     hasher.update(link.trim().to_lowercase().as_bytes());
     format!("{:x}", hasher.finalize())
 }
