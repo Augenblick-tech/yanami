@@ -2,7 +2,7 @@ use common::shared::error::Error;
 use std::sync::Arc;
 
 use crate::entity::{
-    cap::{DownloaderManager, UserRepository, CryptoProvider},
+    cap::{CryptoProvider, DownloaderManager, UserRepository},
     downloader::Downloader,
     model::UserRole,
     user_entity::UserEntity,
@@ -37,7 +37,10 @@ impl Users {
             .await
             .map_err(|e| Error::external("users get user failed", e))?;
         if let Some(props) = props {
-            Ok(Some(UserEntity::new(props.data, self.crypto_provider.clone())))
+            Ok(Some(UserEntity::new(
+                props.data,
+                self.crypto_provider.clone(),
+            )))
         } else {
             Ok(None)
         }
@@ -50,7 +53,10 @@ impl Users {
             .await
             .map_err(|e| Error::external("users get user by username failed", e))?;
         if let Some(user) = user {
-            Ok(Some(UserEntity::new(user.data, self.crypto_provider.clone())))
+            Ok(Some(UserEntity::new(
+                user.data,
+                self.crypto_provider.clone(),
+            )))
         } else {
             Ok(None)
         }
@@ -119,7 +125,7 @@ impl Users {
             .map(char::from)
             .collect();
 
-        self.create("moexco", &password, UserRole::Admin, false)
+        self.create("moexco", &password, UserRole::Admin, true)
             .await?;
 
         println!("============================================================");
