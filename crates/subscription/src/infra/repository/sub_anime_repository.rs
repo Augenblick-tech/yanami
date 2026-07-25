@@ -16,9 +16,11 @@ use crate::{
 #[async_trait]
 impl SubAnimeRepository for SubAnimeSqliteClient {
     async fn insert_sub_anime(&self, space_id: i64, anime_id: i64) -> Result<SubAnimeProps> {
-        let insert_result = sqlx::query("INSERT INTO sub_anime (anime_id, space_id) VALUES (?, ?)")
+        let status = i32::from(crate::entity::model::SubAnimeSearchStatus::Pending);
+        let insert_result = sqlx::query("INSERT INTO sub_anime (anime_id, space_id, search_status) VALUES (?, ?, ?)")
             .bind(anime_id)
             .bind(space_id)
+            .bind(status)
             .execute(&self.pool)
             .await;
 

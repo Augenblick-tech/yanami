@@ -1,6 +1,6 @@
 use anyhow::Result;
 use chrono::{Duration, Local};
-use feed::entity::{feeds::Feeds, model::FeedFetchResult::Success};
+use feed::entity::{feeds::Feeds, model::FeedFetchResult};
 use futures::StreamExt;
 use resource::entity::{model::ResourceQuery, resources::Resources};
 use subscription::entity::{
@@ -17,17 +17,34 @@ pub async fn get_resource_and_match_task(
     let feed_entity_list = feeds.list_site_feeds().await?;
     for feed_entity in &feed_entity_list {
         match feed_entity.list().await {
-            Ok(res) => {
-                if let Success(res) = res
-                    && let Err(e) = resources.just_save(res).await
-                {
-                    error!(
-                        "get resource task save {} data failed, {}",
+            Ok(res) => match res {
+                FeedFetchResult::Success(res) => {
+                    if let Err(e) = resources.just_save(res).await {
+                        error!(
+                            "get resource task save {} data failed, {}",
+                            feed_entity.id(),
+                            e
+                        );
+                    }
+                }
+                FeedFetchResult::Retryable(e) => {
+                    tracing::warn!(
+                        "get resource task get {} feed retryable failed, {}",
                         feed_entity.id(),
                         e
                     );
                 }
-            }
+                FeedFetchResult::Failure(e) => {
+                    tracing::error!(
+                        "get resource task get {} feed failed, {}",
+                        feed_entity.id(),
+                        e
+                    );
+                }
+                FeedFetchResult::Denied => {
+                    tracing::warn!("get resource task get {} feed denied", feed_entity.id());
+                }
+            },
             Err(e) => {
                 error!(
                     "get resource task get {} feed failed, {}",
