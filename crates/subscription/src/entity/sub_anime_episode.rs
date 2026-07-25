@@ -47,7 +47,8 @@ impl SubAnimeEpsiodes {
             .repo
             .find_sub_anime(self.sub_anime_id)
             .await
-            .map_err(|e| Error::external("sub anime eps load entity failed", e))?;
+            .map_err(|e| Error::external("sub anime eps load entity failed", e))?
+            .ok_or_else(|| Error::not_found("sub anime not found"))?;
         let mut entity = SubAnimeEntity::new(prop.data, prop.extend);
         // 尝试绑定规则
         entity.auto_bind_rule(rule_id)?;

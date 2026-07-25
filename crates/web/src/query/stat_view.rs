@@ -31,7 +31,7 @@ impl StatQuery {
         let user_subscribed_count = sub_anime_row.0;
 
         // 3. 获取等待搜索的委托数
-        let mandate_row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM search_mandate")
+        let mandate_row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM search_pool")
             .fetch_one(&self.pool)
             .await?;
         let waiting_mandates_count = mandate_row.0;
@@ -44,8 +44,8 @@ impl StatQuery {
                 COUNT(1) AS total_count,
                 SUM(CASE WHEN sa.id IS NOT NULL THEN 1 ELSE 0 END) AS sub_count,
                 SUM(CASE WHEN sa.id IS NOT NULL AND sa.progress = 0 THEN 1 ELSE 0 END) AS not_started_count,
-                SUM(CASE WHEN sa.id IS NOT NULL AND sa.progress > 0 AND sa.progress < COALESCE((SELECT planned_ep_count FROM anime_season s WHERE s.anime_id = a.id ORDER BY season_number ASC LIMIT 1), 9999) THEN 1 ELSE 0 END) AS updating_count,
-                SUM(CASE WHEN sa.progress >= COALESCE((SELECT planned_ep_count FROM anime_season s WHERE s.anime_id = a.id ORDER BY season_number ASC LIMIT 1), 9999) THEN 1 ELSE 0 END) AS completed_count,
+                SUM(CASE WHEN sa.id IS NOT NULL AND sa.progress > 0 AND sa.progress < COALESCE((SELECT planned_ep_count FROM anime_season s WHERE s.anime_id = a.id ORDER BY CASE WHEN s.target_source = 'Bangumi' THEN 0 ELSE 1 END ASC, season_number ASC LIMIT 1), 9999) THEN 1 ELSE 0 END) AS updating_count,
+                SUM(CASE WHEN sa.progress >= COALESCE((SELECT planned_ep_count FROM anime_season s WHERE s.anime_id = a.id ORDER BY CASE WHEN s.target_source = 'Bangumi' THEN 0 ELSE 1 END ASC, season_number ASC LIMIT 1), 9999) THEN 1 ELSE 0 END) AS completed_count,
                 SUM(CASE WHEN sa.search_status = 0 THEN 1 ELSE 0 END) AS not_search_count,
                 SUM(CASE WHEN sa.search_status = 1 THEN 1 ELSE 0 END) AS pending_count,
                 SUM(CASE WHEN sa.search_status = 2 THEN 1 ELSE 0 END) AS matching_count,

@@ -41,7 +41,9 @@ impl SubAnimeRepository for SubAnimeSqliteClient {
         if inserted_id == 0 {
             return Err(anyhow!("insert into sub_anime returned 0 rows affected"));
         }
-        self.find_sub_anime(inserted_id).await
+        self.find_sub_anime(inserted_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("inserted sub anime not found"))
     }
 
     async fn delete(&self, sub_anime: i64) -> Result<()> {
@@ -114,14 +116,14 @@ impl SubAnimeRepository for SubAnimeSqliteClient {
         Ok(())
     }
 
-    async fn find_sub_anime(&self, id: i64) -> Result<SubAnimeProps> {
+    async fn find_sub_anime(&self, id: i64) -> Result<Option<SubAnimeProps>> {
         let mut builder = QueryBuilder::new(Self::BASE_SELECT_JOIN);
         builder.push(" WHERE sa.id = ");
         builder.push_bind(id);
         builder.push(" GROUP BY sa.id");
 
-        let row = builder.build().fetch_one(&self.pool).await?;
-        Self::row_to_sub_anime_props(&row)
+        let row = builder.build().fetch_optional(&self.pool).await?;
+        row.map(|r| Self::row_to_sub_anime_props(&r)).transpose()
     }
 
     async fn find_by_anime_ids(

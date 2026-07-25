@@ -104,6 +104,9 @@ pub struct AnimeResponse {
     #[schema(example = 1)]
     pub air_weekday: i64,
     pub eps: u32,
+    /// 季度编号 (第几季)
+    #[schema(example = 1)]
+    pub season: u32,
     pub sub_info: Option<AnimeSubInfo>,
 }
 

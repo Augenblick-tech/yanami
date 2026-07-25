@@ -101,13 +101,13 @@ impl AnimeViewQuery {
                     qb.push(" AND sa.space_id IS NOT NULL ");
                 }
                 2 => {
-                    qb.push(" AND sa.space_id IS NOT NULL AND sa.progress >= COALESCE((SELECT planned_ep_count FROM anime_season s WHERE s.anime_id = a.id ORDER BY season_number ASC LIMIT 1), 9999) ");
+                    qb.push(" AND sa.space_id IS NOT NULL AND sa.progress >= COALESCE((SELECT planned_ep_count FROM anime_season s WHERE s.anime_id = a.id ORDER BY CASE WHEN s.target_source = 'Bangumi' THEN 0 ELSE 1 END ASC, season_number ASC LIMIT 1), 9999) ");
                 }
                 3 => {
                     qb.push(" AND sa.space_id IS NOT NULL AND sa.progress = 0 ");
                 }
                 4 => {
-                    qb.push(" AND sa.space_id IS NOT NULL AND sa.progress > 0 AND sa.progress < COALESCE((SELECT planned_ep_count FROM anime_season s WHERE s.anime_id = a.id ORDER BY season_number ASC LIMIT 1), 9999) ");
+                    qb.push(" AND sa.space_id IS NOT NULL AND sa.progress > 0 AND sa.progress < COALESCE((SELECT planned_ep_count FROM anime_season s WHERE s.anime_id = a.id ORDER BY CASE WHEN s.target_source = 'Bangumi' THEN 0 ELSE 1 END ASC, season_number ASC LIMIT 1), 9999) ");
                 }
                 _ => {}
             }
@@ -158,8 +158,9 @@ impl AnimeViewQuery {
 
         qb.push(
             "
-                (SELECT planned_ep_count FROM anime_season s WHERE s.anime_id = p.id ORDER BY season_number ASC LIMIT 1) AS eps,
-                (SELECT description FROM anime_season s WHERE s.anime_id = p.id ORDER BY season_number ASC LIMIT 1) AS desc
+                (SELECT planned_ep_count FROM anime_season s WHERE s.anime_id = p.id ORDER BY CASE WHEN s.target_source = 'Bangumi' THEN 0 ELSE 1 END ASC, season_number ASC LIMIT 1) AS eps,
+                (SELECT season_number FROM anime_season s WHERE s.anime_id = p.id ORDER BY CASE WHEN s.target_source = 'Bangumi' THEN 0 ELSE 1 END ASC, season_number ASC LIMIT 1) AS season,
+                (SELECT description FROM anime_season s WHERE s.anime_id = p.id ORDER BY CASE WHEN s.target_source = 'Bangumi' THEN 0 ELSE 1 END ASC, season_number ASC LIMIT 1) AS desc
             FROM paginated p
             LEFT JOIN sub_anime sa ON sa.anime_id = p.id AND sa.space_id = "
         );
@@ -181,10 +182,21 @@ impl AnimeViewQuery {
 
             let lang_name: Option<String> = row.try_get("lang_name").unwrap_or(None);
 
-            let desc = row.get::<Option<String>, _>("desc").unwrap_or_default();
-            let air_date = row.get::<Option<String>, _>("air_date").unwrap_or_default();
+            let desc = row
+                .get::<Option<String>, _>("desc")
+                .ok_or_else(|| anyhow::anyhow!("anime {} missing desc", anime_id))?;
+            let air_date = row
+                .get::<Option<String>, _>("air_date")
+                .ok_or_else(|| anyhow::anyhow!("anime {} missing air_date", anime_id))?;
             let air_weekday = row.get::<i64, _>("air_weekday");
-            let eps = row.get::<Option<i32>, _>("eps").unwrap_or(0) as u32;
+            let eps = row
+                .get::<Option<i32>, _>("eps")
+                .ok_or_else(|| anyhow::anyhow!("anime {} missing eps", anime_id))?
+                as u32;
+            let season = row
+                .get::<Option<i32>, _>("season")
+                .ok_or_else(|| anyhow::anyhow!("anime {} missing season", anime_id))?
+                as u32;
 
             let sub_anime_id: Option<i64> = row.get("sub_anime_id");
 
@@ -202,6 +214,7 @@ impl AnimeViewQuery {
                 air_date,
                 air_weekday,
                 eps,
+                season,
                 sub_info,
             });
         }

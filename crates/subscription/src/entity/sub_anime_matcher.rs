@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use chrono::NaiveDateTime;
 use common::shared::error::Error;
 use resource::entity::resource_entity::ResourceEntity;
 
@@ -15,6 +16,7 @@ pub struct SubAnimeMatcher {
     keywords: Vec<String>,
     eps: Vec<Epsiode>,
     eps_num: u32,
+    time_range: std::ops::Range<i64>,
 
     matcher: Arc<dyn SpaceRuleMatcher>,
 }
@@ -26,13 +28,17 @@ impl SubAnimeMatcher {
         eps_num: u32,
         keywords: Vec<String>,
         matcher: Arc<dyn SpaceRuleMatcher>,
+        time_range: std::ops::Range<NaiveDateTime>,
     ) -> Self {
+        let start = time_range.start.and_utc().timestamp();
+        let end = time_range.end.and_utc().timestamp();
         Self {
             id,
             rule_id,
             eps_num,
             keywords,
             eps: vec![],
+            time_range: start..end,
             matcher,
         }
     }
@@ -54,6 +60,11 @@ impl SubAnimeMatcher {
     }
 
     pub fn match_resource(&mut self, res: &ResourceEntity) -> Result<bool, Error> {
+        // 时间范围过滤
+        if !self.time_range.contains(&res.published_at()) {
+            return Ok(false);
+        }
+
         // 判断是否已经匹配过
         if self
             .eps

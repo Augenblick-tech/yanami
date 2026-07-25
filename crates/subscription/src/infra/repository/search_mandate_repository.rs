@@ -52,13 +52,29 @@ impl SearchMandateRepository for SearchMandateSqliteClient {
         delete_qb
             .push(" AND search_mandate_id IN (SELECT id FROM search_mandate WHERE anime_id = ");
         delete_qb.push_bind(anime_id);
-        delete_qb.push(")");
+        delete_qb.push(") RETURNING search_mandate_id");
 
-        delete_qb
+        let delete_row = delete_qb
             .build()
-            .execute(&mut *tx)
+            .fetch_optional(&mut *tx)
             .await
             .context("delete pool record failed")?;
+
+        if let Some(r) = delete_row {
+            let mandate_id: i64 = r.get(0);
+            let mut delete_mandate_qb = QueryBuilder::new("DELETE FROM search_mandate WHERE id = ");
+            delete_mandate_qb.push_bind(mandate_id);
+            delete_mandate_qb
+                .push(" AND NOT EXISTS (SELECT 1 FROM search_pool WHERE search_mandate_id = ");
+            delete_mandate_qb.push_bind(mandate_id);
+            delete_mandate_qb.push(")");
+
+            delete_mandate_qb
+                .build()
+                .execute(&mut *tx)
+                .await
+                .context("clean mandate record failed")?;
+        }
 
         let mut count_qb = QueryBuilder::new(
             "SELECT COUNT(*) FROM search_pool WHERE search_mandate_id IN (SELECT id FROM search_mandate WHERE anime_id = ",

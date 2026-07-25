@@ -9,7 +9,7 @@ use crate::entity::{
     model::{RuleQuery, SubAnimeListQuery},
     rule_entity::RuleEntity,
     space_rules::SpaceRules,
-    sub_anime_entity::SubAnimeEntity,
+    sub_anime_entity::{SubAnimeEntity, SubAnimeEntityMatcher},
     sub_anime_episode::SubAnimeEpsiodes,
     sub_anime_matcher::SubAnimeMatcher,
 };
@@ -72,7 +72,7 @@ impl SubAnimes {
             .find_sub_anime(id)
             .await
             .map_err(|e| Error::external("sub anime find entity by id failed", e))?;
-        Ok(Some(SubAnimeEntity::new(prop.data, prop.extend)))
+        Ok(prop.map(|p| SubAnimeEntity::new(p.data, p.extend)))
     }
 
     pub async fn find_by_anime_ids(
@@ -182,6 +182,7 @@ impl SubAnimes {
             entity.eps_number(),
             entity.keywords(),
             matcher,
+            entity.match_time_range(),
         ))
     }
 }

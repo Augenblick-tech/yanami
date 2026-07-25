@@ -16,7 +16,7 @@ pub trait SubAnimeRepository: Send + Sync {
     async fn insert_sub_anime(&self, space_id: i64, anime_id: i64) -> Result<SubAnimeProps>;
     async fn update_sub_anime(&self, data: &SubAnimeBaseData) -> Result<()>;
     async fn update_sub_animes(&self, data: &[SubAnimeBaseData]) -> Result<()>;
-    async fn find_sub_anime(&self, id: i64) -> Result<SubAnimeProps>;
+    async fn find_sub_anime(&self, id: i64) -> Result<Option<SubAnimeProps>>;
     async fn list(&self, query: &SubAnimeListQuery) -> Result<Vec<SubAnimeProps>>;
     async fn find_by_anime_ids(
         &self,
