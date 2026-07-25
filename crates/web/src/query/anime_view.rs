@@ -143,6 +143,8 @@ impl AnimeViewQuery {
                 sa.id AS sub_anime_id,
                 sa.search_status,
                 sa.progress,
+                sa.rule_id,
+                r.name AS rule_name,
                 (SELECT name FROM anime_title t WHERE t.anime_id = p.id AND t.is_origin = 1 LIMIT 1) AS origin_name,
                 ",
         );
@@ -165,6 +167,7 @@ impl AnimeViewQuery {
             LEFT JOIN sub_anime sa ON sa.anime_id = p.id AND sa.space_id = "
         );
         qb.push_bind(space_id);
+        qb.push(" LEFT JOIN rule r ON r.id = sa.rule_id ");
 
         let query = qb.build();
         let rows = query.fetch_all(&self.pool).await?;
@@ -204,6 +207,8 @@ impl AnimeViewQuery {
                 sub_anime_id: id,
                 search_status: row.get::<i32, _>("search_status"),
                 progress: row.get::<i32, _>("progress") as u32,
+                rule_id: row.get::<Option<i64>, _>("rule_id"),
+                rule_name: row.get::<Option<String>, _>("rule_name"),
             });
 
             data.push(AnimeResponse {

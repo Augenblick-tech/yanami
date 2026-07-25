@@ -129,6 +129,8 @@ pub struct AnimeSubInfo {
     #[schema(example = 0)]
     pub search_status: i32,
     pub progress: u32,
+    pub rule_id: Option<i64>,
+    pub rule_name: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
