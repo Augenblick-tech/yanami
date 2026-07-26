@@ -123,7 +123,7 @@ impl AnimeViewQuery {
         if has_keyword {
             qb.push(" ORDER BY rank ASC ");
         } else {
-            qb.push(" ORDER BY air_date DESC, id DESC ");
+            qb.push(" ORDER BY id DESC ");
         }
 
         let offset = (page - 1) * page_size;
