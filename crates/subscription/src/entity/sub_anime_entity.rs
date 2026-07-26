@@ -127,11 +127,23 @@ impl SubAnimeEntity {
         }
     }
 
+    pub(super) fn search_keywords(&self) -> Vec<String> {
+        let mut keywords: Vec<String> = self
+            .extend
+            .titles
+            .iter()
+            .flat_map(|i| common::shared::str::to_search_keywords(i))
+            .collect();
+        keywords.sort();
+        keywords.dedup();
+        keywords
+    }
+
     pub fn get_search_urls(
         &self,
         search_url_provider: &dyn FeedSearchUrlProvider,
     ) -> Vec<SearchUrls> {
-        let keywords = self.keywords();
+        let keywords = self.search_keywords();
         search_url_provider.made_search_url(&keywords)
     }
 }

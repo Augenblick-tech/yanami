@@ -39,19 +39,32 @@ impl StatQuery {
         // 4. 获取各季度统计
         let quarter_rows = sqlx::query(
             "
+            WITH FirstSeason AS (
+                SELECT 
+                    anime_id, 
+                    planned_ep_count,
+                    ROW_NUMBER() OVER(
+                        PARTITION BY anime_id 
+                        ORDER BY 
+                            CASE WHEN target_source = 'Bangumi' THEN 0 ELSE 1 END ASC, 
+                            season_number ASC
+                    ) as rn
+                FROM anime_season
+            )
             SELECT 
                 a.air_quarter,
                 COUNT(1) AS total_count,
                 SUM(CASE WHEN sa.id IS NOT NULL THEN 1 ELSE 0 END) AS sub_count,
                 SUM(CASE WHEN sa.id IS NOT NULL AND sa.progress = 0 THEN 1 ELSE 0 END) AS not_started_count,
-                SUM(CASE WHEN sa.id IS NOT NULL AND sa.progress > 0 AND sa.progress < COALESCE((SELECT planned_ep_count FROM anime_season s WHERE s.anime_id = a.id ORDER BY CASE WHEN s.target_source = 'Bangumi' THEN 0 ELSE 1 END ASC, season_number ASC LIMIT 1), 9999) THEN 1 ELSE 0 END) AS updating_count,
-                SUM(CASE WHEN sa.progress >= COALESCE((SELECT planned_ep_count FROM anime_season s WHERE s.anime_id = a.id ORDER BY CASE WHEN s.target_source = 'Bangumi' THEN 0 ELSE 1 END ASC, season_number ASC LIMIT 1), 9999) THEN 1 ELSE 0 END) AS completed_count,
+                SUM(CASE WHEN sa.id IS NOT NULL AND sa.progress > 0 AND sa.progress < COALESCE(fs.planned_ep_count, 9999) THEN 1 ELSE 0 END) AS updating_count,
+                SUM(CASE WHEN sa.progress >= COALESCE(fs.planned_ep_count, 9999) THEN 1 ELSE 0 END) AS completed_count,
                 SUM(CASE WHEN sa.search_status = 0 THEN 1 ELSE 0 END) AS not_search_count,
                 SUM(CASE WHEN sa.search_status = 1 THEN 1 ELSE 0 END) AS pending_count,
                 SUM(CASE WHEN sa.search_status = 2 THEN 1 ELSE 0 END) AS matching_count,
                 SUM(CASE WHEN sa.search_status = 3 THEN 1 ELSE 0 END) AS searching_count
             FROM anime a
             LEFT JOIN sub_anime sa ON a.id = sa.anime_id AND sa.space_id = ?
+            LEFT JOIN FirstSeason fs ON fs.anime_id = a.id AND fs.rn = 1
             GROUP BY a.air_quarter
             ORDER BY a.air_quarter DESC
             "
