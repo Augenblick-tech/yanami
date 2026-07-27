@@ -47,15 +47,22 @@ impl BgmClient {
             }
 
             let subs = self.get_subjects(id).await?;
-            let Some(prequel) = subs.iter().find(|&i| {
-                i.subject_type == SubjectType::Anime && i.relation == Relation::Prequel
-            }) else {
+            let Some(prequel) = subs
+                .iter()
+                .find(|&i| i.subject_type == SubjectType::Anime && i.relation == Relation::Prequel)
+            else {
                 return Ok(season_number);
             };
             id = prequel.id as i64;
-            
+
             let detail = self.get_subject(id).await?;
-            if detail.platform.as_deref().unwrap_or_default().to_lowercase() == "tv" {
+            if detail
+                .platform
+                .as_deref()
+                .unwrap_or_default()
+                .to_lowercase()
+                == "tv"
+            {
                 season_number += 1;
             }
         }

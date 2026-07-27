@@ -130,7 +130,6 @@ impl SubAnimeMatcher {
             status: EpsiodeStatus::Pending,
         });
 
-
         Ok(true)
     }
 }

@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::{path::Path, sync::Arc, time::Duration};
 
 use anime::{
     entity::{anime_source::AnimeSources, animes::Animes},
@@ -56,6 +56,7 @@ pub struct Base {
     pub http_client: Client,
     pub auth_config: AuthConfig,
     pub tmdb_token: String,
+    pub data_dir: String,
 }
 
 #[derive(Clone)]
@@ -117,6 +118,7 @@ impl AppContext {
         db_filename: &str,
         auth_config: AuthConfig,
         tmdb_token: String,
+        data_dir: String,
         log_level_reloader: LogLevelReloader,
     ) -> Self {
         let mut headers = HeaderMap::new();
@@ -127,12 +129,15 @@ impl AppContext {
                 .expect("build http client default header failed"),
         );
 
+        let base_db_path = Path::new(&data_dir);
+        let db_path = base_db_path.join(db_filename);
+
         let base = Base {
             pool: SqlitePoolOptions::new()
                 .max_connections(10)
                 .connect_with(
                     SqliteConnectOptions::new()
-                        .filename(db_filename)
+                        .filename(db_path.to_str().expect("not found db path"))
                         .create_if_missing(true)
                         .journal_mode(SqliteJournalMode::Wal)
                         .synchronous(SqliteSynchronous::Normal),
@@ -147,6 +152,7 @@ impl AppContext {
                 .expect("build http client failed"),
             auth_config,
             tmdb_token,
+            data_dir,
         };
 
         let (repo, caps) = Self::init_repo_and_caps(&base, log_level_reloader);
@@ -168,7 +174,7 @@ impl AppContext {
 
     fn init_repo_and_caps(base: &Base, log_level_reloader: LogLevelReloader) -> (Repo, Caps) {
         let matcher = RegexRuleMatcher::new(base.regex_cache.clone());
-        let downloader_manager = Arc::new(DownloaderManager::new(base.http_client.clone()));
+        let downloader_manager = Arc::new(DownloaderManager::new(base.data_dir.clone()));
         let access_policy = BackoffPolicy::new();
 
         let tmdb_client = Arc::new(TmdbClient::new(&base.tmdb_token, base.http_client.clone()));

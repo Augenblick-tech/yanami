@@ -138,6 +138,35 @@ impl SubAnimeEpsiodes {
 
         Ok(())
     }
+
+    pub async fn save_epsiode(&self, entity: &EpsiodeEntity) -> Result<(), Error> {
+        self.repo
+            .update_epsiode_status(entity.get_base_data())
+            .await
+            .map_err(|e| Error::external("save epsiode download status failed", e))?;
+        Ok(())
+    }
+
+    pub async fn get_epsiode(&self, ep_id: i64) -> Result<Option<EpsiodeEntity>, Error> {
+        let prop = self
+            .repo
+            .find_epsiode(ep_id)
+            .await
+            .map_err(|e| Error::external("sub animes get epsiode failed", e))?;
+        Ok(prop.map(|p| EpsiodeEntity::new(p.data, p.extend)))
+    }
+
+    pub async fn save_epsiodes(&self, entities: &[EpsiodeEntity]) -> Result<(), Error> {
+        if entities.is_empty() {
+            return Ok(());
+        }
+        let data: Vec<_> = entities.iter().map(|e| e.get_base_data().clone()).collect();
+        self.repo
+            .update_epsiodes_status(&data)
+            .await
+            .map_err(|e| Error::external("sub animes save epsiodes failed", e))?;
+        Ok(())
+    }
 }
 
 fn check_missing_episodes(episodes: &[i64], total_episodes: u32) -> bool {

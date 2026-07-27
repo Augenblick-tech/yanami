@@ -104,9 +104,14 @@ pub async fn local_match_task(
         if sub_anime_entity.request_search() {
             let search_url_provider = feeds.get_search_feeds().await?;
             let search_urls = sub_anime_entity.get_search_urls(&search_url_provider);
-            search_mandates
+            if search_mandates
                 .create_from_search_urls(sub_anime_entity.anime_id(), search_urls)
-                .await?;
+                .await?
+                .is_empty()
+            {
+                // 如果搜索委托数量为零，则取消搜索
+                sub_anime_entity.cancel_search();
+            }
         }
         // 保存结果
         sub_animes.save(&sub_anime_entity).await?;
@@ -189,23 +194,32 @@ pub async fn search_task(
         };
 
         if done {
-            let mut pending_sub_anime_entity_list = sub_animes
-                .list(&SubAnimeListQuery {
-                    anime_id: Some(anime_id),
-                    space_id: None,
-                    search_status: None,
-                    sub_status: None,
-                    limit: None,
-                })
-                .await
-                .unwrap_or_default();
+            // 保存失败时，尝试有限次数重试
+            // TODO: 需要一种合理的机制，根治这种分步导致的状态不一致问题
+            for _ in 1..4 {
+                let Ok(mut pending_sub_anime_entity_list) = sub_animes
+                    .list(&SubAnimeListQuery {
+                        anime_id: Some(anime_id),
+                        space_id: None,
+                        search_status: None,
+                        sub_status: None,
+                        limit: None,
+                    })
+                    .await
+                else {
+                    continue;
+                };
 
-            pending_sub_anime_entity_list.retain_mut(|i| i.cancel_search());
+                pending_sub_anime_entity_list.retain_mut(|i| i.cancel_search());
 
-            if !pending_sub_anime_entity_list.is_empty()
-                && let Err(e) = sub_animes.saves(&pending_sub_anime_entity_list).await {
+                if !pending_sub_anime_entity_list.is_empty()
+                    && let Err(e) = sub_animes.saves(&pending_sub_anime_entity_list).await
+                {
                     tracing::error!("search task saves sub anime entity failed, {}", e);
+                } else {
+                    break;
                 }
+            }
         }
     }
 

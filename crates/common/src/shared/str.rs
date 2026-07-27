@@ -36,7 +36,18 @@ mod tests {
 
         assert_eq!(
             to_search_keywords("Clevatess.Majuu.no.Ou.to.Akago.to.Kabane.no.Yuusha"),
-            vec!["Clevatess", "Majuu", "no", "Ou", "to", "Akago", "to", "Kabane", "no", "Yuusha"]
+            vec![
+                "Clevatess",
+                "Majuu",
+                "no",
+                "Ou",
+                "to",
+                "Akago",
+                "to",
+                "Kabane",
+                "no",
+                "Yuusha"
+            ]
         );
 
         assert_eq!(
@@ -45,8 +56,24 @@ mod tests {
         );
 
         assert_eq!(
-            to_search_keywords("Clevatess: The King of Devil Beasts, The Baby and the Brave of Undead"),
-            vec!["Clevatess", "The", "King", "of", "Devil", "Beasts", "The", "Baby", "and", "the", "Brave", "of", "Undead"]
+            to_search_keywords(
+                "Clevatess: The King of Devil Beasts, The Baby and the Brave of Undead"
+            ),
+            vec![
+                "Clevatess",
+                "The",
+                "King",
+                "of",
+                "Devil",
+                "Beasts",
+                "The",
+                "Baby",
+                "and",
+                "the",
+                "Brave",
+                "of",
+                "Undead"
+            ]
         );
     }
 }

@@ -25,6 +25,10 @@ impl Downloader {
             downloader: download_provider,
         }
     }
+
+    pub fn provider(&self) -> Arc<dyn DownloadProvider> {
+        self.downloader.clone()
+    }
 }
 
 #[async_trait]

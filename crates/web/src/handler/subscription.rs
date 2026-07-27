@@ -291,3 +291,102 @@ pub async fn bind_rule(
 
     Ok(Json(ApiResponse::ok(())))
 }
+
+/// 重置整个番剧的下载状态
+#[utoipa::path(
+    put,
+    path = "/api/v1/subscription/{id}/eps",
+    operation_id = "subscription_reset_all_eps",
+    tag = "Subscription",
+    summary = "重置整个番剧的下载状态",
+    description = "将指定番剧订阅下的所有剧集重置为未下载状态。\n\n调用此接口需要在请求头中携带有效的 JWT Token。",
+    params(
+        ("id" = i64, Path, description = "番剧订阅记录 ID")
+    ),
+    responses(
+        (status = 200, description = "重置成功"),
+        (status = 401, description = "未授权：未提供 Token，或 Token 已过期/无效"),
+        (status = 403, description = "权限不足：该订阅记录不属于当前用户"),
+        (status = 404, description = "找不到对应的订阅记录")
+    ),
+    security(
+        ("jwt" = [])
+    )
+)]
+pub async fn reset_all_eps(
+    State(ctx): State<Arc<AppContext>>,
+    Extension(user): Extension<AccessTokenClaims>,
+    Path(id): Path<i64>,
+) -> Result<Json<ApiResponse<()>>, ApiError> {
+    let Some(user_entity) = ctx.roots.users.get(user.user_id).await? else {
+        return Err(ApiError::forbidden("not found user"));
+    };
+
+    let Some(entity) = ctx.roots.sub_animes.find_by_sub_anime_id(id).await? else {
+        return Err(ApiError::not_found("not found subscription"));
+    };
+
+    if entity.space_id() != user_entity.space_id() {
+        return Err(ApiError::forbidden("forbidden"));
+    }
+
+    let sub_anime_eps = ctx.roots.sub_animes.as_eps(&entity).await;
+    let mut eps = sub_anime_eps.list().await?;
+    for ep in &mut eps {
+        ep.reset_download();
+    }
+    sub_anime_eps.save_epsiodes(&eps).await?;
+
+    Ok(Json(ApiResponse::ok(())))
+}
+
+/// 重置单集剧集的下载状态
+#[utoipa::path(
+    put,
+    path = "/api/v1/subscription/{id}/eps/{ep_id}",
+    operation_id = "subscription_reset_ep",
+    tag = "Subscription",
+    summary = "重置单集剧集状态",
+    description = "重置指定剧集的下载状态为未下载。\n\n调用此接口需要在请求头中携带有效的 JWT Token。",
+    params(
+        ("id" = i64, Path, description = "番剧订阅记录 ID"),
+        ("ep_id" = i64, Path, description = "剧集 ID")
+    ),
+    responses(
+        (status = 200, description = "重置成功"),
+        (status = 401, description = "未授权：未提供 Token，或 Token 已过期/无效"),
+        (status = 403, description = "权限不足：该订阅记录不属于当前用户"),
+        (status = 404, description = "找不到对应的订阅记录或剧集")
+    ),
+    security(
+        ("jwt" = [])
+    )
+)]
+pub async fn update_ep_status(
+    State(ctx): State<Arc<AppContext>>,
+    Extension(user): Extension<AccessTokenClaims>,
+    Path((id, ep_id)): Path<(i64, i64)>,
+) -> Result<Json<ApiResponse<()>>, ApiError> {
+    let Some(user_entity) = ctx.roots.users.get(user.user_id).await? else {
+        return Err(ApiError::forbidden("not found user"));
+    };
+
+    let Some(entity) = ctx.roots.sub_animes.find_by_sub_anime_id(id).await? else {
+        return Err(ApiError::not_found("not found subscription"));
+    };
+
+    if entity.space_id() != user_entity.space_id() {
+        return Err(ApiError::forbidden("forbidden"));
+    }
+
+    let sub_anime_eps = ctx.roots.sub_animes.as_eps(&entity).await;
+
+    let Some(mut episode) = sub_anime_eps.get_epsiode(ep_id).await? else {
+        return Err(ApiError::not_found("not found episode"));
+    };
+
+    episode.reset_download();
+    sub_anime_eps.save_epsiode(&episode).await?;
+
+    Ok(Json(ApiResponse::ok(())))
+}

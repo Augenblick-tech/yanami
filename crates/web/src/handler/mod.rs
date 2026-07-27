@@ -1,4 +1,5 @@
 pub mod anime;
+pub mod downloader;
 pub mod feed;
 pub mod rule;
 pub mod stat;

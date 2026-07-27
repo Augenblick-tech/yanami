@@ -26,6 +26,7 @@ regex = { workspace = true }
 sqlx = { workspace = true }
 rust-embed = "8.5"
 mime_guess = "2.0"
+hex = { workspace = true }
 
 [lints]
 workspace = true

@@ -137,14 +137,6 @@ impl SubAnimes {
         SubAnimeEpsiodes::new(entity.id(), entity.eps_number(), self.repo.clone())
     }
 
-    pub async fn save_epsiode(&self, entity: &EpsiodeEntity) -> Result<(), Error> {
-        self.repo
-            .update_epsiode_status(entity.get_base_data())
-            .await
-            .map_err(|e| Error::external("save epsiode download status failed", e))?;
-        Ok(())
-    }
-
     pub async fn as_matcher(&self, entity: &SubAnimeEntity) -> Result<SubAnimeMatcher, Error> {
         let matcher: Arc<dyn SpaceRuleMatcher> = match entity.get_rule_id() {
             Some(rule_id) => {

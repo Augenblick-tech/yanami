@@ -16,9 +16,15 @@ pub async fn download_task(sub_animes: SubAnimes, users: Users) -> Result<()> {
         Ok(None) => return Ok(()),
         Err(e) => Err(e)?,
     };
-    if epsiode_entity.download(&downloader).await? {
-        sub_animes.save_epsiode(&epsiode_entity).await?;
-    }
+    if let Some(sub_anime_entity) = sub_animes
+        .find_by_sub_anime_id(epsiode_entity.sub_anime_id())
+        .await?
+    {
+        let sub_anime_eps = sub_animes.as_eps(&sub_anime_entity).await;
+        if epsiode_entity.download(&downloader).await? {
+            sub_anime_eps.save_epsiode(&epsiode_entity).await?;
+        }
+    };
 
     Ok(())
 }

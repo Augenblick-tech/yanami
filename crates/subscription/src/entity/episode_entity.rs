@@ -75,6 +75,10 @@ impl EpsiodeEntity {
         }
         Ok(res)
     }
+
+    pub fn reset_download(&mut self) {
+        self.data.ep.status = EpsiodeStatus::Pending;
+    }
 }
 
 impl EpsiodeEntity {

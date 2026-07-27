@@ -1,10 +1,10 @@
 use aes_gcm::{
-    aead::{Aead, KeyInit},
     Aes256Gcm, Key, Nonce,
+    aead::{Aead, KeyInit},
 };
-use anyhow::{anyhow, Result};
-use base64::{engine::general_purpose::URL_SAFE, Engine};
-use rand::{rngs::OsRng, RngCore};
+use anyhow::{Result, anyhow};
+use base64::{Engine, engine::general_purpose::URL_SAFE};
+use rand::{RngCore, rngs::OsRng};
 use sha2::{Digest, Sha256};
 
 use crate::entity::cap::CryptoProvider;
@@ -54,8 +54,8 @@ impl CryptoProvider for AesCryptoProvider {
             .map_err(|e| anyhow!("decode cipher failed: {}", e))?;
 
         let cipher_alg = Aes256Gcm::new(&self.key);
-        let nonce = Nonce::try_from(nonce_bytes.as_slice())
-            .map_err(|_| anyhow!("invalid nonce length"))?;
+        let nonce =
+            Nonce::try_from(nonce_bytes.as_slice()).map_err(|_| anyhow!("invalid nonce length"))?;
 
         let plaintext_bytes = cipher_alg
             .decrypt(&nonce, cipher_bytes.as_ref())

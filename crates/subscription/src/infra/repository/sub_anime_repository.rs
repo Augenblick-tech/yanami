@@ -17,12 +17,14 @@ use crate::{
 impl SubAnimeRepository for SubAnimeSqliteClient {
     async fn insert_sub_anime(&self, space_id: i64, anime_id: i64) -> Result<SubAnimeProps> {
         let status = i32::from(crate::entity::model::SubAnimeSearchStatus::Pending);
-        let insert_result = sqlx::query("INSERT INTO sub_anime (anime_id, space_id, search_status) VALUES (?, ?, ?)")
-            .bind(anime_id)
-            .bind(space_id)
-            .bind(status)
-            .execute(&self.pool)
-            .await;
+        let insert_result = sqlx::query(
+            "INSERT INTO sub_anime (anime_id, space_id, search_status) VALUES (?, ?, ?)",
+        )
+        .bind(anime_id)
+        .bind(space_id)
+        .bind(status)
+        .execute(&self.pool)
+        .await;
 
         let inserted_id = match insert_result {
             Ok(r) => r.last_insert_rowid(),
@@ -225,6 +227,15 @@ impl SubAnimeRepository for SubAnimeSqliteClient {
         Ok(results)
     }
 
+    async fn find_epsiode(&self, ep_id: i64) -> Result<Option<EpisodeProp>> {
+        let mut builder: QueryBuilder<sqlx::Sqlite> = QueryBuilder::new(Self::EPISODE_SELECT_JOIN);
+        builder.push(" WHERE se.id = ");
+        builder.push_bind(ep_id);
+
+        let row = builder.build().fetch_optional(&self.pool).await?;
+        row.map(|r| Self::row_to_episode_prop(&r)).transpose()
+    }
+
     async fn get_one_undownload_ep(&self) -> Result<Option<EpisodeProp>> {
         let mut builder: QueryBuilder<sqlx::Sqlite> = QueryBuilder::new(Self::EPISODE_SELECT_JOIN);
 
@@ -246,6 +257,34 @@ impl SubAnimeRepository for SubAnimeSqliteClient {
             .bind(data.id)
             .execute(&self.pool)
             .await?;
+        Ok(())
+    }
+
+    async fn update_epsiodes_status(&self, data: &[EpisodeBaseData]) -> Result<()> {
+        if data.is_empty() {
+            return Ok(());
+        }
+
+        let mut builder = QueryBuilder::new("UPDATE sub_anime_episode SET ");
+
+        builder.push("status = CASE id");
+        for item in data {
+            let status: i32 = item.ep.status.clone().into();
+            builder
+                .push(" WHEN ")
+                .push_bind(item.id)
+                .push(" THEN ")
+                .push_bind(status);
+        }
+        builder.push(" END, updated_at = (unixepoch()) WHERE id IN (");
+
+        let mut separated = builder.separated(", ");
+        for item in data {
+            separated.push_bind(item.id);
+        }
+        separated.push_unseparated(")");
+
+        builder.build().execute(&self.pool).await?;
         Ok(())
     }
 
@@ -290,7 +329,7 @@ impl SubAnimeRepository for SubAnimeSqliteClient {
             "UPDATE sub_anime 
              SET rule_id = ?, progress = 0 
              WHERE id = ? 
-               AND space_id = (SELECT space_id FROM rule WHERE id = ?)"
+               AND space_id = (SELECT space_id FROM rule WHERE id = ?)",
         )
         .bind(rule_id)
         .bind(sub_anime)
@@ -299,7 +338,9 @@ impl SubAnimeRepository for SubAnimeSqliteClient {
         .await?;
 
         if result.rows_affected() == 0 {
-            return Err(anyhow!("binding failed: sub_anime not found, rule not found, or space_id mismatch"));
+            return Err(anyhow!(
+                "binding failed: sub_anime not found, rule not found, or space_id mismatch"
+            ));
         }
 
         sqlx::query("DELETE FROM sub_anime_episode WHERE sub_anime_id = ?")

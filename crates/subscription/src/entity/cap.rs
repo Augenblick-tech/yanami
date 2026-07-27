@@ -2,7 +2,7 @@ use crate::entity::model::{
     Episode, EpisodeBaseData, EpisodeProp, Mandate, SearchMandateProp, SubAnimeBaseData,
     SubAnimeListQuery, SubAnimeProps,
 };
-use crate::entity::model::{Rule, RuleBaseData, RuleQuery, MatchResult};
+use crate::entity::model::{MatchResult, Rule, RuleBaseData, RuleQuery};
 use anyhow::Result;
 use async_trait::async_trait;
 
@@ -25,8 +25,10 @@ pub trait SubAnimeRepository: Send + Sync {
     ) -> Result<Vec<SubAnimeProps>>;
 
     async fn list_eps(&self, sub_anime_id: i64) -> Result<Vec<EpisodeProp>>;
+    async fn find_epsiode(&self, ep_id: i64) -> Result<Option<EpisodeProp>>;
     async fn get_one_undownload_ep(&self) -> Result<Option<EpisodeProp>>;
     async fn update_epsiode_status(&self, data: &EpisodeBaseData) -> Result<()>;
+    async fn update_epsiodes_status(&self, data: &[EpisodeBaseData]) -> Result<()>;
     async fn update_sub_anime_progress(
         &self,
         data: &SubAnimeBaseData,

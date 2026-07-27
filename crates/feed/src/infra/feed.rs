@@ -345,7 +345,9 @@ trait FeedParser {
     }
 
     fn extract_source_url(&self, item: &Item) -> Option<String> {
-        item.link().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+        item.link()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
     }
 
     fn extract_resource_url(&self, item: &Item) -> Option<String> {
@@ -386,8 +388,14 @@ impl FeedParser for MikanParser {
         let xml_str = String::from_utf8_lossy(content).into_owned();
         // 修复 Mikan 的 RSS 数据：Mikan 移除了 'mikan' 前缀，转而对 `<torrent>` 使用默认命名空间。
         // 由于 `rss` 库在解析时会直接丢弃没有前缀的非标准标签，因此我们必须在解析前将前缀重新注入。
-        let mut patched = xml_str.replace("<rss version=\"2.0\">", "<rss version=\"2.0\" xmlns:mikan=\"https://mikanani.me/0.1/\">");
-        patched = patched.replace("<torrent xmlns=\"https://mikanani.me/0.1/\">", "<mikan:torrent>");
+        let mut patched = xml_str.replace(
+            "<rss version=\"2.0\">",
+            "<rss version=\"2.0\" xmlns:mikan=\"https://mikanani.me/0.1/\">",
+        );
+        patched = patched.replace(
+            "<torrent xmlns=\"https://mikanani.me/0.1/\">",
+            "<mikan:torrent>",
+        );
         patched = patched.replace("</torrent>", "</mikan:torrent>");
         patched
     }
@@ -426,7 +434,9 @@ impl FeedParser for NyaaParser {
     }
 
     fn extract_resource_url(&self, item: &Item) -> Option<String> {
-        item.link().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+        item.link()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
     }
 
     fn extract_info_hash(&self, item: &Item, resource_url: &str) -> Result<[u8; 20], String> {
@@ -437,11 +447,12 @@ impl FeedParser for NyaaParser {
             .and_then(|v| v.first())
             .and_then(|e| e.value())
             && let Ok(bytes) = hex::decode(hash_str)
-                && bytes.len() == 20 {
-                    let mut arr = [0u8; 20];
-                    arr.copy_from_slice(&bytes);
-                    return Ok(arr);
-                }
+            && bytes.len() == 20
+        {
+            let mut arr = [0u8; 20];
+            arr.copy_from_slice(&bytes);
+            return Ok(arr);
+        }
         DefaultParser.extract_info_hash(item, resource_url)
     }
 }

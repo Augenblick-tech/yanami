@@ -32,30 +32,35 @@ impl From<UserRole> for u8 {
 #[derive(Debug, Clone, Deserialize, Serialize, Hash, Eq, PartialEq)]
 pub enum DownloaderConfig {
     Qbit(DownloadConfig<QbitConfig>),
+    Default(DownloadConfig<DefaultDownloaderConfig>),
 }
 
 impl DownloaderConfig {
     pub fn is_active(&self) -> bool {
         match self {
             DownloaderConfig::Qbit(download_config) => download_config.active,
+            DownloaderConfig::Default(download_config) => download_config.active,
         }
     }
 
     pub fn base_path(&self) -> &str {
         match self {
             DownloaderConfig::Qbit(download_config) => &download_config.base_path,
+            DownloaderConfig::Default(download_config) => &download_config.base_path,
         }
     }
 
     pub fn name(&self) -> &str {
         match self {
             DownloaderConfig::Qbit(download_config) => &download_config.name,
+            DownloaderConfig::Default(download_config) => &download_config.name,
         }
     }
 
     pub fn set_active(&mut self, active: bool) {
         match self {
             DownloaderConfig::Qbit(download_config) => download_config.active = active,
+            DownloaderConfig::Default(download_config) => download_config.active = active,
         }
     }
 
@@ -65,6 +70,7 @@ impl DownloaderConfig {
                 c.config.password = "************".to_string();
                 DownloaderConfig::Qbit(c)
             }
+            DownloaderConfig::Default(c) => DownloaderConfig::Default(c),
         }
     }
 
@@ -76,6 +82,7 @@ impl DownloaderConfig {
                     .map_err(|e| Error::external("encrypt password failed", e))?;
                 qbit.config.password = cipher;
             }
+            DownloaderConfig::Default(_) => {}
         }
         Ok(())
     }
@@ -88,6 +95,7 @@ impl DownloaderConfig {
                     .map_err(|e| Error::external("decrypt password failed", e))?;
                 qbit.config.password = plain;
             }
+            DownloaderConfig::Default(_) => {}
         }
         Ok(())
     }
@@ -106,6 +114,60 @@ pub struct QbitConfig {
     pub username: String,
     pub password: String,
     pub url: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+pub struct DefaultDownloaderConfig {
+    /// 分钟
+    pub max_seed_time: Option<u64>,
+    pub max_seed_ratio: Option<f64>,
+    /// 单位: KB/s
+    pub max_upload_speed: Option<u64>,
+}
+
+impl Eq for DefaultDownloaderConfig {}
+
+impl std::hash::Hash for DefaultDownloaderConfig {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.max_seed_time.hash(state);
+        self.max_upload_speed.hash(state);
+        if let Some(ratio) = self.max_seed_ratio {
+            state.write_u64(ratio.to_bits());
+        } else {
+            state.write_u8(0);
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DownloadState {
+    Downloading,
+    Paused,
+    Completed,
+    Error(String),
+}
+
+impl std::fmt::Display for DownloadState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Downloading => write!(f, "downloading"),
+            Self::Paused => write!(f, "paused"),
+            Self::Completed => write!(f, "completed"),
+            Self::Error(e) => write!(f, "error: {}", e),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct DownloadTask {
+    pub hash: [u8; 20],
+    pub name: String,
+    pub state: DownloadState,
+    pub progress: f64,
+    /// 单位: 字节 (Bytes)
+    pub total_size: u64,
+    /// 单位: 字节/秒 (B/s)
+    pub download_speed: u64,
 }
 
 #[derive(Debug, Clone)]

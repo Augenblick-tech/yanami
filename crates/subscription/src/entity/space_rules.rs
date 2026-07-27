@@ -4,7 +4,7 @@ use async_trait::async_trait;
 
 use crate::entity::{
     cap::{RuleMatcher, SpaceRuleMatcher},
-    model::{RuleBaseData, MatchResult},
+    model::{MatchResult, RuleBaseData},
 };
 
 #[derive(Clone)]

@@ -8,8 +8,9 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
-    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+        tracing_subscriber::EnvFilter::new("info,librqbit=error,librqbit_dht=error")
+    });
     let (filter, reload_handle) = tracing_subscriber::reload::Layer::new(filter);
 
     tracing_subscriber::registry()
@@ -41,6 +42,7 @@ async fn init(
             crypto_secret: config.auth.crypto_secret.clone(),
         },
         config.external.tmdb_token.clone(),
+        config.data_dir.clone(),
         reloader,
     )
     .await;

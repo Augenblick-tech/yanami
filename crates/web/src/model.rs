@@ -7,7 +7,9 @@ use feed::entity::feed_entity::FeedEntity;
 use serde::{Deserialize, Serialize};
 use subscription::entity::episode_entity::EpsiodeEntity;
 use subscription::entity::rule_entity::RuleEntity;
-use user::entity::model::{DownloadConfig, DownloaderConfig, QbitConfig, UserRole};
+use user::entity::model::{
+    DefaultDownloaderConfig, DownloadConfig, DownloaderConfig, QbitConfig, UserRole,
+};
 use utoipa::ToSchema;
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -61,6 +63,33 @@ pub struct CreateSubscriptionRequest {
     /// 番剧ID
     #[schema(example = 1)]
     pub anime_id: i64,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct DownloadTaskResponse {
+    #[schema(example = "abcdef1234567890abcdef1234567890abcdef12")]
+    pub hash: String,
+    pub name: String,
+    #[schema(example = "Downloading")]
+    pub state: String,
+    #[schema(example = 0.5)]
+    pub progress: f64,
+    pub total_size: u64,
+    pub download_speed: u64,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub enum DownloadTaskAction {
+    #[serde(rename = "pause")]
+    Pause,
+    #[serde(rename = "resume")]
+    Resume,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct DownloadTaskActionRequest {
+    #[schema(example = "pause")]
+    pub action: DownloadTaskAction,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -286,6 +315,16 @@ pub struct QbitSettings {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]
+pub struct DefaultDownloaderSettings {
+    /// 最小做种时间 (分钟)
+    pub max_seed_time: Option<u64>,
+    /// 最大分享率
+    pub max_seed_ratio: Option<f64>,
+    /// 最大上传速度 (KB/s)
+    pub max_upload_speed: Option<u64>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]
 pub struct DownloadSettings<T> {
     pub name: String,
     pub active: bool,
@@ -296,6 +335,7 @@ pub struct DownloadSettings<T> {
 #[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]
 pub enum DownloaderSettings {
     Qbit(DownloadSettings<QbitSettings>),
+    Default(DownloadSettings<DefaultDownloaderSettings>),
 }
 impl From<QbitConfig> for QbitSettings {
     fn from(config: QbitConfig) -> Self {
@@ -317,8 +357,39 @@ impl From<QbitSettings> for QbitConfig {
     }
 }
 
+impl From<DefaultDownloaderConfig> for DefaultDownloaderSettings {
+    fn from(config: DefaultDownloaderConfig) -> Self {
+        Self {
+            max_seed_time: config.max_seed_time,
+            max_seed_ratio: config.max_seed_ratio,
+            max_upload_speed: config.max_upload_speed,
+        }
+    }
+}
+
+impl From<DefaultDownloaderSettings> for DefaultDownloaderConfig {
+    fn from(settings: DefaultDownloaderSettings) -> Self {
+        Self {
+            max_seed_time: settings.max_seed_time,
+            max_seed_ratio: settings.max_seed_ratio,
+            max_upload_speed: settings.max_upload_speed,
+        }
+    }
+}
+
 impl From<DownloadConfig<QbitConfig>> for DownloadSettings<QbitSettings> {
     fn from(config: DownloadConfig<QbitConfig>) -> Self {
+        Self {
+            name: config.name,
+            active: config.active,
+            base_path: config.base_path,
+            config: config.config.into(),
+        }
+    }
+}
+
+impl From<DownloadConfig<DefaultDownloaderConfig>> for DownloadSettings<DefaultDownloaderSettings> {
+    fn from(config: DownloadConfig<DefaultDownloaderConfig>) -> Self {
         Self {
             name: config.name,
             active: config.active,
@@ -339,6 +410,17 @@ impl From<DownloadSettings<QbitSettings>> for DownloadConfig<QbitConfig> {
     }
 }
 
+impl From<DownloadSettings<DefaultDownloaderSettings>> for DownloadConfig<DefaultDownloaderConfig> {
+    fn from(settings: DownloadSettings<DefaultDownloaderSettings>) -> Self {
+        Self {
+            name: settings.name,
+            active: settings.active,
+            base_path: settings.base_path,
+            config: settings.config.into(),
+        }
+    }
+}
+
 impl From<&DownloaderConfig> for DownloaderSettings {
     fn from(config: &DownloaderConfig) -> Self {
         config.clone().into()
@@ -349,6 +431,7 @@ impl From<DownloaderConfig> for DownloaderSettings {
     fn from(config: DownloaderConfig) -> Self {
         match config {
             DownloaderConfig::Qbit(c) => DownloaderSettings::Qbit(c.into()),
+            DownloaderConfig::Default(c) => DownloaderSettings::Default(c.into()),
         }
     }
 }
@@ -357,6 +440,7 @@ impl From<DownloaderSettings> for DownloaderConfig {
     fn from(settings: DownloaderSettings) -> Self {
         match settings {
             DownloaderSettings::Qbit(c) => DownloaderConfig::Qbit(c.into()),
+            DownloaderSettings::Default(c) => DownloaderConfig::Default(c.into()),
         }
     }
 }

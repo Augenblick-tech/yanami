@@ -7,8 +7,8 @@ use common::shared::error::Error;
 
 use crate::entity::model::{DownloaderConfig, UserBaseData, UserRole};
 
-use std::sync::Arc;
 use crate::entity::cap::CryptoProvider;
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct UserEntity {
@@ -18,7 +18,10 @@ pub struct UserEntity {
 
 impl UserEntity {
     pub(super) fn new(data: UserBaseData, crypto_provider: Arc<dyn CryptoProvider>) -> Self {
-        Self { data, crypto_provider }
+        Self {
+            data,
+            crypto_provider,
+        }
     }
 
     pub(super) fn get_base_data(&self) -> &UserBaseData {

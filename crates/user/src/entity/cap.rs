@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use crate::entity::model::{DownloaderConfig, UserBaseData, UserProps, UserRole};
+use crate::entity::model::{DownloadTask, DownloaderConfig, UserBaseData, UserProps, UserRole};
 use anyhow::Result;
 
 #[async_trait]
@@ -26,6 +26,11 @@ pub trait UserRepository: Send + Sync {
 pub trait DownloadProvider: Send + Sync {
     async fn download(&self, url: &str, path: &str, hash: [u8; 20]) -> Result<bool>;
     fn name(&self) -> &str;
+    async fn list(&self) -> Result<Vec<DownloadTask>>;
+    async fn get(&self, hash: [u8; 20]) -> Result<Option<DownloadTask>>;
+    async fn pause(&self, hash: [u8; 20]) -> Result<()>;
+    async fn resume(&self, hash: [u8; 20]) -> Result<()>;
+    async fn delete(&self, hash: [u8; 20]) -> Result<()>;
 }
 
 #[async_trait]

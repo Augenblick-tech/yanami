@@ -118,7 +118,13 @@ pub async fn save_download_config(
         .downloader_manager
         .validate_config(&config)
         .await
-        .map_err(|e| ApiError::new(axum::http::StatusCode::BAD_REQUEST, 400, format!("download config validate failed: {}", e)))?;
+        .map_err(|e| {
+            ApiError::new(
+                axum::http::StatusCode::BAD_REQUEST,
+                400,
+                format!("download config validate failed: {}", e),
+            )
+        })?;
 
     user_entity.save_download_config(config)?;
     ctx.roots.users.save(&user_entity).await?;

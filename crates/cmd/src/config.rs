@@ -65,7 +65,10 @@ impl AppConfig {
             toml::from_str(&config_str)
                 .with_context(|| format!("failed to parse config file {:?}", cli.config))?
         } else {
-            anyhow::bail!("config file {:?} does not exist, please provide a complete config file", cli.config);
+            anyhow::bail!(
+                "config file {:?} does not exist, please provide a complete config file",
+                cli.config
+            );
         };
 
         // 命令行参数覆盖配置文件

@@ -208,4 +208,24 @@ impl DownloadProvider for Qbit {
     fn name(&self) -> &str {
         "qbit"
     }
+
+    async fn list(&self) -> Result<Vec<crate::entity::model::DownloadTask>> {
+        anyhow::bail!("operation not supported for external downloader")
+    }
+
+    async fn get(&self, _hash: [u8; 20]) -> Result<Option<crate::entity::model::DownloadTask>> {
+        anyhow::bail!("operation not supported for external downloader")
+    }
+
+    async fn pause(&self, _hash: [u8; 20]) -> Result<()> {
+        anyhow::bail!("operation not supported for external downloader")
+    }
+
+    async fn resume(&self, _hash: [u8; 20]) -> Result<()> {
+        anyhow::bail!("operation not supported for external downloader")
+    }
+
+    async fn delete(&self, _hash: [u8; 20]) -> Result<()> {
+        anyhow::bail!("operation not supported for external downloader")
+    }
 }

@@ -13,7 +13,7 @@ use utoipa_swagger_ui::SwaggerUi;
 
 use crate::{
     app_ctx::AppContext,
-    handler::{anime, feed, rule, stat, subscription, user},
+    handler::{anime, downloader, feed, rule, stat, subscription, user},
     middleware::auth::{require_admin, require_auth},
 };
 
@@ -45,6 +45,11 @@ pub fn route(ctx: Arc<AppContext>) -> Router {
             "/subscription/{id}/bind_rule",
             post(subscription::bind_rule),
         )
+        .route("/subscription/{id}/eps", put(subscription::reset_all_eps))
+        .route(
+            "/subscription/{id}/eps/{ep_id}",
+            put(subscription::update_ep_status),
+        )
         .route("/stat", get(stat::get_system_stat))
         .route(
             "/user/download/config",
@@ -62,6 +67,11 @@ pub fn route(ctx: Arc<AppContext>) -> Router {
         .route(
             "/user/auto_sub",
             post(user::toggle_auto_sub).get(user::get_auto_sub),
+        )
+        .route("/downloader/tasks", get(downloader::list_tasks))
+        .route(
+            "/downloader/tasks/{hash}",
+            put(downloader::update_task_state).delete(downloader::delete_task),
         )
         .merge(admin)
         .layer(middleware::from_fn_with_state(ctx.clone(), require_auth));
@@ -105,6 +115,8 @@ async fn api_not_found() -> impl IntoResponse {
         subscription::recent_episodes,
         subscription::set_search_status,
         subscription::bind_rule,
+        subscription::reset_all_eps,
+        subscription::update_ep_status,
         user::list_download_config,
         user::save_download_config,
         user::delete_download_config,
@@ -115,6 +127,9 @@ async fn api_not_found() -> impl IntoResponse {
         user::login,
         stat::get_system_stat,
         stat::set_log_level,
+        downloader::list_tasks,
+        downloader::update_task_state,
+        downloader::delete_task,
     ),
     components(
         schemas(
@@ -141,7 +156,11 @@ async fn api_not_found() -> impl IntoResponse {
             crate::model::FeedItemRequest,
             crate::model::FeedItem,
             crate::model::QbitSettings,
+            crate::model::DefaultDownloaderSettings,
             crate::model::DownloaderSettings,
+            crate::model::DownloadTaskResponse,
+            crate::model::DownloadTaskActionRequest,
+
             crate::model::RuleCreateRequest,
             crate::model::RuleUpdateOrderRequest,
             crate::model::RuleItem,

@@ -20,6 +20,8 @@ rand = { workspace = true }
 aes-gcm = "0.11.0"
 base64 = "0.23.0"
 sha2 = "0.11.0"
+librqbit = { workspace = true }
+librqbit-core = { workspace = true }
 
 [lints]
 workspace = true
