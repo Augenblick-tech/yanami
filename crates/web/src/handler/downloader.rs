@@ -40,7 +40,7 @@ pub async fn list_tasks(
     let provider = get_provider(&ctx, user.user_id).await?;
 
     let tasks = provider
-        .list()
+        .list_task()
         .await
         .map_err(|_| ApiError::business(60500, "list tasks failed"))?;
 
@@ -53,6 +53,10 @@ pub async fn list_tasks(
             progress: t.progress,
             total_size: t.total_size,
             download_speed: t.download_speed,
+            is_seeding: t.is_seeding,
+            upload_speed: t.upload_speed,
+            seed_ratio: t.seed_ratio,
+            seed_duration: t.seed_duration,
         })
         .collect();
 
@@ -91,13 +95,13 @@ pub async fn update_task_state(
     match req.action {
         DownloadTaskAction::Pause => {
             provider
-                .pause(parsed_hash)
+                .pause_task(parsed_hash)
                 .await
                 .map_err(|_| ApiError::business(60500, "pause task failed"))?;
         }
         DownloadTaskAction::Resume => {
             provider
-                .resume(parsed_hash)
+                .resume_task(parsed_hash)
                 .await
                 .map_err(|_| ApiError::business(60500, "resume task failed"))?;
         }
@@ -133,7 +137,7 @@ pub async fn delete_task(
 ) -> Result<Json<ApiResponse<()>>, ApiError> {
     let (provider, parsed_hash) = get_provider_and_hash(&ctx, user.user_id, &hash).await?;
     provider
-        .delete(parsed_hash)
+        .delete_task(parsed_hash)
         .await
         .map_err(|_| ApiError::business(60500, "delete task failed"))?;
     Ok(Json(ApiResponse::ok(())))

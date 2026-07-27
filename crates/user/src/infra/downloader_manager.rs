@@ -1,9 +1,10 @@
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use dashmap::DashMap;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
+use tokio::sync::Mutex;
 
 use crate::entity::{cap::DownloadProvider, model::DownloaderConfig};
 use crate::infra::downloader::{qbit::Qbit, rqbit::DefaultDownloader};
@@ -11,6 +12,7 @@ use crate::infra::downloader::{qbit::Qbit, rqbit::DefaultDownloader};
 pub struct DownloaderManager {
     data_dir: String,
     cache: DashMap<i64, (u64, Arc<dyn DownloadProvider>)>,
+    lock: Mutex<()>,
 }
 
 impl DownloaderManager {
@@ -18,6 +20,7 @@ impl DownloaderManager {
         Self {
             data_dir,
             cache: DashMap::new(),
+            lock: Mutex::new(()),
         }
     }
 
@@ -43,6 +46,13 @@ impl crate::entity::cap::DownloaderManager for DownloaderManager {
             return Ok(entry.1.clone());
         }
 
+        if let Some((_, (_, provider))) = self.cache.remove(&user_id) {
+            provider.stop().await;
+        }
+
+        let Ok(_guard) = self.lock.try_lock() else {
+            return Err(anyhow!("waiting for init downloader"));
+        };
         let client: Arc<dyn DownloadProvider> = match config {
             DownloaderConfig::Qbit(download_config) => Arc::new(
                 Qbit::new(
@@ -71,12 +81,9 @@ impl crate::entity::cap::DownloaderManager for DownloaderManager {
                     download_config.config.password.clone(),
                 )
                 .await?;
-                Ok(())
             }
-            DownloaderConfig::Default(download_config) => {
-                let _ = DefaultDownloader::new(&download_config.config, &self.data_dir).await?;
-                Ok(())
-            }
-        }
+            DownloaderConfig::Default(_) => {}
+        };
+        Ok(())
     }
 }

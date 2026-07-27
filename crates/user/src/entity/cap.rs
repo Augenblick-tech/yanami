@@ -24,13 +24,15 @@ pub trait UserRepository: Send + Sync {
 
 #[async_trait]
 pub trait DownloadProvider: Send + Sync {
-    async fn download(&self, url: &str, path: &str, hash: [u8; 20]) -> Result<bool>;
     fn name(&self) -> &str;
-    async fn list(&self) -> Result<Vec<DownloadTask>>;
-    async fn get(&self, hash: [u8; 20]) -> Result<Option<DownloadTask>>;
-    async fn pause(&self, hash: [u8; 20]) -> Result<()>;
-    async fn resume(&self, hash: [u8; 20]) -> Result<()>;
-    async fn delete(&self, hash: [u8; 20]) -> Result<()>;
+    async fn stop(&self);
+    
+    async fn download(&self, url: &str, path: &str, hash: [u8; 20]) -> Result<bool>;
+    async fn list_task(&self) -> Result<Vec<DownloadTask>>;
+    async fn get_task(&self, hash: [u8; 20]) -> Result<Option<DownloadTask>>;
+    async fn pause_task(&self, hash: [u8; 20]) -> Result<()>;
+    async fn resume_task(&self, hash: [u8; 20]) -> Result<()>;
+    async fn delete_task(&self, hash: [u8; 20]) -> Result<()>;
 }
 
 #[async_trait]

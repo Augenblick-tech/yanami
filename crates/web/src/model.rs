@@ -74,8 +74,18 @@ pub struct DownloadTaskResponse {
     pub state: String,
     #[schema(example = 0.5)]
     pub progress: f64,
+    /// 总大小，单位: 字节 (Bytes)
     pub total_size: u64,
+    /// 下载速率，单位: 字节/秒 (B/s)
     pub download_speed: u64,
+    /// 是否正在做种
+    pub is_seeding: bool,
+    /// 上传速率，单位: 字节/秒 (B/s)
+    pub upload_speed: u64,
+    /// 做种率 (已上传/总大小)
+    pub seed_ratio: f64,
+    /// 做种时长，单位: 秒 (s)
+    pub seed_duration: Option<u64>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]

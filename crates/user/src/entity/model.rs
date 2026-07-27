@@ -168,6 +168,12 @@ pub struct DownloadTask {
     pub total_size: u64,
     /// 单位: 字节/秒 (B/s)
     pub download_speed: u64,
+    pub is_seeding: bool,
+    /// 单位: 字节/秒 (B/s)
+    pub upload_speed: u64,
+    pub seed_ratio: f64,
+    /// 单位: 秒 (s)
+    pub seed_duration: Option<u64>,
 }
 
 #[derive(Debug, Clone)]
