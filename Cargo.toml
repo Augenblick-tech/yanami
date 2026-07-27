@@ -31,6 +31,8 @@ hex = "0.4.3"
 base32 = "0.5.1"
 argon2 = { version = "0.5.3", features = ["std"] }
 rand = "0.8.5"
+librqbit = "8.1.1"
+librqbit-core = "5.0.0"
 
 [workspace.lints.clippy]
 used_underscore_binding = "deny"
