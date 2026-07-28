@@ -32,13 +32,9 @@ impl ResourceRepository for ResourceSqliteClient {
             if let Some(start_at) = query.start_at {
                 qb.push(" AND published_at >= ");
                 qb.push_bind(start_at);
-                qb.push(" AND created_at >= ");
-                qb.push_bind(start_at);
             }
             if let Some(end_at) = query.end_at {
                 qb.push(" AND published_at <= ");
-                qb.push_bind(end_at);
-                qb.push(" AND created_at <= ");
                 qb.push_bind(end_at);
             }
 
