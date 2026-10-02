@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use anyhow::{Context, Error, Result, anyhow};
-use chrono::{Datelike, NaiveDate};
+use chrono::{Datelike, Days, NaiveDate};
 use regex::Regex;
 use reqwest::Client;
 use serde_json::Value;
@@ -26,6 +26,9 @@ pub struct BgmClient {
     pub(super) client: Client,
     pub(super) tmdb: TmdbClient,
 }
+
+/// 新番列表提前下一季开始的天数
+const SYNC_LEAD_DAYS: u64 = 10;
 
 impl BgmClient {
     pub fn new(http_client: Client, tmdb: TmdbClient) -> Self {
@@ -205,6 +208,16 @@ impl BgmClient {
             10..=12 => Ok((date.year(), 10)),
             _ => Err(anyhow!("month must be 1..=12")),
         }
+    }
+
+    /// 同步新番列表时使用的季度取值：比自然季度提前 [`SYNC_LEAD_DAYS`] 天进入下一季。
+    /// bangumi-data 一般在季度开始前十天左右才发布下一季的月度文件，
+    /// 例：9 月 21 日之前仍取 7 月新番列表，9 月 21 日起改取 10 月新番列表。
+    pub(super) fn sync_season_of_date(date: &NaiveDate) -> Result<(i32, u32)> {
+        let target = date
+            .checked_add_days(Days::new(SYNC_LEAD_DAYS))
+            .ok_or_else(|| anyhow!("add {SYNC_LEAD_DAYS} days to {date} failed"))?;
+        Self::season_of_date(&target)
     }
 
     pub(super) async fn get_anime_season(
@@ -501,6 +514,71 @@ mod tests {
         assert_eq!(
             BgmClient::season_of_date(&date(2008, 4, 6)).unwrap(),
             (2008, 4)
+        );
+    }
+
+    #[test]
+    fn sync_season_of_date_enters_next_quarter_ten_days_early() {
+        // 距下一季开始还有 11 天时，仍然取上一季的新番列表
+        assert_eq!(
+            BgmClient::sync_season_of_date(&date(2026, 9, 20)).unwrap(),
+            (2026, 7)
+        );
+        assert_eq!(
+            BgmClient::sync_season_of_date(&date(2026, 6, 20)).unwrap(),
+            (2026, 4)
+        );
+        assert_eq!(
+            BgmClient::sync_season_of_date(&date(2026, 3, 21)).unwrap(),
+            (2026, 1)
+        );
+        assert_eq!(
+            BgmClient::sync_season_of_date(&date(2026, 12, 21)).unwrap(),
+            (2026, 10)
+        );
+
+        // 距下一季开始整好 10 天起，改为取下一季的新番列表
+        assert_eq!(
+            BgmClient::sync_season_of_date(&date(2026, 9, 21)).unwrap(),
+            (2026, 10)
+        );
+        assert_eq!(
+            BgmClient::sync_season_of_date(&date(2026, 6, 21)).unwrap(),
+            (2026, 7)
+        );
+        assert_eq!(
+            BgmClient::sync_season_of_date(&date(2026, 3, 22)).unwrap(),
+            (2026, 4)
+        );
+        assert_eq!(
+            BgmClient::sync_season_of_date(&date(2026, 12, 22)).unwrap(),
+            (2027, 1)
+        );
+
+        // 季度中间始终取本季的新番列表
+        assert_eq!(
+            BgmClient::sync_season_of_date(&date(2026, 7, 1)).unwrap(),
+            (2026, 7)
+        );
+        assert_eq!(
+            BgmClient::sync_season_of_date(&date(2026, 8, 31)).unwrap(),
+            (2026, 7)
+        );
+        assert_eq!(
+            BgmClient::sync_season_of_date(&date(2026, 10, 2)).unwrap(),
+            (2026, 10)
+        );
+        assert_eq!(
+            BgmClient::sync_season_of_date(&date(2026, 11, 30)).unwrap(),
+            (2026, 10)
+        );
+        assert_eq!(
+            BgmClient::sync_season_of_date(&date(2026, 1, 31)).unwrap(),
+            (2026, 1)
+        );
+        assert_eq!(
+            BgmClient::sync_season_of_date(&date(2027, 2, 28)).unwrap(),
+            (2027, 1)
         );
     }
 

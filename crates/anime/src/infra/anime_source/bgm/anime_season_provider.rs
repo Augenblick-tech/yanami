@@ -12,9 +12,10 @@ use crate::{
 #[async_trait]
 impl crate::entity::cap::AnimeSeasonalProvider for BgmClient {
     async fn get(&self) -> Result<Vec<AnimeMetadata>> {
+        // 提前十天进入下一季：9 月 21 日之前取 7 月列表，之后取 10 月列表
         // https://raw.githubusercontent.com/bangumi-data/bangumi-data/refs/heads/master/data/items/2026/07.json
         let today = Local::now().date_naive();
-        let (year, month) = Self::season_of_date(&today)?;
+        let (year, month) = Self::sync_season_of_date(&today)?;
         let url = format!(
             "https://raw.githubusercontent.com/bangumi-data/bangumi-data/refs/heads/master/data/items/{}/{:02}.json",
             year, month
