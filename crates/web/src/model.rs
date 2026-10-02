@@ -891,6 +891,9 @@ impl From<AnimeMetadata> for AnimeMetadataItem {
 impl From<AnimeMetadataItem> for AnimeMetadata {
     fn from(v: AnimeMetadataItem) -> Self {
         Self {
+            // web 请求体不携带系列展示信息：系列身份来自 external_link 的 TMDB 记录，
+            // 系列展示信息由同步链路写入 anime_series，这里不凭请求体伪造
+            series_metadata: None,
             external_link: v.external_link.into_iter().map(Into::into).collect(),
             titles: v.titles.into_iter().map(Into::into).collect(),
             air_weekday: v.air_weekday.into(),
@@ -947,4 +950,103 @@ pub struct SystemStatResponse {
     pub backoff_feeds: Vec<BackoffFeed>,
     /// 分季度的番剧统计与订阅进度列表
     pub quarter_stats: Vec<QuarterStat>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    // web 未直接依赖 serde_json，这里复用 utoipa 重新导出的 serde_json（无需新增依赖）
+    use utoipa::r#gen::serde_json;
+
+    #[test]
+    fn test_page_fields_are_preserved() {
+        let page = Page {
+            page: 2,
+            page_size: 20,
+            total: 42,
+            data: vec![1_u32, 2, 3],
+        };
+
+        assert_eq!(page.page, 2);
+        assert_eq!(page.page_size, 20);
+        assert_eq!(page.total, 42);
+        assert_eq!(page.data, vec![1_u32, 2, 3]);
+    }
+
+    #[test]
+    fn test_page_deserializes_generic_data() {
+        let raw = r#"{"page":1,"page_size":10,"total":3,"data":[1,2,3]}"#;
+        let page: Page<Vec<u32>> =
+            serde_json::from_str(raw).expect("page should deserialize");
+
+        assert_eq!(page.page, 1);
+        assert_eq!(page.page_size, 10);
+        assert_eq!(page.total, 3);
+        assert_eq!(page.data, vec![1_u32, 2, 3]);
+    }
+
+    #[test]
+    fn test_page_anime_request_full_deserialisation() {
+        // 与前端实际提交的 JSON 格式保持一致
+        let raw = r#"{
+            "page": 1,
+            "page_size": 20,
+            "keyword": "败犬女主",
+            "lang": "zh_cn",
+            "year": 2024,
+            "month": 10,
+            "subscription": true,
+            "search_status": 2,
+            "status": 4
+        }"#;
+
+        let request: PageAnimeRequest =
+            serde_json::from_str(raw).expect("full request json should deserialize");
+
+        assert_eq!(request.page, Some(1));
+        assert_eq!(request.page_size, Some(20));
+        assert_eq!(request.keyword.as_deref(), Some("败犬女主"));
+        assert_eq!(request.lang.as_deref(), Some("zh_cn"));
+        assert_eq!(request.year, Some(2024));
+        assert_eq!(request.month, Some(10));
+        assert_eq!(request.subscription, Some(true));
+        assert_eq!(request.search_status, Some(2));
+        assert_eq!(request.status, Some(4));
+    }
+
+    #[test]
+    fn test_page_anime_request_missing_fields_are_none() {
+        let request: PageAnimeRequest =
+            serde_json::from_str("{}").expect("empty json should deserialize to all none");
+
+        assert!(request.page.is_none());
+        assert!(request.page_size.is_none());
+        assert!(request.keyword.is_none());
+        assert!(request.lang.is_none());
+        assert!(request.year.is_none());
+        assert!(request.month.is_none());
+        assert!(request.subscription.is_none());
+        assert!(request.search_status.is_none());
+        assert!(request.status.is_none());
+    }
+
+    #[test]
+    fn test_page_anime_request_rejects_wrong_type() {
+        // page 应为无符号整数，传字符串必须反序列化失败
+        let result: Result<PageAnimeRequest, _> =
+            serde_json::from_str(r#"{"page":"第一页"}"#);
+        assert!(result.is_err());
+
+        // month 为 u32，负数必须反序列化失败
+        let result: Result<PageAnimeRequest, _> =
+            serde_json::from_str(r#"{"month":-1}"#);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_api_response_ok_sets_business_code() {
+        let response = ApiResponse::ok(vec![1_u32]);
+        assert_eq!(response.code, 200);
+        assert_eq!(response.data, vec![1_u32]);
+    }
 }

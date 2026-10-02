@@ -5,7 +5,7 @@ use chrono::{Local, NaiveDate};
 use crate::{
     entity::model::{
         AnimeAirWeekday, AnimeEx, AnimeIdType, AnimeLangTarget, AnimeMetadata, AnimeSeason,
-        AnimeSourceTarget, AnimeTitle,
+        AnimeSeriesMetadata, AnimeSourceTarget, AnimeTitle,
     },
     infra::anime_source::bgm::{client::BgmClient, model::BangumiItem},
 };
@@ -250,7 +250,16 @@ impl crate::entity::cap::AnimeSeasonalProvider for BgmClient {
                 }
             }
 
+            let series_metadata = Some(AnimeSeriesMetadata {
+                origin_name: tmdb_data.inner.original_name,
+                cn_name: tmdb_data.inner.name,
+                desc: tmdb_data.inner.overview,
+                air_date: tmdb_data.inner.first_air_date.unwrap_or_default(),
+                genres: tmdb_data.genres.into_iter().map(|i| i.name).collect(),
+            });
+
             let data = AnimeMetadata {
+                series_metadata,
                 external_link: ex_link,
                 titles,
                 air_weekday,

@@ -30,17 +30,16 @@ impl AnimeSqliteClient {
     pub async fn init_with_tx(&self, tx: &mut Transaction<'_, Sqlite>) -> Result<()> {
         // anime 元数据表
         sqlx::query(
-            "
-            CREATE TABLE IF NOT EXISTS anime (
-                id INTEGER PRIMARY KEY,               -- 对应 AnimeBaseData.id
-                air_weekday INTEGER NOT NULL,         -- 对应 AnimeAirWeekday (1-7)
-                air_date TEXT,                        -- 对应 NaiveDate, SQLite 标准格式 'YYYY-MM-DD'
-                air_quarter INTEGER NOT NULL,         -- 例如 202607
-                air_year INTEGER NOT NULL,            -- 冗余字段：从 202607 拆分，便于按年过滤
-                air_month INTEGER NOT NULL,           -- 冗余字段：从 202607 拆分，便于按月过滤
-                is_locked INTEGER NOT NULL DEFAULT 0, -- 对应 lock 字段，0=false, 1=true
-                created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-                updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+            "CREATE TABLE IF NOT EXISTS anime (
+                id              INTEGER PRIMARY KEY,                -- 对应 AnimeBaseData.id
+                air_weekday     INTEGER NOT NULL,                   -- 对应 AnimeAirWeekday (1-7)
+                air_date        TEXT,                               -- 对应 NaiveDate, SQLite 标准格式 'YYYY-MM-DD'
+                air_quarter     INTEGER NOT NULL,                   -- 例如 202607
+                air_year        INTEGER NOT NULL,                   -- 冗余字段：从 202607 拆分，便于按年过滤
+                air_month       INTEGER NOT NULL,                   -- 冗余字段：从 202607 拆分，便于按月过滤
+                is_locked       INTEGER NOT NULL DEFAULT 0,         -- 对应 lock 字段，0=false, 1=true
+                created_at      INTEGER NOT NULL DEFAULT (unixepoch()),
+                updated_at      INTEGER NOT NULL DEFAULT (unixepoch())
             );",
         ).execute(&mut **tx).await?;
 
@@ -65,14 +64,14 @@ impl AnimeSqliteClient {
         // anime_title 番剧标题表
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS anime_title (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            anime_id    INTEGER NOT NULL,
-            name        TEXT NOT NULL,
-            match_name  TEXT NOT NULL,
-            lang_target TEXT NOT NULL,
-            is_origin   INTEGER NOT NULL DEFAULT 0,
-            created_at  INTEGER NOT NULL DEFAULT (unixepoch())
-        );",
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                anime_id    INTEGER NOT NULL,
+                name        TEXT NOT NULL,
+                match_name  TEXT NOT NULL,
+                lang_target TEXT NOT NULL,
+                is_origin   INTEGER NOT NULL DEFAULT 0,
+                created_at  INTEGER NOT NULL DEFAULT (unixepoch())
+            );",
         )
         .execute(&mut **tx)
         .await?;
@@ -113,11 +112,11 @@ impl AnimeSqliteClient {
         // tokenize='unicode61': 支持 Unicode 分词
         sqlx::query(
             "CREATE VIRTUAL TABLE IF NOT EXISTS anime_alias_fts USING fts5(
-            char_text,
-            content='',
-            contentless_delete=1,
-            tokenize='unicode61'
-        );",
+                char_text,
+                content='',
+                contentless_delete=1,
+                tokenize='unicode61'
+            );",
         )
         .execute(&mut **tx)
         .await?;
@@ -125,13 +124,13 @@ impl AnimeSqliteClient {
         // anime_external 番剧外部信息关联表
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS anime_external (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            anime_id INTEGER NOT NULL,
-            target_source TEXT NOT NULL,
-            ext_type TEXT,
-            ext_id TEXT,
-            created_at INTEGER NOT NULL DEFAULT (unixepoch())
-        );",
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                anime_id        INTEGER NOT NULL,
+                target_source   TEXT NOT NULL,
+                ext_type        TEXT,
+                ext_id          TEXT,
+                created_at      INTEGER NOT NULL DEFAULT (unixepoch())
+            );",
         )
         .execute(&mut **tx)
         .await?;
@@ -148,16 +147,16 @@ impl AnimeSqliteClient {
         // anime_season 番剧季度信息表
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS anime_season (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            anime_id INTEGER NOT NULL,
-            target_source TEXT NOT NULL,
-            lang_target TEXT NOT NULL,
-            season_number INTEGER NOT NULL,
-            planned_ep_count INTEGER NOT NULL,
-            description TEXT NOT NULL DEFAULT '',
-            created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-            updated_at INTEGER NOT NULL DEFAULT (unixepoch())
-        );",
+                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                anime_id            INTEGER NOT NULL,
+                target_source       TEXT NOT NULL,
+                lang_target         TEXT NOT NULL,
+                season_number       INTEGER NOT NULL,
+                planned_ep_count    INTEGER NOT NULL,
+                description         TEXT NOT NULL DEFAULT '',
+                created_at          INTEGER NOT NULL DEFAULT (unixepoch()),
+                updated_at          INTEGER NOT NULL DEFAULT (unixepoch())
+            );",
         )
         .execute(&mut **tx)
         .await?;
@@ -171,19 +170,19 @@ impl AnimeSqliteClient {
         // anime_epsiode 番剧剧集信息表
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS anime_episode (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            anime_id INTEGER NOT NULL,
-            season_id INTEGER NOT NULL,
-            titles TEXT NOT NULL, -- JSON 类型数据
-            ep_number INTEGER NOT NULL,
-            sort_number REAL NOT NULL,
-            air_date TEXT,
-            duration_seconds INTEGER NOT NULL DEFAULT 0,
-            description TEXT NOT NULL DEFAULT '',
-            ext_id TEXT,
-            created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-            updated_at INTEGER NOT NULL DEFAULT (unixepoch())
-        );",
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                anime_id INTEGER NOT NULL,
+                season_id INTEGER NOT NULL,
+                titles TEXT NOT NULL, -- JSON 类型数据
+                ep_number INTEGER NOT NULL,
+                sort_number REAL NOT NULL,
+                air_date TEXT,
+                duration_seconds INTEGER NOT NULL DEFAULT 0,
+                description TEXT NOT NULL DEFAULT '',
+                ext_id TEXT,
+                created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+                updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+            );",
         )
         .execute(&mut **tx)
         .await?;
@@ -196,6 +195,38 @@ impl AnimeSqliteClient {
         )
         .execute(&mut **tx)
         .await?;
+
+        sqlx::query(
+            "
+            CREATE TABLE IF NOT EXISTS anime_series (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                origin_name     TEXT NOT NULL,
+                cn_name         TEXT NOT NULL DEFAULT '',
+                air_date        TEXT NOT NULL,
+                description     TEXT NOT NULL DEFAULT '',
+                genres          TEXT,
+                tmdb_id         INTEGER NOT NULL,
+                created_at      INTEGER NOT NULL DEFAULT (unixepoch()),
+                updated_at      INTEGER NOT NULL DEFAULT (unixepoch())
+            );
+        ",
+        )
+        .execute(&mut **tx)
+        .await?;
+
+        // tmdb_id 就是系列的唯一身份：先去重再建唯一索引，保证一个剧集只有一行系列信息
+        sqlx::query(
+            "DELETE FROM anime_series WHERE id NOT IN (SELECT MAX(id) FROM anime_series GROUP BY tmdb_id);",
+        )
+        .execute(&mut **tx)
+        .await?;
+
+        sqlx::query(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_anime_series_tmdb_id ON anime_series(tmdb_id);",
+        )
+        .execute(&mut **tx)
+        .await?;
+
         Ok(())
     }
 }
@@ -205,6 +236,47 @@ impl AnimeSqliteClient {
         let anime_id: i64 = row
             .try_get("anime_id")
             .context("Missing column 'anime_id'")?;
+
+        // 系列信息来自 TMDB 系列身份的联表：联不上就是没有系列，不编造空值
+        let series_metadata = match row.try_get::<Option<String>, _>("series_origin_name")? {
+            Some(origin_name) => {
+                let cn_name: String = row
+                    .try_get("series_cn_name")
+                    .with_context(|| format!("Anime {} missing 'series_cn_name'", anime_id))?;
+
+                let desc: String = row
+                    .try_get("series_desc")
+                    .with_context(|| format!("Anime {} missing 'series_desc'", anime_id))?;
+
+                let series_air_date_str: String = row
+                    .try_get("series_air_date")
+                    .with_context(|| format!("Anime {} missing 'series_air_date'", anime_id))?;
+                let air_date = NaiveDate::parse_from_str(&series_air_date_str, "%Y-%m-%d")
+                    .with_context(|| {
+                        format!(
+                            "Anime {} has invalid series_air_date format: {}",
+                            anime_id, series_air_date_str
+                        )
+                    })?;
+
+                let series_genres_json: String = row
+                    .try_get("series_genres")
+                    .with_context(|| format!("Anime {} missing 'series_genres'", anime_id))?;
+                let genres: Vec<String> =
+                    serde_json::from_str(&series_genres_json).with_context(|| {
+                        format!("Anime {} series_genres JSON parse failed", anime_id)
+                    })?;
+
+                Some(crate::entity::model::AnimeSeriesMetadata {
+                    origin_name,
+                    cn_name,
+                    desc,
+                    air_date,
+                    genres,
+                })
+            }
+            None => None,
+        };
 
         // 1. 基础属性解析
         let weekday_i64: i64 = row
@@ -453,6 +525,7 @@ impl AnimeSqliteClient {
             data: AnimeBaseData {
                 id: anime_id,
                 metadata: AnimeMetadata {
+                    series_metadata,
                     external_link,
                     titles,
                     air_weekday,
@@ -586,10 +659,20 @@ impl AnimeSqliteClient {
                 p.air_date,
                 p.air_quarter,
                 p.is_locked,
+                s_meta.origin_name AS series_origin_name,
+                s_meta.cn_name AS series_cn_name,
+                s_meta.description AS series_desc,
+                s_meta.air_date AS series_air_date,
+                s_meta.genres AS series_genres,
                 COALESCE(t.titles, '[]') AS titles,
                 COALESCE(e.external_links, '[]') AS external_links,
                 COALESCE(s.seasons, '[]') AS seasons
             FROM paginated p
+            LEFT JOIN anime_external s_ext ON s_ext.id = (
+                SELECT MAX(x.id) FROM anime_external x
+                WHERE x.anime_id = p.id AND x.target_source = 'TMDB'
+            )
+            LEFT JOIN anime_series s_meta ON s_meta.tmdb_id = CAST(s_ext.ext_id AS INTEGER)
             LEFT JOIN t_agg t ON p.id = t.anime_id
             LEFT JOIN e_agg e ON p.id = e.anime_id
             LEFT JOIN s_agg s ON p.id = s.anime_id
@@ -653,10 +736,20 @@ impl AnimeSqliteClient {
     )
     SELECT 
         ta.*,
+        s_meta.origin_name AS series_origin_name,
+        s_meta.cn_name AS series_cn_name,
+        s_meta.description AS series_desc,
+        s_meta.air_date AS series_air_date,
+        s_meta.genres AS series_genres,
         COALESCE(t.titles, '[]') AS titles,
         COALESCE(e.external_links, '[]') AS external_links,
         COALESCE(s.seasons, '[]') AS seasons
     FROM target_animes ta
+    LEFT JOIN anime_external s_ext ON s_ext.id = (
+        SELECT MAX(x.id) FROM anime_external x
+        WHERE x.anime_id = ta.anime_id AND x.target_source = 'TMDB'
+    )
+    LEFT JOIN anime_series s_meta ON s_meta.tmdb_id = CAST(s_ext.ext_id AS INTEGER)
     LEFT JOIN t_agg t ON ta.anime_id = t.anime_id
     LEFT JOIN e_agg e ON ta.anime_id = e.anime_id
     LEFT JOIN s_agg s ON ta.anime_id = s.anime_id
@@ -674,6 +767,47 @@ impl AnimeSqliteClient {
         is_locked: bool,
     ) -> Result<()> {
         let mut tx = self.pool.begin().await?;
+
+        let mut tmdb_id: i64 = 0;
+        for ext in &metadata.external_link {
+            if ext.target == AnimeSourceTarget::TMDB {
+                tmdb_id = match &ext.id {
+                    AnimeIdType::Int(v) => *v,
+                    AnimeIdType::String(s) => s
+                        .parse()
+                        .with_context(|| format!("invalid tmdb id format: {}", s))?,
+                };
+                break;
+            }
+        }
+
+        // 系列信息随番剧一起保存：有 TMDB 系列身份、且这次带回了系列信息才写
+        if tmdb_id > 0
+            && let Some(series_metadata) = &metadata.series_metadata
+        {
+            let genres_json = serde_json::to_string(&series_metadata.genres)?;
+            let series_air_date_str = series_metadata.air_date.format("%Y-%m-%d").to_string();
+
+            sqlx::query(
+                "INSERT INTO anime_series (origin_name, cn_name, air_date, description, genres, tmdb_id)
+                 VALUES (?, ?, ?, ?, ?, ?)
+                 ON CONFLICT(tmdb_id) DO UPDATE SET
+                    origin_name = excluded.origin_name,
+                    cn_name = excluded.cn_name,
+                    air_date = excluded.air_date,
+                    description = excluded.description,
+                    genres = excluded.genres,
+                    updated_at = unixepoch()",
+            )
+            .bind(&series_metadata.origin_name)
+            .bind(&series_metadata.cn_name)
+            .bind(&series_air_date_str)
+            .bind(&series_metadata.desc)
+            .bind(&genres_json)
+            .bind(tmdb_id)
+            .execute(&mut *tx)
+            .await?;
+        }
 
         let air_year = (metadata.air_quarter / 100) as i32;
         let air_month = (metadata.air_quarter % 100) as i32;

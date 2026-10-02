@@ -298,3 +298,62 @@ fn find_best_column(columns: &[Vec<f64>]) -> Option<usize> {
 
     best_idx
 }
+
+#[cfg(test)]
+mod tests {
+    use super::check_missing_episodes;
+
+    #[test]
+    fn check_missing_episodes_empty_input() {
+        // 空列表没有内部可比对的相邻集数，不算漏集
+        assert!(!check_missing_episodes(&[], 12));
+    }
+
+    #[test]
+    fn check_missing_episodes_single_input() {
+        // 只有一个元素，同样没有相邻可比较，不算漏集
+        assert!(!check_missing_episodes(&[1], 12));
+    }
+
+    #[test]
+    fn check_missing_episodes_all_present() {
+        // 连续集数没有缺口
+        assert!(!check_missing_episodes(&[1, 2, 3, 4], 12));
+    }
+
+    #[test]
+    fn check_missing_episodes_gap_in_middle() {
+        // 缺第 3 集，缺口数 1 不超过 total_episodes
+        assert!(check_missing_episodes(&[1, 2, 4, 5], 12));
+    }
+
+    #[test]
+    fn check_missing_episodes_gap_equals_total() {
+        // 缺口恰好等于 total_episodes，按 missing <= total_episodes 判定为漏集
+        assert!(check_missing_episodes(&[1, 3], 1));
+    }
+
+    #[test]
+    fn check_missing_episodes_total_smaller_than_gap() {
+        // 缺口 7 集大于 total_episodes=3，超过总集数视为异常，不算漏集
+        assert!(!check_missing_episodes(&[1, 2, 10], 3));
+    }
+
+    #[test]
+    fn check_missing_episodes_total_larger_than_list() {
+        // 列表只有 4 项，total_episodes=24 远大于缺口数，仍然算漏集
+        assert!(check_missing_episodes(&[1, 2, 4, 5], 24));
+    }
+
+    #[test]
+    fn check_missing_episodes_zero_total() {
+        // total_episodes=0 时任何缺口都无法通过 missing <= total_episodes
+        assert!(!check_missing_episodes(&[1, 3], 0));
+    }
+
+    #[test]
+    fn check_missing_episodes_unsorted_input_uses_given_order() {
+        // 函数按给定顺序算差值，未排序输入会出现负差值，缺口记为 0
+        assert!(!check_missing_episodes(&[2, 1], 12));
+    }
+}

@@ -107,7 +107,7 @@ pub struct Queries {
 #[derive(Clone)]
 pub struct AppContext {
     base: Base,
-    repo: Repo,
+    pub repo: Repo,
     pub caps: Caps,
     pub roots: Roots,
     pub queries: Queries,

@@ -228,6 +228,8 @@ pub struct AnimeEx {
 /// 上游同步得到的一条番剧元数据快照。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AnimeMetadata {
+    // 系列信息：只有具备 TMDB 系列身份的番剧才有，取不到就是 None
+    pub series_metadata: Option<AnimeSeriesMetadata>,
     /// 番剧外部链接
     pub external_link: Vec<AnimeEx>,
     /// 多语言标题集合。
@@ -303,4 +305,122 @@ pub struct AnimeSearchResult {
     pub name: String,
     pub name_cn: Option<String>,
     pub id: i64,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct AnimeSeriesMetadata {
+    // 原名
+    pub origin_name: String,
+    // 中文名
+    pub cn_name: String,
+    // 简介
+    pub desc: String,
+    // 发布时间
+    pub air_date: NaiveDate,
+    // 题材类型
+    pub genres: Vec<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn to_keywords_normalizes_width_and_splits_cjk() {
+        // NFKC 把全角字母归一为半角，CJK 逐字成 token，拉丁字母小写成词
+        assert_eq!(
+            AnimeTitle::to_keywords("Ｃｏｄｅ　Ｇｅａｓｓ 反逆のルルーシュ"),
+            vec!["code", "geass", "反", "逆", "の", "ル", "ル", "ー", "シ", "ュ"]
+        );
+
+        // 词内数字保留，标点只作为切分点
+        assert_eq!(AnimeTitle::to_keywords("Re:Zero 100人の彼女"), vec![
+            "re", "zero", "100", "人", "の", "彼", "女"
+        ]);
+
+        assert!(AnimeTitle::to_keywords("").is_empty());
+        assert_eq!(AnimeTitle::to_keywords("！？。").len(), 0);
+    }
+
+    #[test]
+    fn title_keywords_use_title_name() {
+        let title = AnimeTitle {
+            name: "Re:Zero 2".to_string(),
+            match_name: String::new(),
+            target: AnimeLangTarget::JP,
+            origin: false,
+        };
+        assert_eq!(title.keywords(), vec!["re", "zero", "2"]);
+    }
+
+    #[test]
+    fn anime_source_target_conversions() {
+        assert_eq!(
+            AnimeSourceTarget::from("Bangumi"),
+            AnimeSourceTarget::Bangumi
+        );
+        assert_eq!(AnimeSourceTarget::from("TMDB"), AnimeSourceTarget::TMDB);
+        // 大小写敏感，未知来源原样保留
+        assert_eq!(
+            AnimeSourceTarget::from("bilibili"),
+            AnimeSourceTarget::Other("bilibili".to_string())
+        );
+
+        assert_eq!(String::from(AnimeSourceTarget::Bangumi), "Bangumi");
+        assert_eq!(String::from(AnimeSourceTarget::TMDB), "TMDB");
+        assert_eq!(
+            String::from(AnimeSourceTarget::Other("bilibili".to_string())),
+            "bilibili"
+        );
+    }
+
+    #[test]
+    fn anime_lang_target_conversions() {
+        assert_eq!(AnimeLangTarget::from("ja"), AnimeLangTarget::JP);
+        assert_eq!(AnimeLangTarget::from("zh-Hans"), AnimeLangTarget::ZhCn);
+        assert_eq!(AnimeLangTarget::from("ZH-TW"), AnimeLangTarget::ZhTw);
+        assert_eq!(AnimeLangTarget::from("us_en"), AnimeLangTarget::EN);
+        assert_eq!(AnimeLangTarget::from("ko"), AnimeLangTarget::KR);
+        // 未知语言按小写原样落到 Other
+        assert_eq!(
+            AnimeLangTarget::from("FR"),
+            AnimeLangTarget::Other("fr".to_string())
+        );
+
+        assert_eq!(String::from(AnimeLangTarget::ZhCn), "zh_cn");
+        assert_eq!(String::from(AnimeLangTarget::KR), "kr");
+    }
+
+    #[test]
+    fn anime_id_type_json_round_trip() {
+        for id in [
+            AnimeIdType::Int(286346),
+            AnimeIdType::String("tv/286346".to_string()),
+        ] {
+            let json = serde_json::to_string(&id).unwrap();
+            let back: AnimeIdType = serde_json::from_str(&json).unwrap();
+            assert_eq!(back, id);
+        }
+
+        assert_eq!(
+            serde_json::to_string(&AnimeIdType::Int(286346)).unwrap(),
+            r#"{"Int":286346}"#
+        );
+        assert_eq!(
+            serde_json::to_string(&AnimeIdType::String("tv/286346".to_string())).unwrap(),
+            r#"{"String":"tv/286346"}"#
+        );
+    }
+
+    #[test]
+    fn anime_ex_json_round_trip() {
+        let ex = AnimeEx {
+            id: AnimeIdType::Int(286346),
+            target: AnimeSourceTarget::TMDB,
+            r#type: Some("tv".to_string()),
+        };
+        let json = serde_json::to_string(&ex).unwrap();
+        assert_eq!(json, r#"{"id":{"Int":286346},"target":"TMDB","type":"tv"}"#);
+        assert_eq!(serde_json::from_str::<AnimeEx>(&json).unwrap(), ex);
+    }
 }

@@ -136,3 +136,205 @@ impl ResourceSqliteClient {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqlx::sqlite::SqliteConnectOptions;
+
+    // 真实 info_hash A：取自
+    // https://archive.org/download/100200300_359/100200300_359_archive.torrent 的 info 段 SHA-1
+    const HASH_A: [u8; 20] = [
+        0xcf, 0x8c, 0xd6, 0xac, 0x7f, 0x30, 0xed, 0x26, 0x2d, 0xdc, 0x42, 0x00, 0x9a, 0xec, 0x0d,
+        0x53, 0x0e, 0x6c, 0xf7, 0x1f,
+    ];
+
+    // 真实 info_hash B：取自 https://nyaa.si/?page=rss 首条记录的 nyaa:infoHash
+    const HASH_B: [u8; 20] = [
+        0xd1, 0x8e, 0x3d, 0x44, 0x91, 0xdd, 0xae, 0xe3, 0x33, 0xcc, 0x23, 0x78, 0x6e, 0xa2, 0x64,
+        0xc1, 0xea, 0xc2, 0x25, 0xcc,
+    ];
+
+    // 使用 tempfile::tempdir() 创建独立的临时 SQLite 库，TempDir 释放时自动清理
+    async fn setup() -> (tempfile::TempDir, ResourceSqliteClient) {
+        let dir = tempfile::tempdir().expect("create temp dir failed");
+        let db_path = dir.path().join("resource_test.db");
+        let options = SqliteConnectOptions::new()
+            .filename(&db_path)
+            .create_if_missing(true);
+        let pool = Pool::<Sqlite>::connect_with(options)
+            .await
+            .expect("connect temp SQLite failed");
+        (dir, ResourceSqliteClient::new(pool))
+    }
+
+    fn resource_data(hash: [u8; 20], title: &str) -> ResourceBaseData {
+        ResourceBaseData {
+            title: title.to_string(),
+            match_title: title.to_lowercase(),
+            url: format!("https://nyaa.si/download/{}.torrent", hex::encode(hash)),
+            info_hash: hash,
+            published_at: 1_790_931_226,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_init_with_tx_creates_schema_and_parse_resource_row() {
+        let (dir, client) = setup().await;
+
+        let mut tx = client.pool.begin().await.expect("begin transaction failed");
+        client
+            .init_with_tx(&mut tx)
+            .await
+            .expect("create table should succeed");
+
+        let data = resource_data(HASH_A, "葬送的芙莉莲 第01话");
+        sqlx::query(
+            "INSERT INTO resource (info_hash, title, match_title, url, published_at) VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind(&data.info_hash[..])
+        .bind(&data.title)
+        .bind(&data.match_title)
+        .bind(&data.url)
+        .bind(data.published_at)
+        .execute(&mut *tx)
+        .await
+        .expect("insert resource failed");
+
+        tx.commit().await.expect("commit transaction failed");
+
+        // 通过真实 SQLite 行还原 ResourceBaseData
+        let row = sqlx::query(
+            "SELECT info_hash, title, match_title, url, published_at FROM resource WHERE info_hash = ?",
+        )
+        .bind(&HASH_A[..])
+        .fetch_one(&client.pool)
+        .await
+        .expect("query resource failed");
+
+        let parsed = ResourceSqliteClient::parse_resource_row(&row).expect("parse row failed");
+        assert_eq!(parsed.info_hash, HASH_A);
+        assert_eq!(parsed.title, "葬送的芙莉莲 第01话");
+        assert_eq!(parsed.match_title, "葬送的芙莉莲 第01话".to_lowercase());
+        assert_eq!(parsed.url, data.url);
+        assert_eq!(parsed.published_at, 1_790_931_226);
+
+        assert!(dir.path().join("resource_test.db").exists());
+    }
+
+    #[tokio::test]
+    async fn test_parse_resource_row_rejects_short_info_hash() {
+        let (dir, client) = setup().await;
+
+        let mut tx = client.pool.begin().await.expect("begin transaction failed");
+        client
+            .init_with_tx(&mut tx)
+            .await
+            .expect("create table should succeed");
+
+        // 16 字节的 info_hash 不是合法的 btih，解析时必须报错而不是 panic
+        sqlx::query(
+            "INSERT INTO resource (info_hash, title, match_title, url, published_at) VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind(vec![0_u8; 16])
+        .bind("标题")
+        .bind("标题")
+        .bind("https://nyaa.si/download/bad.torrent")
+        .bind(0_i64)
+        .execute(&mut *tx)
+        .await
+        .expect("insert resource failed");
+
+        tx.commit().await.expect("commit transaction failed");
+
+        let row = sqlx::query("SELECT info_hash, title, match_title, url, published_at FROM resource")
+            .fetch_one(&client.pool)
+            .await
+            .expect("query resource failed");
+
+        let err = ResourceSqliteClient::parse_resource_row(&row).expect_err("short info_hash should fail");
+        assert!(err.to_string().contains("info_hash length is not 20"));
+
+        assert!(dir.path().join("resource_test.db").exists());
+    }
+
+    #[tokio::test]
+    async fn test_batch_insert_resource_only_returns_new_rows() {
+        let (dir, client) = setup().await;
+
+        let mut tx = client.pool.begin().await.expect("begin transaction failed");
+        client
+            .init_with_tx(&mut tx)
+            .await
+            .expect("create table should succeed");
+
+        let items = vec![
+            resource_data(HASH_A, "第一条资源"),
+            resource_data(HASH_B, "第二条资源"),
+        ];
+
+        let props = client
+            .batch_insert_resource(&mut tx, &items, true)
+            .await
+            .expect("batch insert failed");
+        assert_eq!(props.len(), 2);
+        assert_eq!(props[0].data.info_hash, HASH_A);
+        assert_eq!(props[1].data.info_hash, HASH_B);
+
+        // 相同主键再次写入会被 INSERT OR IGNORE 忽略，不返回新行
+        let again = client
+            .batch_insert_resource(&mut tx, &items, true)
+            .await
+            .expect("duplicate batch insert failed");
+        assert!(again.is_empty());
+
+        // need_return = false 时不返回数据
+        let without_return = client
+            .batch_insert_resource(&mut tx, &items, false)
+            .await
+            .expect("batch insert without return failed");
+        assert!(without_return.is_empty());
+
+        tx.commit().await.expect("commit transaction failed");
+
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM resource")
+            .fetch_one(&client.pool)
+            .await
+            .expect("count rows failed");
+        assert_eq!(count, 2);
+
+        assert!(dir.path().join("resource_test.db").exists());
+    }
+
+    #[tokio::test]
+    async fn test_batch_insert_url_hash_skips_duplicated_url() {
+        let (dir, client) = setup().await;
+
+        let mut tx = client.pool.begin().await.expect("begin transaction failed");
+        client
+            .init_with_tx(&mut tx)
+            .await
+            .expect("create table should succeed");
+
+        let items = vec![resource_data(HASH_A, "第一条资源")];
+        client
+            .batch_insert_url_hash(&mut tx, &items)
+            .await
+            .expect("insert url mapping failed");
+        // url 唯一约束冲突时应当被忽略
+        client
+            .batch_insert_url_hash(&mut tx, &items)
+            .await
+            .expect("duplicate url mapping insert failed");
+
+        tx.commit().await.expect("commit transaction failed");
+
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM resource_url_info_hash")
+            .fetch_one(&client.pool)
+            .await
+            .expect("count rows failed");
+        assert_eq!(count, 1);
+
+        assert!(dir.path().join("resource_test.db").exists());
+    }
+}

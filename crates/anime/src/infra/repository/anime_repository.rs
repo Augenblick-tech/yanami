@@ -5,13 +5,14 @@ use crate::{
         cap::{AnimeConsumer, AnimeRepository},
         model::{
             AnimeBaseData, AnimeIdType, AnimeListQuery, AnimeMetadata, AnimeProps,
-            AnimeSourceTarget,
+            AnimeSeriesMetadata, AnimeSourceTarget,
         },
     },
     infra::repository::client::AnimeSqliteClient,
 };
 use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
+use chrono::NaiveDate;
 use futures::StreamExt;
 use sqlx::{QueryBuilder, Row};
 
@@ -92,6 +93,48 @@ impl AnimeRepository for AnimeSqliteClient {
 
     async fn insert(&self, entity: &AnimeMetadata) -> Result<AnimeProps> {
         let mut tx = self.pool.begin().await?;
+
+        let mut tmdb_id: i64 = 0;
+        for ext in &entity.external_link {
+            if ext.target == AnimeSourceTarget::TMDB {
+                tmdb_id = match &ext.id {
+                    AnimeIdType::Int(v) => *v,
+                    AnimeIdType::String(s) => s
+                        .parse()
+                        .with_context(|| format!("invalid tmdb id format: {}", s))?,
+                };
+                break;
+            }
+        }
+
+        // 系列信息随番剧一起保存：有 TMDB 系列身份、且这次带回了系列信息才写
+        if tmdb_id > 0
+            && let Some(series_metadata) = &entity.series_metadata
+        {
+            let genres_json = serde_json::to_string(&series_metadata.genres)?;
+            let series_air_date_str = series_metadata.air_date.format("%Y-%m-%d").to_string();
+
+            sqlx::query(
+                "INSERT INTO anime_series (origin_name, cn_name, air_date, description, genres, tmdb_id)
+                 VALUES (?, ?, ?, ?, ?, ?)
+                 ON CONFLICT(tmdb_id) DO UPDATE SET
+                    origin_name = excluded.origin_name,
+                    cn_name = excluded.cn_name,
+                    air_date = excluded.air_date,
+                    description = excluded.description,
+                    genres = excluded.genres,
+                    updated_at = unixepoch()",
+            )
+            .bind(&series_metadata.origin_name)
+            .bind(&series_metadata.cn_name)
+            .bind(&series_air_date_str)
+            .bind(&series_metadata.desc)
+            .bind(&genres_json)
+            .bind(tmdb_id)
+            .execute(&mut *tx)
+            .await?;
+        }
+
         let air_year = (entity.air_quarter / 100) as i32;
         let air_month = (entity.air_quarter % 100) as i32;
         let weekday_i64: i64 = entity.air_weekday.clone().into();
@@ -251,10 +294,11 @@ impl AnimeRepository for AnimeSqliteClient {
             bgm_to_meta.insert(bgm_id, meta);
         }
 
-        let mut bgm_to_db = HashMap::new();
+        let mut bgm_to_anime_id = HashMap::new();
+        let mut existing_anime_ids = Vec::new();
         if !bgm_ids.is_empty() {
             let mut qb = QueryBuilder::new(
-                "SELECT ae.ext_id, ae.anime_id, a.is_locked
+                "SELECT ae.ext_id, ae.anime_id
              FROM anime_external ae
              JOIN anime a ON ae.anime_id = a.id
              WHERE ae.target_source = 'Bangumi' AND ae.ext_id IN (",
@@ -268,19 +312,35 @@ impl AnimeRepository for AnimeSqliteClient {
             for row in rows {
                 let ext_id: String = row.try_get("ext_id")?;
                 let anime_id: i64 = row.try_get("anime_id")?;
-                let is_locked: bool = row.try_get::<i64, _>("is_locked")? != 0;
                 let bgm_id = ext_id.parse::<i64>()?;
-                bgm_to_db.insert(bgm_id, (anime_id, is_locked));
+                bgm_to_anime_id.insert(bgm_id, anime_id);
+                existing_anime_ids.push(anime_id);
             }
         }
+
+        let existing_props_list = self.list_by_ids(&existing_anime_ids).await?;
+        let existing_props_map: HashMap<i64, AnimeProps> = existing_props_list
+            .into_iter()
+            .map(|p| (p.data.id, p))
+            .collect();
+
         let mut props = vec![];
         for (bgm_id, meta) in bgm_to_meta {
-            if let Some((anime_id, is_locked)) = bgm_to_db.get(&bgm_id) {
-                if *is_locked {
-                    continue;
+            if let Some(&anime_id) = bgm_to_anime_id.get(&bgm_id) {
+                if let Some(existing_prop) = existing_props_map.get(&anime_id) {
+                    if existing_prop.data.lock {
+                        continue;
+                    }
+                    if meta == &existing_prop.data.metadata {
+                        props.push(existing_prop.clone());
+                        continue;
+                    }
                 }
-                if let Err(e) = self.update_anime(*anime_id, meta, *is_locked).await {
+
+                if let Err(e) = self.update_anime(anime_id, meta, false).await {
                     tracing::error!("sync_metadata_with_not_lock update metadata failed, {}", e);
+                } else if let Ok(Some(updated_prop)) = self.find(anime_id).await {
+                    props.push(updated_prop);
                 }
             } else {
                 match self.insert(meta).await {
@@ -297,5 +357,148 @@ impl AnimeRepository for AnimeSqliteClient {
             }
         }
         Ok(props)
+    }
+
+    async fn find_series(&self, tmdb_id: i64) -> Result<Option<AnimeSeriesMetadata>> {
+        let series_row = sqlx::query(
+            "SELECT origin_name, cn_name, description, air_date, genres
+             FROM anime_series WHERE tmdb_id = ?",
+        )
+        .bind(tmdb_id)
+        .fetch_optional(&self.pool)
+        .await
+        .with_context(|| format!("failed to query anime series by tmdb id {}", tmdb_id))?;
+
+        let Some(series_row) = series_row else {
+            return Ok(None);
+        };
+
+        let air_date_str: String = series_row
+            .try_get("air_date")
+            .with_context(|| format!("Anime series {} missing 'air_date'", tmdb_id))?;
+        let air_date = NaiveDate::parse_from_str(&air_date_str, "%Y-%m-%d").with_context(|| {
+            format!(
+                "Anime series {} has invalid air_date format: {}",
+                tmdb_id, air_date_str
+            )
+        })?;
+
+        let genres_json: String = series_row
+            .try_get("genres")
+            .with_context(|| format!("Anime series {} missing 'genres'", tmdb_id))?;
+        let genres: Vec<String> = serde_json::from_str(&genres_json)
+            .with_context(|| format!("Anime series {} genres JSON parse failed", tmdb_id))?;
+
+        Ok(Some(AnimeSeriesMetadata {
+            origin_name: series_row
+                .try_get("origin_name")
+                .with_context(|| format!("Anime series {} missing 'origin_name'", tmdb_id))?,
+            cn_name: series_row
+                .try_get("cn_name")
+                .with_context(|| format!("Anime series {} missing 'cn_name'", tmdb_id))?,
+            desc: series_row
+                .try_get("description")
+                .with_context(|| format!("Anime series {} missing 'description'", tmdb_id))?,
+            air_date,
+            genres,
+        }))
+    }
+
+    async fn list_by_series(&self, tmdb_id: i64) -> Result<Vec<AnimeProps>> {
+        // 归属只看番剧自己的 TMDB 外部身份，与 list/find 的联表口径一致
+        let mut qb = Self::build_anime_details_query(|qb| {
+            qb.push(
+                " WHERE EXISTS (SELECT 1 FROM anime_external x
+                    WHERE x.anime_id = a.id AND x.target_source = 'TMDB'
+                      AND CAST(x.ext_id AS INTEGER) = ",
+            );
+            qb.push_bind(tmdb_id);
+            qb.push(")");
+        });
+
+        let rows = qb
+            .build()
+            .fetch_all(&self.pool)
+            .await
+            .with_context(|| format!("failed to query animes of series {}", tmdb_id))?;
+
+        let mut animes = Vec::with_capacity(rows.len());
+        for row in rows {
+            animes.push(Self::parse_anime_row(&row)?);
+        }
+
+        Ok(animes)
+    }
+}
+
+impl AnimeSqliteClient {
+    /// 取回还没有系列展示信息的 TMDB 剧集 id：归属只看番剧自己的 TMDB 外部身份，与 list_by_series 口径一致。
+    pub async fn list_missing_series_ids(&self) -> Result<Vec<i64>> {
+        let rows = sqlx::query(
+            "SELECT DISTINCT CAST(x.ext_id AS INTEGER) AS tmdb_id
+             FROM anime_external x
+             WHERE x.target_source = 'TMDB'
+               AND CAST(x.ext_id AS INTEGER) > 0
+               AND NOT EXISTS (
+                   SELECT 1 FROM anime_series s WHERE s.tmdb_id = CAST(x.ext_id AS INTEGER)
+               )",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .context("failed to query tmdb ids missing series")?;
+
+        let mut tmdb_ids = Vec::with_capacity(rows.len());
+        for row in rows {
+            tmdb_ids.push(row.try_get("tmdb_id")?);
+        }
+
+        Ok(tmdb_ids)
+    }
+
+    /// 一次性写入系列展示信息，要么全写要么全不写。
+    pub async fn save_series(&self, series: &[(i64, AnimeSeriesMetadata)]) -> Result<()> {
+        if series.is_empty() {
+            return Ok(());
+        }
+
+        let mut genres = Vec::with_capacity(series.len());
+        for (_, metadata) in series {
+            genres.push(serde_json::to_string(&metadata.genres)?);
+        }
+
+        let mut tx = self.pool.begin().await?;
+
+        let mut qb = QueryBuilder::new(
+            "INSERT INTO anime_series (origin_name, cn_name, air_date, description, genres, tmdb_id) ",
+        );
+        qb.push_values(
+            series.iter().zip(&genres),
+            |mut b, ((tmdb_id, metadata), genres)| {
+                b.push_bind(&metadata.origin_name)
+                    .push_bind(&metadata.cn_name)
+                    .push_bind(metadata.air_date.format("%Y-%m-%d").to_string())
+                    .push_bind(&metadata.desc)
+                    .push_bind(genres)
+                    .push_bind(*tmdb_id);
+            },
+        );
+        qb.push(
+            " ON CONFLICT(tmdb_id) DO UPDATE SET
+                origin_name = excluded.origin_name,
+                cn_name = excluded.cn_name,
+                air_date = excluded.air_date,
+                description = excluded.description,
+                genres = excluded.genres,
+                updated_at = unixepoch()",
+        );
+
+        qb.build()
+            .execute(&mut *tx)
+            .await
+            .context("failed to save anime series")?;
+
+        tx.commit().await?;
+
+        Ok(())
     }
 }

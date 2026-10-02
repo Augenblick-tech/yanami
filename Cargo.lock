@@ -656,6 +656,7 @@ version = "0.1.0"
 dependencies = [
  "anime",
  "anyhow",
+ "async-trait",
  "axum",
  "chrono",
  "clap",
@@ -665,9 +666,13 @@ dependencies = [
  "mimalloc",
  "resource",
  "serde",
+ "serde_json",
+ "sqlx",
  "subscription",
+ "tempfile",
  "tokio",
  "toml",
+ "tower",
  "tracing",
  "tracing-subscriber",
  "user",
@@ -4516,6 +4521,8 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlx",
+ "tempfile",
+ "tokio",
  "tracing",
 ]
 
@@ -5057,6 +5064,7 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "sqlx",
+ "tempfile",
  "tokio",
  "tracing",
 ]
@@ -5290,6 +5298,7 @@ dependencies = [
  "resource",
  "rust-embed",
  "serde",
+ "serde_json",
  "sqlx",
  "subscription",
  "tracing",

@@ -234,3 +234,103 @@ impl DownloadProvider for Qbit {
         anyhow::bail!("operation not supported for external downloader")
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::entity::cap::DownloadProvider;
+    use std::time::Duration;
+
+    /// 直接组装 Qbit，绕过 Qbit::new 里会发起真实网络登录的 login()。
+    fn offline_qbit() -> Qbit {
+        Qbit {
+            client: ClientBuilder::new()
+                .cookie_store(true)
+                .build()
+                .expect("building reqwest client should not fail"),
+            config: QbitConfig {
+                url: "http://127.0.0.1:18080/".to_string(),
+                username: "test".to_string(),
+                password: "test".to_string(),
+            },
+        }
+    }
+
+    #[test]
+    fn name_is_qbit() {
+        let qbit = offline_qbit();
+        assert_eq!(qbit.name(), "qbit");
+    }
+
+    #[tokio::test]
+    async fn stop_returns_immediately_today() {
+        let qbit = offline_qbit();
+
+        // 已知缺陷: Qbit::stop 目前是空实现，外部下载器不会被真正停止，也不会做任何网络请求。
+        tokio::time::timeout(Duration::from_millis(500), qbit.stop())
+            .await
+            .expect("Qbit::stop is a no-op and should return immediately");
+    }
+
+    #[tokio::test]
+    async fn pause_task_is_not_supported_today() {
+        let qbit = offline_qbit();
+
+        // 已知缺陷: 外部(qBittorrent)下载器不支持任务级操作，直接 bail。
+        let err = qbit
+            .pause_task([0x11u8; 20])
+            .await
+            .expect_err("pause_task currently always fails");
+
+        assert_eq!(err.to_string(), "operation not supported for external downloader");
+    }
+
+    #[tokio::test]
+    async fn resume_task_is_not_supported_today() {
+        let qbit = offline_qbit();
+
+        // 已知缺陷: 外部(qBittorrent)下载器不支持任务级操作，直接 bail。
+        let err = qbit
+            .resume_task([0x22u8; 20])
+            .await
+            .expect_err("resume_task currently always fails");
+
+        assert_eq!(err.to_string(), "operation not supported for external downloader");
+    }
+
+    #[tokio::test]
+    async fn delete_task_is_not_supported_today() {
+        let qbit = offline_qbit();
+
+        // 已知缺陷: 外部(qBittorrent)下载器不支持任务级操作，直接 bail。
+        let err = qbit
+            .delete_task([0x33u8; 20])
+            .await
+            .expect_err("delete_task currently always fails");
+
+        assert_eq!(err.to_string(), "operation not supported for external downloader");
+    }
+
+    #[tokio::test]
+    async fn get_task_is_not_supported_today() {
+        let qbit = offline_qbit();
+
+        // 已知缺陷: 外部(qBittorrent)下载器不支持查询单个任务，直接 bail。
+        let err = qbit
+            .get_task([0x44u8; 20])
+            .await
+            .expect_err("get_task currently always fails");
+
+        assert_eq!(err.to_string(), "operation not supported for external downloader");
+    }
+
+    #[tokio::test]
+    async fn list_task_is_not_supported_today() {
+        let qbit = offline_qbit();
+
+        // 已知缺陷: 外部(qBittorrent)下载器不支持列出任务，直接 bail。
+        let err = qbit.list_task().await.expect_err("list_task currently always fails");
+
+        assert_eq!(err.to_string(), "operation not supported for external downloader");
+    }
+}

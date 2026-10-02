@@ -226,3 +226,170 @@ impl SearchMandateRepository for SearchMandateSqliteClient {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use sqlx::SqlitePool;
+    use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+
+    use crate::entity::cap::SearchMandateRepository;
+    use crate::entity::model::Mandate;
+    use crate::infra::repository::client::SearchMandateSqliteClient;
+
+    struct Fixture {
+        dir: tempfile::TempDir,
+        client: SearchMandateSqliteClient,
+    }
+
+    async fn setup() -> Fixture {
+        let dir = tempfile::tempdir().expect("create temp dir failed");
+        let pool: SqlitePool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(
+                SqliteConnectOptions::new()
+                    .filename(dir.path().join("mandate-test.db"))
+                    .create_if_missing(true),
+            )
+            .await
+            .expect("connect sqlite failed");
+
+        let client = SearchMandateSqliteClient::new(pool.clone());
+        let mut tx = pool.begin().await.expect("begin schema tx failed");
+        client
+            .init_with_tx(&mut tx)
+            .await
+            .expect("init search mandate schema failed");
+        tx.commit().await.expect("commit schema failed");
+
+        Fixture { dir, client }
+    }
+
+    fn mandate(feed_id: i64, url: &str) -> Mandate {
+        Mandate {
+            anime_id: 1,
+            feed_id,
+            url: url.to_string(),
+        }
+    }
+
+    #[tokio::test]
+    async fn fixture_database_file_lives_under_tempdir() {
+        // 夹具把 SQLite 文件放在 tempdir 下，测试结束随目录一起删除
+        let f = setup().await;
+        assert!(f.dir.path().join("mandate-test.db").exists());
+    }
+
+    #[tokio::test]
+    async fn save_then_get_one_returns_saved_pool_entry() {
+        let f = setup().await;
+        let saved = f
+            .client
+            .save(&[mandate(10, "http://feed/10"), mandate(11, "http://feed/11")])
+            .await
+            .expect("save mandates");
+        assert_eq!(saved.len(), 2);
+        assert_eq!(
+            f.client.count().await.expect("count pool entries"),
+            2,
+            "search_pool should have two pending entries"
+        );
+
+        let one = f
+            .client
+            .get_one(&[])
+            .await
+            .expect("get one mandate")
+            .expect("has mandate");
+        assert_eq!(one.data.mandata.anime_id, 1);
+        // ORDER BY RANDOM() 不保证取哪一条，两条都在允许范围内
+        assert!(matches!(one.data.mandata.feed_id, 10 | 11));
+        let expected_url = if one.data.mandata.feed_id == 10 {
+            "http://feed/10"
+        } else {
+            "http://feed/11"
+        };
+        assert_eq!(one.data.mandata.url, expected_url);
+    }
+
+    #[tokio::test]
+    async fn get_one_returns_none_when_only_feed_is_blocked_known_defect() {
+        // 已知缺陷：search_mandate_repository.rs 的 get_one 只做 feed_id NOT IN 过滤，
+        // 当唯一一条待搜索条目所在 feed 被屏蔽时，SQL 直接把它过滤掉并返回 Ok(None)，
+        // 调用方无法区分"没有待搜索条目"和"有但被屏蔽"，会误判为队列已空。本用例锁定当前行为。
+        let f = setup().await;
+        f.client
+            .save(&[mandate(10, "http://feed/10")])
+            .await
+            .expect("save mandate");
+        assert_eq!(f.client.count().await.expect("count pool entries"), 1);
+
+        let blocked = f
+            .client
+            .get_one(&[10])
+            .await
+            .expect("blocked feed still returns Ok");
+        assert!(blocked.is_none());
+
+        // 屏蔽不相干的 feed 不影响取用
+        let other = f
+            .client
+            .get_one(&[999])
+            .await
+            .expect("unrelated block")
+            .expect("mandate still returned");
+        assert_eq!(other.data.mandata.feed_id, 10);
+    }
+
+    #[tokio::test]
+    async fn save_for_existing_anime_id_returns_empty_vec_known_defect() {
+        // 已知缺陷（search_mandate_repository.rs:123-125）：
+        // anime_id 已存在时 save 直接返回 Ok(vec![])，既不更新也不报错，
+        // 新传入的 feed 条目被静默丢弃。本用例锁定当前行为，不做修复。
+        let f = setup().await;
+        let first = f
+            .client
+            .save(&[mandate(10, "http://feed/10")])
+            .await
+            .expect("first save");
+        assert_eq!(first.len(), 1);
+
+        let second = f
+            .client
+            .save(&[mandate(11, "http://feed/11")])
+            .await
+            .expect("second save is silently ignored");
+        assert!(second.is_empty());
+        assert_eq!(f.client.count().await.expect("count pool entries"), 1);
+    }
+
+    #[tokio::test]
+    async fn delete_and_count_reports_remaining_pool_entries() {
+        let f = setup().await;
+        let saved = f
+            .client
+            .save(&[mandate(10, "http://feed/10"), mandate(11, "http://feed/11")])
+            .await
+            .expect("save mandates");
+
+        let remaining = f
+            .client
+            .delete_and_count(saved[0].data.id, 1)
+            .await
+            .expect("delete and count");
+        assert_eq!(remaining, 1);
+        assert_eq!(f.client.count().await.expect("count pool entries"), 1);
+
+        f.client
+            .delete(saved[1].data.id)
+            .await
+            .expect("delete last pool entry");
+        assert_eq!(f.client.count().await.expect("count pool entries"), 0);
+        assert!(
+            f.client
+                .get_one(&[])
+                .await
+                .expect("get one after delete")
+                .is_none()
+        );
+    }
+}

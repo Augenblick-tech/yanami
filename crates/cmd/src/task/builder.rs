@@ -142,6 +142,7 @@ pub async fn setup(
 
     let download_sub_animes = sub_animes.clone();
     let download_users = users.clone();
+    let download_animes = animes.clone();
     scheduer.register(
         TaskConfig {
             name: "download epsiode task".to_string(),
@@ -151,8 +152,9 @@ pub async fn setup(
         move || {
             let sub_animes = download_sub_animes.clone();
             let users = download_users.clone();
+            let animes = download_animes.clone();
             async move {
-                if let Err(e) = download_task(sub_animes, users).await {
+                if let Err(e) = download_task(sub_animes, users, animes).await {
                     tracing::error!("download epsiodes task failed, {}", e);
                 }
             }

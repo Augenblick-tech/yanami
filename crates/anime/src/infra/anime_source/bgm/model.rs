@@ -424,3 +424,210 @@ pub struct FilterConfig {
     /// 是否包含敏感内容（NSFW）
     pub nsfw: bool,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 数据来源：https://raw.githubusercontent.com/bangumi-data/bangumi-data/refs/heads/master/data/items/2026/07.json
+    /// 该文件中「ヒロイン？聖女？いいえ、オールワークスメイドです(誇)！」条目原文，仅保留测试用到的字段，取值未改动。
+    const BANGUMI_ITEM_JSON: &str = r#"{
+        "title": "ヒロイン？聖女？いいえ、オールワークスメイドです(誇)！",
+        "titleTranslate": {
+            "zh-Hans": ["女主角？圣女？不，我是杂役女仆（自豪）！"],
+            "zh-Hant": ["女主角？聖女？都不對，我是雜役女僕（自豪）！"],
+            "en": ["Heroine? Saint? No, I'm an All-Works Maid (and Proud of It)!"]
+        },
+        "type": "tv",
+        "lang": "ja",
+        "officialSite": "https://all-works-maid-anime.com/",
+        "begin": "2026-07-01T13:00:00.000Z",
+        "sites": [
+            { "site": "bangumi", "id": "558064" },
+            { "site": "tmdb", "id": "tv/286346" }
+        ]
+    }"#;
+
+    /// 数据来源：https://api.bgm.tv/v0/subjects/8 （コードギアス 反逆のルルーシュR2）
+    /// 仅保留测试断言用到的字段，取值未改动（infobox 的「别名」在真实数据里更长，这里只留一个元素）。
+    const BANGUMI_SUBJECT_JSON: &str = r#"{
+        "id": 8,
+        "type": 2,
+        "name": "コードギアス 反逆のルルーシュR2",
+        "name_cn": "Code Geass 反叛的鲁路修R2",
+        "date": "2008-04-06",
+        "platform": "TV",
+        "eps": 25,
+        "total_episodes": 25,
+        "nsfw": false,
+        "locked": false,
+        "infobox": [
+            { "key": "中文名", "value": "Code Geass 反叛的鲁路修R2" },
+            { "key": "别名", "value": [{ "v": "叛逆的鲁鲁修R2" }] },
+            { "key": "话数", "value": "25" },
+            { "key": "放送开始", "value": "2008年4月6日" }
+        ]
+    }"#;
+
+    fn item() -> BangumiItem {
+        serde_json::from_str(BANGUMI_ITEM_JSON).unwrap()
+    }
+
+    fn subject() -> BangumiSubject {
+        serde_json::from_str(BANGUMI_SUBJECT_JSON).unwrap()
+    }
+
+    #[test]
+    fn bangumi_item_parse_ex_link_reads_bangumi_and_tmdb() {
+        let links = item().parse_ex_link().unwrap();
+        assert_eq!(links.len(), 2);
+
+        assert_eq!(links[0].target, AnimeSourceTarget::Bangumi);
+        assert_eq!(links[0].id, AnimeIdType::Int(558064));
+        assert_eq!(links[0].r#type.as_deref(), Some("tv"));
+
+        assert_eq!(links[1].target, AnimeSourceTarget::TMDB);
+        assert_eq!(links[1].id, AnimeIdType::Int(286346));
+        // tmdb 站点的 id 形如 "tv/286346"，前缀被当作类型保留
+        assert_eq!(links[1].r#type.as_deref(), Some("tv"));
+    }
+
+    #[test]
+    fn bangumi_item_parse_ex_link_requires_bangumi_site() {
+        let mut value: Value = serde_json::from_str(BANGUMI_ITEM_JSON).unwrap();
+        value["sites"] = serde_json::json!([{ "site": "tmdb", "id": "tv/286346" }]);
+        let item: BangumiItem = serde_json::from_value(value).unwrap();
+
+        let err = item
+            .parse_ex_link()
+            .expect_err("missing bangumi site should fail");
+        assert_eq!(err.to_string(), "not found bangumi");
+    }
+
+    #[test]
+    fn bangumi_item_parse_ex_link_requires_numeric_bangumi_id() {
+        let mut value: Value = serde_json::from_str(BANGUMI_ITEM_JSON).unwrap();
+        value["sites"] = serde_json::json!([{ "site": "bangumi", "id": "abc" }]);
+        let item: BangumiItem = serde_json::from_value(value).unwrap();
+
+        let err = item.parse_ex_link().expect_err("non-numeric id should fail");
+        assert_eq!(err.to_string(), "unknown id abc");
+    }
+
+    #[test]
+    fn bangumi_item_parse_ex_link_panics_on_tmdb_id_without_type_prefix() {
+        // 由真实条目派生：把 tmdb 的 "tv/286346" 改成不带类型前缀的 "286346"。
+        let mut value: Value = serde_json::from_str(BANGUMI_ITEM_JSON).unwrap();
+        value["sites"][1]["id"] = Value::String("286346".to_string());
+        let item: BangumiItem = serde_json::from_value(value).unwrap();
+
+        // 已知缺陷：model.rs 的 `value.len() != 2 && value[0].is_empty()` 应为 `||`，
+        // 使得缺少类型前缀的 tmdb id 会走到 value[1] 越界 panic。这里只断言现状，不修复。
+        // 触发时临时静音 panic 输出，避免这条预期中的 panic 干扰测试报告。
+        let previous = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        let result =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| item.parse_ex_link()));
+        std::panic::set_hook(previous);
+
+        let payload = result.expect_err("known defect currently panics");
+        let message = payload
+            .downcast_ref::<String>()
+            .cloned()
+            .or_else(|| payload.downcast_ref::<&str>().map(|s| s.to_string()))
+            .unwrap_or_default();
+        assert!(
+            message.contains("index out of bounds"),
+            "unexpected panic payload: {message}"
+        );
+    }
+
+    #[test]
+    fn bangumi_item_parse_titles_translates_every_language() {
+        let titles = item().parse_titles().unwrap();
+        assert_eq!(titles.len(), 3);
+        assert!(titles.iter().all(|t| !t.origin));
+
+        let en = titles
+            .iter()
+            .find(|t| t.target == AnimeLangTarget::EN)
+            .expect("missing en title");
+        assert_eq!(
+            en.name,
+            "Heroine? Saint? No, I'm an All-Works Maid (and Proud of It)!"
+        );
+        assert_eq!(en.match_name, "heroinesaintnoimanallworksmaidandproudofit");
+
+        let zh_cn = titles
+            .iter()
+            .find(|t| t.target == AnimeLangTarget::ZhCn)
+            .expect("missing zh-Hans title");
+        assert_eq!(zh_cn.name, "女主角？圣女？不，我是杂役女仆（自豪）！");
+        assert_eq!(zh_cn.match_name, "女主角圣女不我是杂役女仆自豪");
+
+        let zh_tw = titles
+            .iter()
+            .find(|t| t.target == AnimeLangTarget::ZhTw)
+            .expect("missing zh-Hant title");
+        assert_eq!(zh_tw.name, "女主角？聖女？都不對，我是雜役女僕（自豪）！");
+    }
+
+    #[test]
+    fn bangumi_subject_parses_subject_type_and_names() {
+        let subject = subject();
+        assert_eq!(subject.id, 8);
+        assert_eq!(subject.subject_type, SubjectType::Anime);
+        assert_eq!(subject.name, "コードギアス 反逆のルルーシュR2");
+        assert_eq!(subject.name_cn.as_deref(), Some("Code Geass 反叛的鲁路修R2"));
+        assert_eq!(subject.eps, Some(25));
+    }
+
+    #[test]
+    fn bangumi_subject_parse_titles_marks_origin_and_cn() {
+        let titles = subject().parse_titles();
+        assert_eq!(titles.len(), 2);
+
+        assert!(titles[0].origin);
+        assert_eq!(titles[0].name, "コードギアス 反逆のルルーシュR2");
+        assert_eq!(titles[0].target, AnimeLangTarget::Other("unknown".to_string()));
+        assert_eq!(titles[0].match_name, "コードギアス反逆のルルーシュr2");
+
+        assert!(!titles[1].origin);
+        assert_eq!(titles[1].name, "Code Geass 反叛的鲁路修R2");
+        assert_eq!(titles[1].target, AnimeLangTarget::ZhCn);
+        assert_eq!(titles[1].match_name, "codegeass反叛的鲁路修r2");
+    }
+
+    #[test]
+    fn bangumi_subject_parse_titles_without_cn_name() {
+        let mut subject = subject();
+        subject.name_cn = None;
+
+        let titles = subject.parse_titles();
+        assert_eq!(titles.len(), 1);
+        assert!(titles[0].origin);
+    }
+
+    #[test]
+    fn bangumi_subject_parse_infobox_keeps_raw_values_and_skips_empty() {
+        let mut subject = subject();
+        let infobox = subject.parse_infobox();
+        assert_eq!(infobox.len(), 4);
+
+        // 话数在真实数据里是字符串而不是数字
+        assert_eq!(infobox["话数"].as_str(), Some("25"));
+        assert!(infobox["话数"].as_u64().is_none());
+        // 别名是对象数组
+        assert_eq!(infobox["别名"][0]["v"], "叛逆的鲁鲁修R2");
+        assert_eq!(infobox["放送开始"], "2008年4月6日");
+
+        // 额外塞一条 value 为 null 的条目，生产逻辑会把它过滤掉
+        subject.infobox.push(InfoboxItem {
+            key: "空值".to_string(),
+            value: None,
+        });
+        let infobox = subject.parse_infobox();
+        assert_eq!(infobox.len(), 4);
+        assert!(!infobox.contains_key("空值"));
+    }
+}

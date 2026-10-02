@@ -28,5 +28,8 @@ rust-embed = "8.5"
 mime_guess = "2.0"
 hex = { workspace = true }
 
+[dev-dependencies]
+serde_json = { workspace = true }
+
 [lints]
 workspace = true

@@ -3,3 +3,4 @@ pub mod anime_source;
 pub mod animes;
 pub mod cap;
 pub mod model;
+pub mod series;

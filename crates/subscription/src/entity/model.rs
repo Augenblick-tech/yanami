@@ -181,8 +181,8 @@ pub struct EpisodeBaseData {
 pub struct EpisodeExtendData {
     pub title: String,
     pub url: String,
-    pub season: u32,
-    pub anime_origin_title: String,
+    // 所属番剧：落点交给系列去算，订阅侧只记身份
+    pub anime_id: i64,
     pub space_id: i64,
 }
 

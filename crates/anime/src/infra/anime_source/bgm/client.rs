@@ -384,3 +384,105 @@ fn to_keywords(titles: &[&str]) -> Result<Vec<String>> {
         })
         .collect())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn date(year: i32, month: u32, day: u32) -> NaiveDate {
+        NaiveDate::from_ymd_opt(year, month, day).unwrap()
+    }
+
+    fn assert_close(actual: f64, expected: f64) {
+        assert!(
+            (actual - expected).abs() < 1e-9,
+            "expected {expected}, got {actual}"
+        );
+    }
+
+    #[test]
+    fn season_of_date_maps_months_to_quarter_starts() {
+        // 每季度的首尾月份都必须落到同一个季号
+        assert_eq!(
+            BgmClient::season_of_date(&date(2026, 1, 1)).unwrap(),
+            (2026, 1)
+        );
+        assert_eq!(
+            BgmClient::season_of_date(&date(2026, 3, 31)).unwrap(),
+            (2026, 1)
+        );
+        assert_eq!(
+            BgmClient::season_of_date(&date(2026, 4, 1)).unwrap(),
+            (2026, 4)
+        );
+        assert_eq!(
+            BgmClient::season_of_date(&date(2026, 6, 30)).unwrap(),
+            (2026, 4)
+        );
+        assert_eq!(
+            BgmClient::season_of_date(&date(2026, 7, 1)).unwrap(),
+            (2026, 7)
+        );
+        assert_eq!(
+            BgmClient::season_of_date(&date(2026, 9, 30)).unwrap(),
+            (2026, 7)
+        );
+        assert_eq!(
+            BgmClient::season_of_date(&date(2026, 10, 1)).unwrap(),
+            (2026, 10)
+        );
+        assert_eq!(
+            BgmClient::season_of_date(&date(2026, 12, 31)).unwrap(),
+            (2026, 10)
+        );
+
+        // 年份原样带出
+        assert_eq!(
+            BgmClient::season_of_date(&date(2008, 4, 6)).unwrap(),
+            (2008, 4)
+        );
+    }
+
+    #[test]
+    fn is_str_match_is_one_for_identical_titles() {
+        let title = "オールワークスメイドです";
+        assert_close(is_str_match(title, title), 1.0);
+
+        // 两边都为空时按完全匹配处理
+        assert_close(is_str_match("", ""), 1.0);
+    }
+
+    #[test]
+    fn is_str_match_normalizes_case_and_full_width() {
+        // NFKD 把全角拉丁字母还原成半角，再统一小写
+        assert_close(
+            is_str_match("ＧＡＭＥ ＯＦ ＴＨＲＯＮＥＳ", "game of thrones"),
+            1.0,
+        );
+        assert_close(
+            is_str_match("Ｈｅｒｏｉｎｅ？Ｓａｉｎｔ？", "heroine?saint?"),
+            1.0,
+        );
+        // 大小写差异不影响结果
+        assert_close(is_str_match("Game of Thrones", "GAME OF THRONES"), 1.0);
+    }
+
+    #[test]
+    fn is_str_match_scores_partial_edits_by_distance() {
+        // 一个字符之差：相似度 = (3 - 1) / 3
+        assert_close(is_str_match("abc", "abd"), 2.0 / 3.0);
+
+        // 前缀缺失时介于 0 与 1 之间
+        let score = is_str_match("Spy x Family", "Spy Family");
+        assert!(score > 0.8 && score < 1.0, "unexpected score {score}");
+    }
+
+    #[test]
+    fn is_str_match_is_low_for_unrelated_titles() {
+        let score = is_str_match("Game of Thrones", "ワンピース");
+        assert!(score < 0.4, "unexpected score {score}");
+
+        let score = is_str_match("女主角？圣女？", "Game of Thrones");
+        assert!(score < 0.4, "unexpected score {score}");
+    }
+}

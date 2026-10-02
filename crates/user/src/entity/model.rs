@@ -191,3 +191,158 @@ pub struct UserBaseData {
 pub struct UserProps {
     pub data: UserBaseData,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::infra::crypto::AesCryptoProvider;
+
+    /// 测试专用固定密钥，真实部署由运维注入。
+    const TEST_KEY: &str = "yanami-unit-test-fixed-secret";
+
+    fn qbit_config(name: &str, active: bool, base_path: &str, password: &str) -> DownloaderConfig {
+        DownloaderConfig::Qbit(DownloadConfig {
+            name: name.to_string(),
+            active,
+            base_path: base_path.to_string(),
+            config: QbitConfig {
+                username: "admin".to_string(),
+                password: password.to_string(),
+                url: "http://127.0.0.1:8080/".to_string(),
+            },
+        })
+    }
+
+    fn default_config(name: &str, active: bool, base_path: &str) -> DownloaderConfig {
+        DownloaderConfig::Default(DownloadConfig {
+            name: name.to_string(),
+            active,
+            base_path: base_path.to_string(),
+            config: DefaultDownloaderConfig {
+                max_seed_time: Some(30),
+                max_seed_ratio: Some(1.0),
+                max_upload_speed: Some(2048),
+            },
+        })
+    }
+
+    fn password_of(config: &DownloaderConfig) -> &str {
+        match config {
+            DownloaderConfig::Qbit(c) => &c.config.password,
+            DownloaderConfig::Default(_) => panic!("test expects qbit config"),
+        }
+    }
+
+    fn unwrap_qbit(config: &DownloaderConfig) -> &DownloadConfig<QbitConfig> {
+        match config {
+            DownloaderConfig::Qbit(c) => c,
+            DownloaderConfig::Default(_) => panic!("test expects qbit config"),
+        }
+    }
+
+    #[test]
+    fn qbit_config_exposes_name_base_path_and_active() {
+        let config = qbit_config("qb-main", true, "/data/anime", "s3cret");
+        assert!(config.is_active());
+        assert_eq!(config.name(), "qb-main");
+        assert_eq!(config.base_path(), "/data/anime");
+    }
+
+    #[test]
+    fn default_config_exposes_name_base_path_and_active() {
+        let config = default_config("default-main", false, "downloads");
+        assert!(!config.is_active());
+        assert_eq!(config.name(), "default-main");
+        assert_eq!(config.base_path(), "downloads");
+    }
+
+    #[test]
+    fn set_active_toggles_both_variants() {
+        let mut qbit = qbit_config("qb", false, "/data", "s3cret");
+        qbit.set_active(true);
+        assert!(qbit.is_active());
+
+        let mut default = default_config("default", true, "/data");
+        default.set_active(false);
+        assert!(!default.is_active());
+    }
+
+    #[test]
+    fn sanitized_qbit_masks_password_and_keeps_other_fields() {
+        let original = qbit_config("qb-main", true, "/data/anime", "s3cret-password");
+        let sanitized = original.clone().sanitized();
+
+        assert_ne!(password_of(&sanitized), "s3cret-password");
+        let inner = unwrap_qbit(&sanitized);
+        assert_eq!(inner.config.password, "************");
+        assert_eq!(inner.name, "qb-main");
+        assert_eq!(inner.base_path, "/data/anime");
+        assert!(inner.active);
+        assert_eq!(inner.config.username, "admin");
+        assert_eq!(inner.config.url, "http://127.0.0.1:8080/");
+        // sanitized 是拷贝语义，原配置不受影响
+        assert_eq!(password_of(&original), "s3cret-password");
+    }
+
+    #[test]
+    fn sanitized_default_config_is_unchanged() {
+        let original = default_config("default-main", true, "/data");
+        let sanitized = original.clone().sanitized();
+        assert_eq!(sanitized, original);
+    }
+
+    #[test]
+    fn encrypt_then_decrypt_secrets_round_trips_with_real_crypto() {
+        let provider = AesCryptoProvider::new(TEST_KEY);
+        let plain_password = "qbit-p@ssw0rd-密码";
+        let mut config = qbit_config("qb-main", true, "/data", plain_password);
+
+        config.encrypt_secrets(&provider).expect("encrypting password should not fail");
+        let cipher = password_of(&config);
+        assert_ne!(cipher, plain_password);
+        assert!(
+            !cipher.contains(plain_password),
+            "ciphertext should not contain plaintext password, actual: {cipher}"
+        );
+        // 其余字段不参与加密
+        assert_eq!(unwrap_qbit(&config).config.username, "admin");
+
+        config.decrypt_secrets(&provider).expect("decrypting password should not fail");
+        assert_eq!(password_of(&config), plain_password);
+    }
+
+    #[test]
+    fn encrypt_secrets_uses_random_nonce_so_ciphertexts_differ() {
+        let provider = AesCryptoProvider::new(TEST_KEY);
+        let mut first = qbit_config("qb", true, "/data", "same-password");
+        let mut second = qbit_config("qb", true, "/data", "same-password");
+
+        first.encrypt_secrets(&provider).expect("encrypting password should not fail");
+        second.encrypt_secrets(&provider).expect("encrypting password should not fail");
+
+        assert_ne!(password_of(&first), password_of(&second));
+    }
+
+    #[test]
+    fn default_config_secret_operations_are_no_ops() {
+        let provider = AesCryptoProvider::new(TEST_KEY);
+        let mut config = default_config("default", true, "/data");
+        let before = config.clone();
+
+        config.encrypt_secrets(&provider).expect("encrypting default config should succeed directly");
+        config.decrypt_secrets(&provider).expect("decrypting default config should succeed directly");
+
+        assert_eq!(config, before);
+    }
+
+    #[test]
+    fn user_role_converts_to_and_from_u8() {
+        assert_eq!(u8::from(UserRole::Admin), 1);
+        assert_eq!(u8::from(UserRole::User), 2);
+        assert_eq!(UserRole::try_from(1).expect("1 should parse as Admin"), UserRole::Admin);
+        assert_eq!(UserRole::try_from(2).expect("2 should parse as User"), UserRole::User);
+
+        let err = UserRole::try_from(7).expect_err("unknown role should fail");
+        assert!(err.to_string().contains("unknown user role 7"), "actual error: {err}");
+    }
+}

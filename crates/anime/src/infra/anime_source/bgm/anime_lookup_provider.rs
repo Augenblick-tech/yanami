@@ -3,7 +3,7 @@ use crate::{
         cap::AnimeLookupProvider,
         model::{
             AnimeAirWeekday, AnimeEx, AnimeIdType, AnimeLangTarget, AnimeMetadata,
-            AnimeSearchResult, AnimeSourceTarget,
+            AnimeSearchResult, AnimeSeriesMetadata, AnimeSourceTarget,
         },
     },
     infra::anime_source::bgm::client::BgmClient,
@@ -108,7 +108,16 @@ impl AnimeLookupProvider for BgmClient {
             .await?;
 
         let season = vec![bgm_season, tmdb_season];
+
+        let series_metadata = Some(AnimeSeriesMetadata {
+            origin_name: tmdb_data.inner.original_name,
+            cn_name: tmdb_data.inner.name,
+            desc: tmdb_data.inner.overview,
+            air_date: tmdb_data.inner.first_air_date.unwrap_or_default(),
+            genres: tmdb_data.genres.into_iter().map(|i| i.name).collect(),
+        });
         Ok(Some(AnimeMetadata {
+            series_metadata,
             external_link: ex_link,
             titles,
             air_weekday,

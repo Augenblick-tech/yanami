@@ -5,6 +5,7 @@ use async_trait::async_trait;
 
 use crate::entity::model::{
     AnimeBaseData, AnimeListQuery, AnimeMetadata, AnimeProps, AnimeSearchResult,
+    AnimeSeriesMetadata,
 };
 
 pub trait AnimeConsumer: Send {
@@ -40,6 +41,12 @@ pub trait AnimeRepository: Send + Sync {
         &self,
         metadata: Vec<AnimeMetadata>,
     ) -> Result<Vec<AnimeProps>>;
+
+    /// 取回一个系列的展示信息，一个剧集只有一份。
+    async fn find_series(&self, tmdb_id: i64) -> Result<Option<AnimeSeriesMetadata>>;
+
+    /// 取回一个系列的全部季度条目，顺序不做要求。
+    async fn list_by_series(&self, tmdb_id: i64) -> Result<Vec<AnimeProps>>;
 }
 
 #[async_trait]
