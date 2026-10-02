@@ -73,18 +73,32 @@ impl TmdbClient {
     // get_season_id
     // 匹配时间最接近的季度
     pub fn get_season_id(&self, series: &TvShowDetail, air_date: NaiveDate) -> Option<i64> {
-        let dates = series
+        // 特别篇（第 0 季）的首播日往往和正篇只差一两天，直接参加「取最近」比较会盖掉正篇：
+        // Re:Zero（TMDB 65942）只有第 0 季特典（2016-04-05）和第 1 季（2016-04-04），
+        // 目标日期 2024-10-02 距两者都是八年，特典因为早一天而胜出，于是整部剧被记成第 0 季。
+        // 所以先排除第 0 季；如果整部剧只有特典，再退回去使用它。
+        let mut seasons = series
             .seasons
+            .iter()
+            .filter(|i| i.air_date.is_some() && i.inner.season_number != 0)
+            .collect::<Vec<_>>();
+        if seasons.is_empty() {
+            seasons = series
+                .seasons
+                .iter()
+                .filter(|i| i.air_date.is_some())
+                .collect::<Vec<_>>();
+        }
+
+        let dates = seasons
             .iter()
             .filter_map(|i| i.air_date)
             .collect::<Vec<_>>();
-        let date = find_closest_date(&dates, air_date);
-        if let Some(date) = date
-            && let Some(v) = series.seasons.iter().find(|i| i.air_date == Some(date))
-        {
-            return Some(v.inner.season_number);
-        }
-        None
+        let date = find_closest_date(&dates, air_date)?;
+        seasons
+            .iter()
+            .find(|i| i.air_date == Some(date))
+            .map(|i| i.inner.season_number)
     }
 
     pub async fn get_anime_season(
@@ -188,7 +202,6 @@ fn find_closest_date(dates: &[NaiveDate], target: NaiveDate) -> Option<NaiveDate
 
     Some(closest)
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -429,8 +442,74 @@ mod tests {
     ]
 }"##;
 
+    /// 2026-02 实际抓取 `GET /3/tv/65942?language=zh-CN`（Re:Zero，只保留反序列化需要的字段）：
+    /// 全剧在 TMDB 上只有第 0 季特典（2016-04-05，90 集）和第 1 季（2016-04-04，85 集）两个「季」，
+    /// 第三季的「襲擊編」按绝对集号落在第 1 季里（bangumi-data 记录的映射就是 tv/65942/season/1/episode/51）。
+    const RE_ZERO_TV_JSON: &str = r##"{
+  "adult": false,
+  "backdrop_path": "/7ZruEnSnHD6Jx5mF0hBt1E306Vt.jpg",
+  "id": 65942,
+  "origin_country": ["JP"],
+  "original_language": "ja",
+  "original_name": "Re:ゼロから始める異世界生活",
+  "overview": "在异世界陷入迷茫的普通高中生菜月昴，邂逅了一位银发的美少女。",
+  "popularity": 214.3799,
+  "poster_path": "/a1pMK4456dF2j5B9xvkjMEGiOOw.jpg",
+  "first_air_date": "2016-04-04",
+  "name": "Re：从零开始的异世界生活",
+  "vote_average": 8.123,
+  "vote_count": 794,
+  "created_by": [],
+  "episode_run_time": [25],
+  "genres": [
+    { "id": 16, "name": "动画" },
+    { "id": 9648, "name": "悬疑" }
+  ],
+  "homepage": "http://re-zero-anime.jp/",
+  "in_production": true,
+  "languages": ["ja"],
+  "last_air_date": "2026-09-30",
+  "last_episode_to_air": null,
+  "next_episode_to_air": null,
+  "networks": [],
+  "number_of_episodes": 85,
+  "number_of_seasons": 1,
+  "production_companies": [],
+  "production_countries": [{ "iso_3166_1": "JP", "name": "Japan" }],
+  "seasons": [
+    {
+      "air_date": "2016-04-05",
+      "episode_count": 90,
+      "id": 76465,
+      "name": "特别篇",
+      "overview": "",
+      "poster_path": "/4Gsh6zCE6SYNlal3FW6scj3PkAz.jpg",
+      "season_number": 0,
+      "vote_average": 0.0
+    },
+    {
+      "air_date": "2016-04-04",
+      "episode_count": 85,
+      "id": 75470,
+      "name": "第 1 季",
+      "overview": "在从便利商店回家的路上，突然被异世界召唤的少年菜月昴。",
+      "poster_path": "/hslDfZUH1d4wRq860G9o3vMmcIH.jpg",
+      "season_number": 1,
+      "vote_average": 9.4
+    }
+  ],
+  "spoken_languages": [{ "english_name": "Japanese", "iso_639_1": "ja", "name": "日本語" }],
+  "status": "Returning Series",
+  "tagline": "死亡不过是下一次重逢的起点",
+  "type": "Scripted"
+}"##;
+
     fn series() -> TvShowDetail {
         serde_json::from_str(GAME_OF_THRONES_JSON).unwrap()
+    }
+
+    fn re_zero() -> TvShowDetail {
+        serde_json::from_str(RE_ZERO_TV_JSON).unwrap()
     }
 
     fn client() -> TmdbClient {
@@ -471,8 +550,31 @@ mod tests {
     async fn get_season_id_returns_earliest_season_when_all_are_later() {
         let client = client();
         // 任务描述期望 None，但实现是“取最近者”，当所有季度都晚于 air_date 时
-        // 会返回最早的那个季度（真实的第 0 季特典）。这里如实断言当前行为。
-        assert_eq!(client.get_season_id(&series(), date(2009, 1, 1)), Some(0));
+        // 会返回最早的那个正篇季度（第 0 季特典不参与比较）。
+        assert_eq!(client.get_season_id(&series(), date(2009, 1, 1)), Some(1));
+    }
+
+    #[tokio::test]
+    async fn get_season_id_skips_specials_even_when_they_are_closer() {
+        let client = client();
+        // Re:Zero 只有第 0 季特典（2016-04-05）和第 1 季（2016-04-04），
+        // 2024-10-02 距两者都是八年，特典按天数更近，但不能让整部剧变成第 0 季。
+        assert_eq!(client.get_season_id(&re_zero(), date(2024, 10, 2)), Some(1));
+        // 2024 年第三季的「襲擊編」在 TMDB 上按绝对集号属于第 1 季
+        assert_eq!(re_zero().seasons[1].inner.season_number, 1);
+        assert_eq!(re_zero().seasons[1].episode_count, 85);
+    }
+
+    #[tokio::test]
+    async fn get_season_id_falls_back_to_specials_when_that_is_all() {
+        let client = client();
+        let mut specials_only = re_zero();
+        specials_only.seasons.remove(1);
+        // 整部剧只有特典时仍然要能取到季号
+        assert_eq!(
+            client.get_season_id(&specials_only, date(2024, 10, 2)),
+            Some(0)
+        );
     }
 
     #[tokio::test]

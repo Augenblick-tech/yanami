@@ -1,7 +1,9 @@
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 use anyhow::{Context, Error, Result, anyhow};
 use chrono::{Datelike, NaiveDate};
+use regex::Regex;
 use reqwest::Client;
 use serde_json::Value;
 use unicode_normalization::UnicodeNormalization;
@@ -79,7 +81,7 @@ impl BgmClient {
             .context("not found origin title")?;
 
         let mut error = None;
-        let keywords = to_keywords(&names)?;
+        let keywords = to_keywords(&names);
         let mut max_score = 0.0;
         let mut target = None;
         for key in keywords {
@@ -108,6 +110,12 @@ impl BgmClient {
                         .fold(0.0_f64, f64::max);
                     score = score.max(cn_score);
                 }
+                // 关键词是清洗过的番剧名（去掉了季度词、篇章词、括号副标题），
+                // 拿它和结果名字比对最能反映是不是同一部剧。少了这一步，
+                // 清洗后搜出来的「…新编集版」这类更长的变体会因为分母更大而得分更高。
+                score = score
+                    .max(is_str_match(&key, &item.inner.name))
+                    .max(is_str_match(&key, &item.inner.original_name));
                 if max_score < score {
                     max_score = score;
                     target = Some(item);
@@ -353,36 +361,89 @@ pub fn is_str_match(query: &str, tmdb_title: &str) -> f64 {
     (max_len - distance) as f64 / max_len as f64
 }
 
-fn to_keywords(titles: &[&str]) -> Result<Vec<String>> {
-    // Pass 1: 删掉不要的。合并“括号及内容”、“季度词汇”、“结尾纯数字”
-    let re_junk = regex::Regex::new(
-        r"(?ix)(
-            \([^)]*\)|（[^）]*） |  # 连带括号内容一起干掉（TMDB不需要括号里的副标题）
+/// 剧名噪音：括号副标题、季度词、罗马数字、结尾残留的阿拉伯数字。
+/// 正则编译很贵，所以静态化（与 `crates/feed/src/infra/feed.rs` 的 `COLLECTION_RE` 同一写法），
+/// 只编译一次、之后每次调用都是原子读 + 复用。
+fn junk_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        Regex::new(
+            r"(?ix)
+            \([^)]*\)|（[^）]*） |      # 连带括号内容一起干掉（TMDB不需要括号里的副标题）
             第[0-9一二三四五六七八九十]+[期季部章クール]+ |
             \b\d+(?:st|nd|rd|th)\s*Season\b |
             \bSeason\s*\d+\b |
             シーズン\s*\d+ |
             [ⅡⅢⅣⅤⅥⅦⅧⅨⅩ]+ |
-            \s*\d+\s*$           # 专门切掉结尾残留的阿拉伯数字
-        )",
-    )?;
+            \s*\d+\s*$                 # 专门切掉结尾残留的阿拉伯数字
+        ",
+        )
+        .expect("junk regex must be valid")
+    })
+}
 
-    // Pass 2: 核心白名单。匹配所有【非文字、非数字】的字符，将其变为空格
-    // \p{L} = Letter（涵盖汉字、平假名、片假名含长音符、英文字母）
-    // \p{N} = Number（保留中间的正常数字，比如“100人の彼女”）
-    // [^...] 配合 + 号，会自动将连续的各种奇怪符号、全半角空格全部合并为一个单空格
-    let re_whitelist = regex::Regex::new(r"[^\p{L}\p{N}]+")?;
+/// 篇章词：袭击篇 / 襲擊編 / 第2部 / Part 2。TMDB 的剧集名不带篇章后缀，
+/// 这类词留在关键词里会让搜索结果为空，所以要能单独摘掉。
+fn arc_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        Regex::new(
+            r"(?ix)
+            \p{Han}{1,8}[篇編] |
+            第[0-9一二三四五六七八九十]+[篇編部] |
+            \b(?:Part|Cour|Cou)\s*\d+\b |
+            \b\d+(?:st|nd|rd|th)\s*(?:Part|Cour)\b
+        ",
+        )
+        .expect("arc regex must be valid")
+    })
+}
 
-    Ok(titles
-        .iter()
-        .map(|&title| {
-            // 第一步：切掉季度和结尾数字
-            let step1 = re_junk.replace_all(title, "");
+/// 除中英日文字与数字外，其余字符（含各种全半角空格）统一压成一个空格并去掉首尾空格。
+/// 一次字符扫描，比原来的白名单正则快，也不产生中间字符串。
+fn normalize(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    for ch in input.chars() {
+        if ch.is_alphanumeric() {
+            out.push(ch);
+        } else if !out.is_empty() && !out.ends_with(' ') {
+            out.push(' ');
+        }
+    }
+    let len = out.trim_end().len();
+    out.truncate(len);
+    out
+}
 
-            // 第二步：除了中英日文和数字，其余所有符号转成标准空格，然后去掉首尾空格
-            re_whitelist.replace_all(&step1, " ").trim().to_string()
-        })
-        .collect())
+/// 主关键词：切掉季度词、结尾数字与标点。保留篇章词——
+/// 真把篇章词写进剧名的作品要靠它命中。
+fn clean(title: &str) -> String {
+    normalize(&junk_re().replace_all(title, ""))
+}
+
+/// 去掉篇章词后的关键词：TMDB 上真正搜得到的那一条。
+fn clean_without_arc(title: &str) -> String {
+    let without_arc = arc_re().replace_all(title, " ");
+    normalize(&junk_re().replace_all(&without_arc, ""))
+}
+
+fn push_unique(keywords: &mut Vec<String>, candidate: String) {
+    if !candidate.is_empty() && !keywords.contains(&candidate) {
+        keywords.push(candidate);
+    }
+}
+
+fn to_keywords(titles: &[&str]) -> Vec<String> {
+    let mut keywords: Vec<String> = Vec::with_capacity(titles.len() * 2);
+    for &title in titles {
+        push_unique(&mut keywords, clean(title));
+        // 篇章词在 TMDB 上一条都搜不到，再补一条去掉它的候选：
+        // 「Re：从零开始的异世界生活 第三季 袭击篇」→「Re 从零开始的异世界生活」才搜得到这部剧。
+        if arc_re().is_match(title) {
+            push_unique(&mut keywords, clean_without_arc(title));
+        }
+    }
+    keywords
 }
 
 #[cfg(test)]
@@ -484,5 +545,96 @@ mod tests {
 
         let score = is_str_match("女主角？圣女？", "Game of Thrones");
         assert!(score < 0.4, "unexpected score {score}");
+    }
+
+    #[test]
+    fn to_keywords_adds_arc_stripped_keyword_for_season_arc_title() {
+        // 真实案例：bgm subject 425998（Re:Zero 第三季 襲擊編）。
+        // 带「袭击篇」的关键词在 TMDB 上 total_results = 0，
+        // 只有去掉篇章词的「Re 从零开始的异世界生活」才搜得到这部剧。
+        let keywords = to_keywords(&["Re：从零开始的异世界生活 第三季 袭击篇"]);
+
+        assert_eq!(
+            keywords,
+            vec![
+                "Re 从零开始的异世界生活 袭击篇".to_string(),
+                "Re 从零开始的异世界生活".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn to_keywords_strips_japanese_arc_marker() {
+        // 原名里的「襲擊編」同样带不出 TMDB 结果，额外给一条去掉它的关键词
+        let keywords = to_keywords(&["Re:ゼロから始める異世界生活 3rd season 襲擊編"]);
+
+        assert_eq!(
+            keywords,
+            vec![
+                "Re ゼロから始める異世界生活 襲擊編".to_string(),
+                "Re ゼロから始める異世界生活".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn to_keywords_keeps_titles_without_arc_word_unchanged() {
+        // 没有篇章词时只产出一条关键词，不额外发请求
+        let keywords = to_keywords(&["进击的巨人"]);
+
+        assert_eq!(keywords, vec!["进击的巨人".to_string()]);
+    }
+
+    #[test]
+    fn to_keywords_keeps_season_word_behavior() {
+        // 回归：季度词仍然被 Pass 1 切掉，且不会因为英文标题多出关键词
+        let keywords = to_keywords(&["Re:ZERO -Starting Life in Another World- Season 3"]);
+
+        assert_eq!(
+            keywords,
+            vec!["Re ZERO Starting Life in Another World".to_string()]
+        );
+    }
+
+    #[test]
+    fn to_keywords_strips_part_and_cour_marker() {
+        // Part / Cour 这类英文篇章词同样去掉，原关键词保留
+        let keywords = to_keywords(&["進撃の巨人 The Final Season Part 2"]);
+
+        assert_eq!(
+            keywords,
+            vec![
+                "進撃の巨人 The Final Season Part".to_string(),
+                "進撃の巨人 The Final Season".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn to_keywords_drops_digit_arc_duplicate() {
+        // 「第2部」这类阿拉伯数字篇章词：Pass 1 已经切掉，补充的关键词与主关键词相同，
+        // 去重后只剩一条
+        let keywords = to_keywords(&["某番剧 第2部"]);
+
+        assert_eq!(keywords, vec!["某番剧".to_string()]);
+    }
+
+    #[test]
+    fn to_keywords_deduplicates_repeated_titles() {
+        let keywords = to_keywords(&["进击的巨人", "进击的巨人"]);
+
+        assert_eq!(keywords, vec!["进击的巨人".to_string()]);
+    }
+
+    #[test]
+    fn normalize_collapses_punctuation_runs_into_single_space() {
+        // 原来是白名单正则（Pass 2），改成手写扫描后行为不变：
+        // 连续标点/全半角空格压成一个空格，首尾不留空格，中间的数字保留
+        assert_eq!(
+            normalize("　Re：从零开始的异世界生活　第三季,,"),
+            "Re 从零开始的异世界生活 第三季"
+        );
+        assert_eq!(normalize("  a,,,b 　 c  "), "a b c");
+        assert_eq!(normalize("100人の彼女"), "100人の彼女");
     }
 }
