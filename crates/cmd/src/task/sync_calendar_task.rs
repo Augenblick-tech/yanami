@@ -22,8 +22,33 @@ pub async fn sync_calendar_task(
         return Ok(());
     }
 
+    let anime_ids = anime_entity_list
+        .iter()
+        .map(|anime| anime.id())
+        .collect::<Vec<_>>();
+
     for user in &user_entity_list {
+        let subscribed = match sub_animes
+            .find_by_anime_ids(user.space_id(), anime_ids.clone())
+            .await
+        {
+            Ok(subscribed) => subscribed,
+            Err(e) => {
+                error!(
+                    "space {} find subscribed animes failed, {}",
+                    user.space_id(),
+                    e
+                );
+                continue;
+            }
+        };
+
         for anime in &anime_entity_list {
+            // 已订阅的番剧不再重复订阅
+            if subscribed.contains_key(&anime.id()) {
+                continue;
+            }
+
             if let Err(e) = sub_animes.create(user.space_id(), anime.id()).await {
                 error!(
                     "space {} auto sub anime {} failed, {}",

@@ -3,13 +3,19 @@
 mod common;
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anime::entity::cap::AnimeRepository;
+use async_trait::async_trait;
 use cmd::task::sync_calendar_task::sync_calendar_task;
 use common::{
     MockDownloaderManager, MockSeasonalProvider, TestApp, bangumi_id_of, seasonal, tmdb_id_of,
 };
-use subscription::entity::model::SubAnimeListQuery;
+use subscription::entity::cap::SubAnimeRepository;
+use subscription::entity::model::{
+    Episode, EpisodeBaseData, EpisodeProp, SubAnimeBaseData, SubAnimeListQuery, SubAnimeProps,
+};
+use subscription::entity::sub_animes::SubAnimes;
 use user::entity::model::UserRole;
 
 /// 同步当季数据后：番剧条目、系列行、自动订阅都应写入。
@@ -264,4 +270,205 @@ async fn sync_calendar_without_auto_sub_user_writes_no_subscription() {
         .await
         .expect("list sub anime failed");
     assert!(sub_list.is_empty());
+}
+
+/// 统计订阅写入次数的假仓储：同步链路只用 `insert_sub_anime` 与 `find_by_anime_ids`。
+struct CountingSubAnimeRepository {
+    inner: Arc<dyn SubAnimeRepository>,
+    inserts: AtomicUsize,
+}
+
+impl CountingSubAnimeRepository {
+    fn new(inner: Arc<dyn SubAnimeRepository>) -> Self {
+        Self {
+            inner,
+            inserts: AtomicUsize::new(0),
+        }
+    }
+
+    fn inserts(&self) -> usize {
+        self.inserts.load(Ordering::SeqCst)
+    }
+}
+
+#[async_trait]
+impl SubAnimeRepository for CountingSubAnimeRepository {
+    async fn insert_sub_anime(
+        &self,
+        space_id: i64,
+        anime_id: i64,
+    ) -> anyhow::Result<SubAnimeProps> {
+        self.inserts.fetch_add(1, Ordering::SeqCst);
+        self.inner.insert_sub_anime(space_id, anime_id).await
+    }
+
+    async fn find_by_anime_ids(
+        &self,
+        space_id: i64,
+        anime_ids: Vec<i64>,
+    ) -> anyhow::Result<Vec<SubAnimeProps>> {
+        self.inner.find_by_anime_ids(space_id, anime_ids).await
+    }
+
+    async fn update_sub_anime(&self, _data: &SubAnimeBaseData) -> anyhow::Result<()> {
+        unimplemented!("sync calendar task must not update sub anime")
+    }
+
+    async fn update_sub_animes(&self, _data: &[SubAnimeBaseData]) -> anyhow::Result<()> {
+        unimplemented!("sync calendar task must not update sub animes")
+    }
+
+    async fn find_sub_anime(&self, _id: i64) -> anyhow::Result<Option<SubAnimeProps>> {
+        unimplemented!("sync calendar task must not find sub anime by id")
+    }
+
+    async fn list(&self, _query: &SubAnimeListQuery) -> anyhow::Result<Vec<SubAnimeProps>> {
+        unimplemented!("sync calendar task must not list sub animes")
+    }
+
+    async fn list_eps(&self, _sub_anime_id: i64) -> anyhow::Result<Vec<EpisodeProp>> {
+        unimplemented!("sync calendar task must not list episodes")
+    }
+
+    async fn find_epsiode(&self, _ep_id: i64) -> anyhow::Result<Option<EpisodeProp>> {
+        unimplemented!("sync calendar task must not find episode")
+    }
+
+    async fn get_one_undownload_ep(&self) -> anyhow::Result<Option<EpisodeProp>> {
+        unimplemented!("sync calendar task must not get one undownload episode")
+    }
+
+    async fn update_epsiode_status(&self, _data: &EpisodeBaseData) -> anyhow::Result<()> {
+        unimplemented!("sync calendar task must not update episode status")
+    }
+
+    async fn update_epsiodes_status(&self, _data: &[EpisodeBaseData]) -> anyhow::Result<()> {
+        unimplemented!("sync calendar task must not update episodes status")
+    }
+
+    async fn update_sub_anime_progress(
+        &self,
+        _data: &SubAnimeBaseData,
+        _eps: &[Episode],
+    ) -> anyhow::Result<()> {
+        unimplemented!("sync calendar task must not update sub anime progress")
+    }
+
+    async fn delete(&self, _sub_anime: i64) -> anyhow::Result<()> {
+        unimplemented!("sync calendar task must not delete sub anime")
+    }
+
+    async fn binding_rule_and_clear_eps(
+        &self,
+        _sub_anime: i64,
+        _rule_id: i64,
+    ) -> anyhow::Result<()> {
+        unimplemented!("sync calendar task must not bind rule")
+    }
+}
+
+/// 已订阅的番剧不再重复订阅：第二次同步不再产生任何订阅写入，既有订阅保持不变。
+#[tokio::test]
+async fn sync_calendar_skips_already_subscribed_animes() {
+    let app = TestApp::new().await;
+    let users = app.users(Arc::new(MockDownloaderManager::new(true)));
+    let user = users
+        .create(
+            "auto-sub-user",
+            "test-password-123456",
+            UserRole::User,
+            true,
+        )
+        .await
+        .expect("create user failed");
+
+    let captured = seasonal();
+    assert!(
+        !captured.is_empty(),
+        "captured seasonal data should not be empty"
+    );
+
+    let repo = Arc::new(CountingSubAnimeRepository::new(
+        app.ctx.repo.sub_anime_repo.clone(),
+    ));
+    let sub_animes = SubAnimes::new(
+        repo.clone(),
+        app.ctx.repo.rule_repo.clone(),
+        Arc::new(app.ctx.caps.matcher.clone()),
+    );
+
+    // 第一次同步：每个自动订阅用户的每条番剧各写一次订阅
+    let source = app.anime_sources(vec![Arc::new(MockSeasonalProvider::new(captured.clone()))]);
+    sync_calendar_task(app.animes(), source, users.clone(), sub_animes.clone())
+        .await
+        .expect("first sync failed");
+    let auto_sub_user_count = users
+        .list_auto_sub()
+        .await
+        .expect("list auto sub failed")
+        .len();
+    let expected_inserts = captured.len() * auto_sub_user_count;
+    assert_eq!(
+        repo.inserts(),
+        expected_inserts,
+        "first sync must subscribe every anime for every auto sub user"
+    );
+
+    // 手工改动一条既有订阅（绑定规则），同步不允许把它覆盖回初始状态
+    let query = SubAnimeListQuery {
+        anime_id: None,
+        space_id: Some(user.space_id()),
+        search_status: None,
+        sub_status: None,
+        limit: None,
+    };
+    let rule_id = app
+        .seed_rule(user.space_id(), "auto-sub-rule", "1080")
+        .await;
+    let subscribed = app
+        .list_sub_animes(&query)
+        .await
+        .into_iter()
+        .next()
+        .expect("first sync must write subscriptions");
+    app.ctx
+        .repo
+        .sub_anime_repo
+        .binding_rule_and_clear_eps(subscribed.data.id, rule_id)
+        .await
+        .expect("binding rule failed");
+
+    // 第二次同步：已订阅的番剧直接跳过，不再写入
+    let source = app.anime_sources(vec![Arc::new(MockSeasonalProvider::new(captured.clone()))]);
+    sync_calendar_task(app.animes(), source, users.clone(), sub_animes.clone())
+        .await
+        .expect("second sync failed");
+    assert_eq!(
+        repo.inserts(),
+        expected_inserts,
+        "already subscribed animes must not be inserted again"
+    );
+
+    let sub_list = app
+        .sub_animes()
+        .list(&query)
+        .await
+        .expect("list sub anime failed");
+    assert_eq!(
+        sub_list.len(),
+        captured.len(),
+        "subscriptions must not duplicate"
+    );
+
+    let after = app
+        .list_sub_animes(&query)
+        .await
+        .into_iter()
+        .find(|i| i.data.id == subscribed.data.id)
+        .expect("subscribed anime must still exist");
+    assert_eq!(
+        after.data.rule_id,
+        Some(rule_id),
+        "existing subscription must be kept untouched"
+    );
 }

@@ -14,7 +14,7 @@ pub enum Error {
     #[error("conflict: {0}")]
     Conflict(String),
     /// 外部端口未满足领域契约。
-    #[error("{context}")]
+    #[error("{context}: {source:#}")]
     ExternalContractMismatch {
         /// 边界上下文说明。
         context: String,
@@ -76,5 +76,26 @@ mod tests {
         let err = Error::external("db connect", anyhow::anyhow!("timeout"));
         let msg = err.to_string();
         assert!(msg.contains("db connect"));
+    }
+
+    #[test]
+    fn external_display_keeps_source_chain() {
+        let source =
+            anyhow::anyhow!("UNIQUE constraint failed: sub_anime.space_id, sub_anime.anime_id")
+                .context("subscription already exists for space_id 1 and anime_id 83");
+        let err = Error::external("subanimes create failed", source);
+        let msg = err.to_string();
+        assert!(
+            msg.contains("subanimes create failed"),
+            "context must be kept: {msg}"
+        );
+        assert!(
+            msg.contains("subscription already exists for space_id 1 and anime_id 83"),
+            "source cause must be kept: {msg}"
+        );
+        assert!(
+            msg.contains("UNIQUE constraint failed: sub_anime.space_id, sub_anime.anime_id"),
+            "source root cause must be kept: {msg}"
+        );
     }
 }

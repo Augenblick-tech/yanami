@@ -216,7 +216,15 @@ mod tests {
             "user 42 use recording download url magnet:xyz to {} failed",
             expected_path.to_string_lossy()
         );
-        assert_eq!(err.to_string(), expected);
+        let message = err.to_string();
+        assert!(
+            message.contains(&expected),
+            "context must be kept, actual = {message}"
+        );
+        assert!(
+            message.contains("provider fails on purpose"),
+            "provider cause must be kept, actual = {message}"
+        );
         assert!(
             std::error::Error::source(&err).is_some(),
             "original error chain should be preserved"
