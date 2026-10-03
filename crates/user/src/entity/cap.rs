@@ -26,7 +26,7 @@ pub trait UserRepository: Send + Sync {
 pub trait DownloadProvider: Send + Sync {
     fn name(&self) -> &str;
     async fn stop(&self);
-    
+
     async fn download(&self, url: &str, path: &str, hash: [u8; 20]) -> Result<bool>;
     async fn list_task(&self) -> Result<Vec<DownloadTask>>;
     async fn get_task(&self, hash: [u8; 20]) -> Result<Option<DownloadTask>>;

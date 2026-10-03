@@ -126,19 +126,31 @@ mod tests {
         }
 
         async fn get_task(&self, hash: [u8; 20]) -> anyhow::Result<Option<DownloadTask>> {
-            anyhow::bail!("RecordingProvider does not support get_task {}", hex::encode(hash))
+            anyhow::bail!(
+                "RecordingProvider does not support get_task {}",
+                hex::encode(hash)
+            )
         }
 
         async fn pause_task(&self, hash: [u8; 20]) -> anyhow::Result<()> {
-            anyhow::bail!("RecordingProvider does not support pause_task {}", hex::encode(hash))
+            anyhow::bail!(
+                "RecordingProvider does not support pause_task {}",
+                hex::encode(hash)
+            )
         }
 
         async fn resume_task(&self, hash: [u8; 20]) -> anyhow::Result<()> {
-            anyhow::bail!("RecordingProvider does not support resume_task {}", hex::encode(hash))
+            anyhow::bail!(
+                "RecordingProvider does not support resume_task {}",
+                hex::encode(hash)
+            )
         }
 
         async fn delete_task(&self, hash: [u8; 20]) -> anyhow::Result<()> {
-            anyhow::bail!("RecordingProvider does not support delete_task {}", hex::encode(hash))
+            anyhow::bail!(
+                "RecordingProvider does not support delete_task {}",
+                hex::encode(hash)
+            )
         }
     }
 
@@ -205,7 +217,10 @@ mod tests {
             expected_path.to_string_lossy()
         );
         assert_eq!(err.to_string(), expected);
-        assert!(std::error::Error::source(&err).is_some(), "original error chain should be preserved");
+        assert!(
+            std::error::Error::source(&err).is_some(),
+            "original error chain should be preserved"
+        );
     }
 
     #[test]

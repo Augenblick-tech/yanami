@@ -297,7 +297,9 @@ mod tests {
         let plain_password = "qbit-p@ssw0rd-密码";
         let mut config = qbit_config("qb-main", true, "/data", plain_password);
 
-        config.encrypt_secrets(&provider).expect("encrypting password should not fail");
+        config
+            .encrypt_secrets(&provider)
+            .expect("encrypting password should not fail");
         let cipher = password_of(&config);
         assert_ne!(cipher, plain_password);
         assert!(
@@ -307,7 +309,9 @@ mod tests {
         // 其余字段不参与加密
         assert_eq!(unwrap_qbit(&config).config.username, "admin");
 
-        config.decrypt_secrets(&provider).expect("decrypting password should not fail");
+        config
+            .decrypt_secrets(&provider)
+            .expect("decrypting password should not fail");
         assert_eq!(password_of(&config), plain_password);
     }
 
@@ -317,8 +321,12 @@ mod tests {
         let mut first = qbit_config("qb", true, "/data", "same-password");
         let mut second = qbit_config("qb", true, "/data", "same-password");
 
-        first.encrypt_secrets(&provider).expect("encrypting password should not fail");
-        second.encrypt_secrets(&provider).expect("encrypting password should not fail");
+        first
+            .encrypt_secrets(&provider)
+            .expect("encrypting password should not fail");
+        second
+            .encrypt_secrets(&provider)
+            .expect("encrypting password should not fail");
 
         assert_ne!(password_of(&first), password_of(&second));
     }
@@ -329,8 +337,12 @@ mod tests {
         let mut config = default_config("default", true, "/data");
         let before = config.clone();
 
-        config.encrypt_secrets(&provider).expect("encrypting default config should succeed directly");
-        config.decrypt_secrets(&provider).expect("decrypting default config should succeed directly");
+        config
+            .encrypt_secrets(&provider)
+            .expect("encrypting default config should succeed directly");
+        config
+            .decrypt_secrets(&provider)
+            .expect("decrypting default config should succeed directly");
 
         assert_eq!(config, before);
     }
@@ -339,10 +351,19 @@ mod tests {
     fn user_role_converts_to_and_from_u8() {
         assert_eq!(u8::from(UserRole::Admin), 1);
         assert_eq!(u8::from(UserRole::User), 2);
-        assert_eq!(UserRole::try_from(1).expect("1 should parse as Admin"), UserRole::Admin);
-        assert_eq!(UserRole::try_from(2).expect("2 should parse as User"), UserRole::User);
+        assert_eq!(
+            UserRole::try_from(1).expect("1 should parse as Admin"),
+            UserRole::Admin
+        );
+        assert_eq!(
+            UserRole::try_from(2).expect("2 should parse as User"),
+            UserRole::User
+        );
 
         let err = UserRole::try_from(7).expect_err("unknown role should fail");
-        assert!(err.to_string().contains("unknown user role 7"), "actual error: {err}");
+        assert!(
+            err.to_string().contains("unknown user role 7"),
+            "actual error: {err}"
+        );
     }
 }

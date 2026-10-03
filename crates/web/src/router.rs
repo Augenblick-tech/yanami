@@ -177,6 +177,7 @@ async fn api_not_found() -> impl IntoResponse {
             crate::model::AnimeEpisodeItem,
             crate::model::AnimeSeasonItem,
             crate::model::AnimeMetadataItem,
+            crate::model::AnimeSeriesMetadataItem,
         )
     ),
     modifiers(&SecurityAddon)

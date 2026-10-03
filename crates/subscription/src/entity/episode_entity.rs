@@ -211,10 +211,7 @@ mod tests {
         assert!(res);
         assert!(e.is_downloaded());
         // 生产代码用 extend.anime_id 询问系列落点
-        assert_eq!(
-            series.requested.lock().expect("lock").as_slice(),
-            &[42]
-        );
+        assert_eq!(series.requested.lock().expect("lock").as_slice(), &[42]);
         let calls = downloader.calls.lock().expect("lock");
         assert_eq!(
             calls.as_slice(),
@@ -260,7 +257,10 @@ mod tests {
             requested: Mutex::new(Vec::new()),
         };
 
-        let res = e.download(&downloader, &series).await.expect("short circuit");
+        let res = e
+            .download(&downloader, &series)
+            .await
+            .expect("short circuit");
 
         assert!(res);
         assert!(downloader.calls.lock().expect("lock").is_empty());

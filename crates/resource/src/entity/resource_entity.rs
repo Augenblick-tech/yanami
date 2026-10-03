@@ -99,7 +99,10 @@ mod tests {
             .expect("magnet_hex must start with PREFIX");
         assert_eq!(suffix, INFO_HASH_HEX);
         // 解码后必须还原出原始 info_hash
-        assert_eq!(hex::decode(suffix).expect("hex should decode"), INFO_HASH.to_vec());
+        assert_eq!(
+            hex::decode(suffix).expect("hex should decode"),
+            INFO_HASH.to_vec()
+        );
     }
 
     #[test]

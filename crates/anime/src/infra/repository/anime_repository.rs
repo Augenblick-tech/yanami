@@ -91,7 +91,7 @@ impl AnimeRepository for AnimeSqliteClient {
         Ok(results)
     }
 
-    async fn insert(&self, entity: &AnimeMetadata) -> Result<AnimeProps> {
+    async fn insert(&self, entity: &AnimeMetadata, lock: bool) -> Result<AnimeProps> {
         let mut tx = self.pool.begin().await?;
 
         let mut tmdb_id: i64 = 0;
@@ -142,13 +142,14 @@ impl AnimeRepository for AnimeSqliteClient {
 
         let anime_id = sqlx::query(
             "INSERT INTO anime (air_weekday, air_date, air_quarter, air_year, air_month, is_locked) 
-            VALUES (?, ?, ?, ?, ?, 0)"
+            VALUES (?, ?, ?, ?, ?, ?)"
         )
         .bind(weekday_i64)
         .bind(&air_date_str)
         .bind(entity.air_quarter)
         .bind(air_year)
         .bind(air_month)
+        .bind(if lock { 1 } else { 0 })
         .execute(&mut *tx)
         .await?
         .last_insert_rowid();
@@ -249,7 +250,7 @@ impl AnimeRepository for AnimeSqliteClient {
             data: AnimeBaseData {
                 id: anime_id,
                 metadata: entity.clone(),
-                lock: false,
+                lock,
             },
         })
     }
@@ -343,7 +344,7 @@ impl AnimeRepository for AnimeSqliteClient {
                     props.push(updated_prop);
                 }
             } else {
-                match self.insert(meta).await {
+                match self.insert(meta, false).await {
                     Ok(prop) => {
                         props.push(prop);
                     }

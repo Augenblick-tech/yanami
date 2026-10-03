@@ -247,12 +247,14 @@ mod tests {
 
         tx.commit().await.expect("commit transaction failed");
 
-        let row = sqlx::query("SELECT info_hash, title, match_title, url, published_at FROM resource")
-            .fetch_one(&client.pool)
-            .await
-            .expect("query resource failed");
+        let row =
+            sqlx::query("SELECT info_hash, title, match_title, url, published_at FROM resource")
+                .fetch_one(&client.pool)
+                .await
+                .expect("query resource failed");
 
-        let err = ResourceSqliteClient::parse_resource_row(&row).expect_err("short info_hash should fail");
+        let err = ResourceSqliteClient::parse_resource_row(&row)
+            .expect_err("short info_hash should fail");
         assert!(err.to_string().contains("info_hash length is not 20"));
 
         assert!(dir.path().join("resource_test.db").exists());

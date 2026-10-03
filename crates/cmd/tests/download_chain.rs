@@ -35,12 +35,20 @@ async fn arrange_one_episode(app: &TestApp, metadata: &AnimeMetadata) -> (i64, S
     let info_hash = item.info_hash;
 
     let saved = app.save_feed_items(vec![item]).await;
-    assert_eq!(saved.len(), 1, "real item should be saved into the resource table");
+    assert_eq!(
+        saved.len(),
+        1,
+        "real item should be saved into the resource table"
+    );
 
     app.match_all_resources(&sub_anime).await;
     let eps = app.list_eps(sub_anime.id()).await;
     assert_eq!(eps.len(), 1, "only one episode should be matched");
-    assert_eq!(eps[0].data.ep.ep_num, Some(1.0), "episode number should be extracted from 01 in the title");
+    assert_eq!(
+        eps[0].data.ep.ep_num,
+        Some(1.0),
+        "episode number should be extracted from 01 in the title"
+    );
 
     (sub_anime.id(), resource_url, info_hash)
 }
@@ -65,7 +73,11 @@ async fn download_task_lands_episode_in_series_season_folder() {
     // 系列展示信息来自抓取的 TMDB 系列，季号来自同一条目的 TMDB 季
     let expected_path = format!("{}/転生したら剣でした/S02", base_path);
     let downloads = manager.provider().downloads();
-    assert_eq!(downloads.len(), 1, "download should be triggered exactly once");
+    assert_eq!(
+        downloads.len(),
+        1,
+        "download should be triggered exactly once"
+    );
     assert_eq!(downloads[0].0, resource_url);
     assert_eq!(downloads[0].1, expected_path);
     assert_eq!(downloads[0].2, info_hash);
@@ -99,7 +111,9 @@ async fn download_task_reports_error_when_series_row_missing() {
         .await
         .expect_err("location resolve should fail when series metadata is unavailable");
     assert!(
-        error.to_string().contains("anime series metadata not found"),
+        error
+            .to_string()
+            .contains("anime series metadata not found"),
         "actual error: {error}"
     );
 
@@ -128,7 +142,11 @@ async fn download_task_keeps_episode_pending_when_downloader_fails() {
         .await
         .expect("download_task failed");
 
-    assert_eq!(manager.provider().downloads().len(), 1, "downloader should have been called");
+    assert_eq!(
+        manager.provider().downloads().len(),
+        1,
+        "downloader should have been called"
+    );
     let eps = app.list_eps(sub_anime_id).await;
     assert_eq!(eps[0].data.ep.status, EpsiodeStatus::Pending);
 }

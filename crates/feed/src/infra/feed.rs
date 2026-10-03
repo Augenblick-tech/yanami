@@ -708,7 +708,10 @@ mod tests {
         );
         // Nyaa 的 source_url 取 guid，resource_url 取 link
         assert_eq!(item.source_url, "https://nyaa.si/view/2168588");
-        assert_eq!(item.resource_url, "https://nyaa.si/download/2168588.torrent");
+        assert_eq!(
+            item.resource_url,
+            "https://nyaa.si/download/2168588.torrent"
+        );
         assert_eq!(item.published_at, 1_790_931_226);
         // nyaa:infoHash 扩展直接给出 info_hash
         assert_eq!(
@@ -739,9 +742,12 @@ mod tests {
 
     #[test]
     fn test_parse_feed_malformed_xml_returns_error() {
-        let err = parse_feed(b"<rss version=\"2.0\"><channel>", "https://example.com/feed")
-            .err()
-            .expect("truncated XML should return Err");
+        let err = parse_feed(
+            b"<rss version=\"2.0\"><channel>",
+            "https://example.com/feed",
+        )
+        .err()
+        .expect("truncated XML should return Err");
         assert!(matches!(err, FeedFetchError::InvalidData(_)));
     }
 
@@ -788,7 +794,9 @@ mod tests {
         ));
         // "12 END" 没有集数区间，不能误判为合集
         assert!(!is_collection_resource("Foo - 12 END"));
-        assert!(!is_collection_resource("Forking Cal.com to closed source (Interview)"));
+        assert!(!is_collection_resource(
+            "Forking Cal.com to closed source (Interview)"
+        ));
     }
 
     #[test]
@@ -796,15 +804,25 @@ mod tests {
         // 与 sha1("https://mikanani.me/rss/classic") 一致
         let expected = "74e17ca5d9a3e95f948f76d935db60efd54a86ae";
 
-        assert_eq!(build_source_key("https://mikanani.me/rss/classic"), expected);
+        assert_eq!(
+            build_source_key("https://mikanani.me/rss/classic"),
+            expected
+        );
         // 首尾空白与大小写必须被归一化
-        assert_eq!(build_source_key("  HTTPS://Mikanani.ME/RSS/Classic  "), expected);
-        assert_eq!(build_source_key("https://mikanani.me/rss/classic").len(), 40);
+        assert_eq!(
+            build_source_key("  HTTPS://Mikanani.ME/RSS/Classic  "),
+            expected
+        );
+        assert_eq!(
+            build_source_key("https://mikanani.me/rss/classic").len(),
+            40
+        );
     }
 
     #[test]
     fn test_magnet_info_hash_parses_hex_and_base32() {
-        let expected = torrent_info_hash(TORRENT_BYTES).expect("real torrent should compute info_hash");
+        let expected =
+            torrent_info_hash(TORRENT_BYTES).expect("real torrent should compute info_hash");
 
         let hex_magnet = format!("magnet:?xt=urn:btih:{TORRENT_INFO_HASH}");
         assert_eq!(
@@ -895,7 +913,10 @@ mod tests {
         let mikan_channel =
             Channel::read_from(Cursor::new(patched.as_bytes())).expect("Mikan XML should parse");
         let mikan_item = &mikan_channel.items()[0];
-        assert_eq!(mikan_parser.extract_pub_date(mikan_item), Some(1_790_959_920));
+        assert_eq!(
+            mikan_parser.extract_pub_date(mikan_item),
+            Some(1_790_959_920)
+        );
         assert_eq!(DefaultParser.extract_pub_date(mikan_item), None);
 
         // Nyaa：source_url 取 guid，resource_url 取 link
@@ -931,7 +952,10 @@ mod tests {
     fn test_handle_status_error_mapping() {
         // 明确的客户端/服务端错误视为不可达
         assert!(matches!(
-            HttpFeedFetcher::handle_status_error("https://example.com", reqwest::StatusCode::NOT_FOUND),
+            HttpFeedFetcher::handle_status_error(
+                "https://example.com",
+                reqwest::StatusCode::NOT_FOUND
+            ),
             FeedFetchError::Inaccessible(_)
         ));
         assert!(matches!(

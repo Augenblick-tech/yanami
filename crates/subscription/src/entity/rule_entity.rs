@@ -84,7 +84,9 @@ mod tests {
 
     fn entity(id: i64, order: i64, pattern: &str, active: bool) -> RuleEntity {
         let matcher: Arc<dyn RuleMatcher> =
-            Arc::new(RegexRuleMatcher::new(Arc::new(DashMap::<String, Regex>::new())));
+            Arc::new(RegexRuleMatcher::new(Arc::new(
+                DashMap::<String, Regex>::new(),
+            )));
         RuleEntity::new(
             RuleBaseData {
                 id,

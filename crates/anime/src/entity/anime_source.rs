@@ -206,10 +206,7 @@ mod tests {
         let ids: Vec<i64> = synced.iter().map(bangumi_id).collect();
         assert_eq!(ids, vec![1, 2, 3]);
 
-        let titles: Vec<&str> = synced
-            .iter()
-            .map(|i| i.titles[0].name.as_str())
-            .collect();
+        let titles: Vec<&str> = synced.iter().map(|i| i.titles[0].name.as_str()).collect();
         assert_eq!(titles, vec!["第一", "第二", "第三"]);
     }
 
@@ -249,10 +246,7 @@ mod tests {
     #[tokio::test]
     async fn search_error_is_mapped_to_external_contract_mismatch() {
         let sources = sources(lookup(true, None), vec![]);
-        let err = sources
-            .search("女主角")
-            .await
-            .expect_err("should fail");
+        let err = sources.search("女主角").await.expect_err("should fail");
         assert!(matches!(
             err,
             Error::ExternalContractMismatch { ref context, .. }

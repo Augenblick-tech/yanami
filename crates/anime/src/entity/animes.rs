@@ -65,10 +65,11 @@ impl Animes {
         }
     }
 
-    pub async fn create(&self, metadata: AnimeMetadata) -> Result<AnimeEntity, Error> {
+    /// 创建一部番剧：锁状态随创建在同一个事务里落库，创建之后不需要再写一次。
+    pub async fn create(&self, metadata: AnimeMetadata, lock: bool) -> Result<AnimeEntity, Error> {
         let props = self
             .repo
-            .insert(&metadata)
+            .insert(&metadata, lock)
             .await
             .map_err(|e| Error::external("animes create anime_entity failed", e))?;
         Ok(AnimeEntity::new(props.data))
@@ -209,7 +210,7 @@ mod tests {
         assert!(dir.path().join(DB_FILE).is_file());
 
         let animes = animes(&client);
-        let entity = animes.create(metadata(Some(TMDB_ID))).await.unwrap();
+        let entity = animes.create(metadata(Some(TMDB_ID)), false).await.unwrap();
         assert_eq!(entity.series_id(), Some(TMDB_ID));
 
         let series = animes.series_of(&entity).unwrap();
@@ -226,7 +227,7 @@ mod tests {
         assert!(dir.path().join(DB_FILE).is_file());
 
         let animes = animes(&client);
-        let entity = animes.create(metadata(None)).await.unwrap();
+        let entity = animes.create(metadata(None), false).await.unwrap();
         assert_eq!(entity.series_id(), None);
 
         let err = animes.series_of(&entity).err().expect("should fail");
@@ -258,5 +259,30 @@ mod tests {
             err,
             Error::NotFound(ref m) if m == "animes get series anime not found"
         ));
+    }
+
+    #[tokio::test]
+    async fn create_writes_lock_state_in_one_write() {
+        let (dir, client) = setup().await;
+        assert!(dir.path().join(DB_FILE).is_file());
+
+        let animes = animes(&client);
+        let locked = animes.create(metadata(Some(TMDB_ID)), true).await.unwrap();
+        assert!(locked.is_locked(), "created entity should carry the lock");
+        let stored = animes
+            .get(locked.id())
+            .await
+            .unwrap()
+            .expect("created anime should be found");
+        assert!(stored.is_locked(), "lock should be persisted by the create");
+
+        let unlocked = animes.create(metadata(None), false).await.unwrap();
+        assert!(!unlocked.is_locked());
+        let stored = animes
+            .get(unlocked.id())
+            .await
+            .unwrap()
+            .expect("created anime should be found");
+        assert!(!stored.is_locked());
     }
 }

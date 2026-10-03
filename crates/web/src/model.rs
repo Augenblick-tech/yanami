@@ -1,6 +1,6 @@
 use anime::entity::model::{
     AnimeAirWeekday, AnimeEpisode, AnimeEx, AnimeIdType, AnimeLangTarget, AnimeMetadata,
-    AnimeSearchResult, AnimeSeason, AnimeSourceTarget, AnimeTitle,
+    AnimeSearchResult, AnimeSeason, AnimeSeriesMetadata, AnimeSourceTarget, AnimeTitle,
 };
 use chrono::NaiveDate;
 use feed::entity::feed_entity::FeedEntity;
@@ -858,9 +858,50 @@ impl From<AnimeSeasonItem> for AnimeSeason {
     }
 }
 
+/// 系列展示信息
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct AnimeSeriesMetadataItem {
+    /// 系列原名
+    pub origin_name: String,
+    /// 系列中文名
+    pub cn_name: String,
+    /// 系列简介
+    pub desc: String,
+    /// 系列首播日期
+    pub air_date: NaiveDate,
+    /// 系列题材类型
+    pub genres: Vec<String>,
+}
+
+impl From<AnimeSeriesMetadata> for AnimeSeriesMetadataItem {
+    fn from(v: AnimeSeriesMetadata) -> Self {
+        Self {
+            origin_name: v.origin_name,
+            cn_name: v.cn_name,
+            desc: v.desc,
+            air_date: v.air_date,
+            genres: v.genres,
+        }
+    }
+}
+
+impl From<AnimeSeriesMetadataItem> for AnimeSeriesMetadata {
+    fn from(v: AnimeSeriesMetadataItem) -> Self {
+        Self {
+            origin_name: v.origin_name,
+            cn_name: v.cn_name,
+            desc: v.desc,
+            air_date: v.air_date,
+            genres: v.genres,
+        }
+    }
+}
+
 /// 番剧元数据详情
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct AnimeMetadataItem {
+    /// 系列信息：只有具备 TMDB 系列身份的番剧才有，取不到就是 None
+    pub series_metadata: Option<AnimeSeriesMetadataItem>,
     /// 外部关联信息 (如 Bangumi ID, TMDB ID 等)
     pub external_link: Vec<AnimeExItem>,
     /// 多语言标题集合
@@ -878,6 +919,7 @@ pub struct AnimeMetadataItem {
 impl From<AnimeMetadata> for AnimeMetadataItem {
     fn from(v: AnimeMetadata) -> Self {
         Self {
+            series_metadata: v.series_metadata.map(Into::into),
             external_link: v.external_link.into_iter().map(Into::into).collect(),
             titles: v.titles.into_iter().map(Into::into).collect(),
             air_weekday: v.air_weekday.into(),
@@ -891,9 +933,8 @@ impl From<AnimeMetadata> for AnimeMetadataItem {
 impl From<AnimeMetadataItem> for AnimeMetadata {
     fn from(v: AnimeMetadataItem) -> Self {
         Self {
-            // web 请求体不携带系列展示信息：系列身份来自 external_link 的 TMDB 记录，
-            // 系列展示信息由同步链路写入 anime_series，这里不凭请求体伪造
-            series_metadata: None,
+            // 系列信息随请求体一起进来：与同步链路同构，交由 repository 在写番剧的同一次落库写 anime_series
+            series_metadata: v.series_metadata.map(Into::into),
             external_link: v.external_link.into_iter().map(Into::into).collect(),
             titles: v.titles.into_iter().map(Into::into).collect(),
             air_weekday: v.air_weekday.into(),
@@ -958,6 +999,75 @@ mod tests {
     // web 未直接依赖 serde_json，这里复用 utoipa 重新导出的 serde_json（无需新增依赖）
     use utoipa::r#gen::serde_json;
 
+    /// 构造带系列信息的元数据请求体（字段取自真实抓取的 Re:Zero 条目）。
+    fn metadata_item_with_series(
+        series_metadata: Option<AnimeSeriesMetadataItem>,
+    ) -> AnimeMetadataItem {
+        AnimeMetadataItem {
+            series_metadata,
+            external_link: vec![AnimeExItem {
+                id: AnimeIdTypeItem::Int(65942),
+                target: AnimeSourceTargetItem::TMDB,
+                r#type: Some("tv".to_string()),
+            }],
+            titles: vec![AnimeTitleItem {
+                name: "Re：从零开始的异世界生活".to_string(),
+                match_name: "re从零开始的异世界生活".to_string(),
+                target: AnimeLangTargetItem::ZhCn,
+                origin: false,
+            }],
+            air_weekday: AnimeAirWeekdayItem::Saturday,
+            air_date: NaiveDate::from_ymd_opt(2024, 10, 2).expect("valid air date"),
+            air_quarter: 202410,
+            season: vec![],
+        }
+    }
+
+    fn re_zero_series_metadata() -> AnimeSeriesMetadataItem {
+        AnimeSeriesMetadataItem {
+            origin_name: "Re:ゼロから始める異世界生活".to_string(),
+            cn_name: "Re：从零开始的异世界生活".to_string(),
+            desc: "系列简介".to_string(),
+            air_date: NaiveDate::from_ymd_opt(2016, 4, 4).expect("valid series air date"),
+            genres: vec!["动画".to_string(), "悬疑".to_string()],
+        }
+    }
+
+    #[test]
+    fn test_anime_metadata_item_keeps_series_metadata_from_request_body() {
+        // 请求体的系列信息必须进入领域元数据，否则 repository 不会写 anime_series
+        let item = metadata_item_with_series(Some(re_zero_series_metadata()));
+
+        let metadata: AnimeMetadata = item.into();
+        let series = metadata
+            .series_metadata
+            .expect("series metadata from request body should be kept");
+        assert_eq!(series.origin_name, "Re:ゼロから始める異世界生活");
+        assert_eq!(series.cn_name, "Re：从零开始的异世界生活");
+        assert_eq!(series.genres, vec!["动画".to_string(), "悬疑".to_string()]);
+        assert_eq!(
+            series.air_date,
+            NaiveDate::from_ymd_opt(2016, 4, 4).expect("valid series air date")
+        );
+    }
+
+    #[test]
+    fn test_anime_metadata_item_returns_series_metadata_to_client() {
+        // 反向：领域元数据转 DTO 时也要把系列信息带出去（bgm_info 响应靠它回传给前端）
+        let metadata: AnimeMetadata =
+            metadata_item_with_series(Some(re_zero_series_metadata())).into();
+
+        let back: AnimeMetadataItem = metadata.into();
+        assert_eq!(back.series_metadata, Some(re_zero_series_metadata()));
+    }
+
+    #[test]
+    fn test_anime_metadata_item_keeps_absent_series_metadata() {
+        // 没有 TMDB 系列身份的番剧取不到系列信息，不能凭请求体伪造
+        let metadata: AnimeMetadata = metadata_item_with_series(None).into();
+        assert!(metadata.series_metadata.is_none());
+    }
+
     #[test]
     fn test_page_fields_are_preserved() {
         let page = Page {
@@ -976,8 +1086,7 @@ mod tests {
     #[test]
     fn test_page_deserializes_generic_data() {
         let raw = r#"{"page":1,"page_size":10,"total":3,"data":[1,2,3]}"#;
-        let page: Page<Vec<u32>> =
-            serde_json::from_str(raw).expect("page should deserialize");
+        let page: Page<Vec<u32>> = serde_json::from_str(raw).expect("page should deserialize");
 
         assert_eq!(page.page, 1);
         assert_eq!(page.page_size, 10);
@@ -1033,13 +1142,11 @@ mod tests {
     #[test]
     fn test_page_anime_request_rejects_wrong_type() {
         // page 应为无符号整数，传字符串必须反序列化失败
-        let result: Result<PageAnimeRequest, _> =
-            serde_json::from_str(r#"{"page":"第一页"}"#);
+        let result: Result<PageAnimeRequest, _> = serde_json::from_str(r#"{"page":"第一页"}"#);
         assert!(result.is_err());
 
         // month 为 u32，负数必须反序列化失败
-        let result: Result<PageAnimeRequest, _> =
-            serde_json::from_str(r#"{"month":-1}"#);
+        let result: Result<PageAnimeRequest, _> = serde_json::from_str(r#"{"month":-1}"#);
         assert!(result.is_err());
     }
 

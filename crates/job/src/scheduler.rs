@@ -153,7 +153,10 @@ mod tests {
         let probe = ConcurrencyProbe::new();
 
         let mut scheduler = TaskScheduler::new();
-        scheduler.register(config("no-reentry", false), probe.handler(Duration::from_millis(200)));
+        scheduler.register(
+            config("no-reentry", false),
+            probe.handler(Duration::from_millis(200)),
+        );
 
         let handles = scheduler.start();
         assert_eq!(handles.len(), 1);
@@ -165,7 +168,11 @@ mod tests {
         }
 
         assert!(probe.starts() >= 1, "handler should run at least once");
-        assert_eq!(probe.max_in_flight(), 1, "handler must not run concurrently when reentry is disabled");
+        assert_eq!(
+            probe.max_in_flight(),
+            1,
+            "handler must not run concurrently when reentry is disabled"
+        );
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -173,7 +180,10 @@ mod tests {
         let probe = ConcurrencyProbe::new();
 
         let mut scheduler = TaskScheduler::new();
-        scheduler.register(config("reentry", true), probe.handler(Duration::from_millis(200)));
+        scheduler.register(
+            config("reentry", true),
+            probe.handler(Duration::from_millis(200)),
+        );
 
         let handles = scheduler.start();
         assert_eq!(handles.len(), 1);

@@ -330,13 +330,16 @@ mod tests {
         // NFKC 把全角字母归一为半角，CJK 逐字成 token，拉丁字母小写成词
         assert_eq!(
             AnimeTitle::to_keywords("Ｃｏｄｅ　Ｇｅａｓｓ 反逆のルルーシュ"),
-            vec!["code", "geass", "反", "逆", "の", "ル", "ル", "ー", "シ", "ュ"]
+            vec![
+                "code", "geass", "反", "逆", "の", "ル", "ル", "ー", "シ", "ュ"
+            ]
         );
 
         // 词内数字保留，标点只作为切分点
-        assert_eq!(AnimeTitle::to_keywords("Re:Zero 100人の彼女"), vec![
-            "re", "zero", "100", "人", "の", "彼", "女"
-        ]);
+        assert_eq!(
+            AnimeTitle::to_keywords("Re:Zero 100人の彼女"),
+            vec!["re", "zero", "100", "人", "の", "彼", "女"]
+        );
 
         assert!(AnimeTitle::to_keywords("").is_empty());
         assert_eq!(AnimeTitle::to_keywords("！？。").len(), 0);

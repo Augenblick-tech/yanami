@@ -568,7 +568,7 @@ pub fn seasonal() -> Vec<AnimeMetadata> {
 }
 
 pub fn nyaa_feed() -> FeedData {
-FeedData {
+    FeedData {
     source_key: "d4740a133fefda70d02b1c39becf83e0675b2a9e".to_string(),
     items: vec![
         FeedItem {

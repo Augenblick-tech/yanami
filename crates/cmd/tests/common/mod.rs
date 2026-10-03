@@ -40,7 +40,8 @@ use subscription::entity::{
 use user::entity::{
     cap::{DownloadProvider, DownloaderManager, UserRepository},
     model::{
-        DefaultDownloaderConfig, DownloadConfig, DownloadTask, DownloaderConfig, UserProps, UserRole,
+        DefaultDownloaderConfig, DownloadConfig, DownloadTask, DownloaderConfig, UserProps,
+        UserRole,
     },
     users::Users,
 };
@@ -51,7 +52,10 @@ pub use captured::*;
 /// 抓取到的当季条目 `転生したら剣でした`（TMDB 134667，TMDB 第 2 季），
 /// 补一条真实发布名对应的韩文别名（抓取到的别名里没有这条正名）。
 pub fn sword_anime() -> AnimeMetadata {
-    let mut item = seasonal().into_iter().next().expect("captured data should not be empty");
+    let mut item = seasonal()
+        .into_iter()
+        .next()
+        .expect("captured data should not be empty");
     item.titles.push(anime::entity::model::AnimeTitle {
         name: "전생했더니 검이었습니다".to_string(),
         match_name: "전생했더니 검이었습니다".to_string(),
@@ -73,9 +77,11 @@ pub fn nyaa_item_with_episode(base: &FeedItem, episode: &str) -> FeedItem {
     );
     item.source_url = format!("{}#ep{episode}", item.source_url);
     item.resource_url = format!("{}#ep{episode}", item.resource_url);
-    item.info_hash[0] = item
-        .info_hash[0]
-        .wrapping_add(episode.parse::<u8>().expect("episode number should be two decimal digits"));
+    item.info_hash[0] = item.info_hash[0].wrapping_add(
+        episode
+            .parse::<u8>()
+            .expect("episode number should be two decimal digits"),
+    );
     item
 }
 
@@ -169,17 +175,12 @@ impl TestApp {
         self.ctx
             .repo
             .anime_repo
-            .insert(metadata)
+            .insert(metadata, false)
             .await
             .expect("seed anime failed")
     }
 
-    pub async fn seed_user(
-        &self,
-        username: &str,
-        role: UserRole,
-        auto_sub: bool,
-    ) -> UserProps {
+    pub async fn seed_user(&self, username: &str, role: UserRole, auto_sub: bool) -> UserProps {
         self.ctx
             .repo
             .user_repo
@@ -244,7 +245,10 @@ impl TestApp {
             .create(space_id, anime_id)
             .await
             .expect("create sub anime failed");
-        assert!(sub_anime.cancel_search(), "fresh subscription should return to NotSearch from Pending");
+        assert!(
+            sub_anime.cancel_search(),
+            "fresh subscription should return to NotSearch from Pending"
+        );
         sub_animes
             .save(&sub_anime)
             .await
@@ -300,7 +304,10 @@ impl TestApp {
             .expect("list eps failed")
     }
 
-    pub async fn list_sub_animes(&self, query: &SubAnimeListQuery) -> Vec<subscription::entity::model::SubAnimeProps> {
+    pub async fn list_sub_animes(
+        &self,
+        query: &SubAnimeListQuery,
+    ) -> Vec<subscription::entity::model::SubAnimeProps> {
         self.ctx
             .repo
             .sub_anime_repo
@@ -409,12 +416,7 @@ impl FeedFetcher for MockFeedFetcher {
             return Ok(data.clone());
         }
         drop(guard);
-        if let Some(data) = self
-            .any_feed
-            .lock()
-            .expect("lock any feed failed")
-            .as_ref()
-        {
+        if let Some(data) = self.any_feed.lock().expect("lock any feed failed").as_ref() {
             return Ok(data.clone());
         }
         Err(FeedFetchError::Inaccessible(format!(
@@ -468,10 +470,7 @@ impl FeedAccessPolicy for MockAccessPolicy {
     }
 
     fn note(&self, feed_id: i64, _res: &FeedFetchResult) {
-        self.noted
-            .lock()
-            .expect("lock noted failed")
-            .push(feed_id);
+        self.noted.lock().expect("lock noted failed").push(feed_id);
     }
 }
 
@@ -506,10 +505,11 @@ impl DownloadProvider for MockDownloadProvider {
     async fn stop(&self) {}
 
     async fn download(&self, url: &str, path: &str, hash: [u8; 20]) -> anyhow::Result<bool> {
-        self.downloads
-            .lock()
-            .expect("lock downloads failed")
-            .push((url.to_string(), path.to_string(), hash));
+        self.downloads.lock().expect("lock downloads failed").push((
+            url.to_string(),
+            path.to_string(),
+            hash,
+        ));
         Ok(self.result)
     }
 
@@ -591,16 +591,20 @@ impl AnimeSeasonalProvider for MockSeasonalProvider {
 
 /// 取条目的 TMDB 外部身份（系列身份的唯一来源）。
 pub fn tmdb_id_of(item: &AnimeMetadata) -> Option<i64> {
-    item.external_link.iter().find_map(|link| match (&link.target, &link.id) {
-        (AnimeSourceTarget::TMDB, AnimeIdType::Int(id)) => Some(*id),
-        _ => None,
-    })
+    item.external_link
+        .iter()
+        .find_map(|link| match (&link.target, &link.id) {
+            (AnimeSourceTarget::TMDB, AnimeIdType::Int(id)) => Some(*id),
+            _ => None,
+        })
 }
 
 /// 取条目的 Bangumi 外部身份。
 pub fn bangumi_id_of(item: &AnimeMetadata) -> Option<i64> {
-    item.external_link.iter().find_map(|link| match (&link.target, &link.id) {
-        (AnimeSourceTarget::Bangumi, AnimeIdType::Int(id)) => Some(*id),
-        _ => None,
-    })
+    item.external_link
+        .iter()
+        .find_map(|link| match (&link.target, &link.id) {
+            (AnimeSourceTarget::Bangumi, AnimeIdType::Int(id)) => Some(*id),
+            _ => None,
+        })
 }

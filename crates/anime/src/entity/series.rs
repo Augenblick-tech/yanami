@@ -176,7 +176,11 @@ mod tests {
     }
 
     async fn insert(client: &AnimeSqliteClient, metadata: &AnimeMetadata) -> i64 {
-        AnimeRepository::insert(client, metadata).await.unwrap().data.id
+        AnimeRepository::insert(client, metadata, false)
+            .await
+            .unwrap()
+            .data
+            .id
     }
 
     fn repo(client: &AnimeSqliteClient) -> Arc<dyn AnimeRepository> {
@@ -325,11 +329,7 @@ mod tests {
         let origin_name = "Fate/stay night: Unlimited Blade Works?";
         insert(
             &client,
-            &metadata(
-                Some(TMDB_ID),
-                Some(1),
-                Some(series_metadata(origin_name)),
-            ),
+            &metadata(Some(TMDB_ID), Some(1), Some(series_metadata(origin_name))),
         )
         .await;
 

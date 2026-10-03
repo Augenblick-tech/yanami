@@ -510,7 +510,10 @@ mod tests {
         let f = setup().await;
         seed_anime(&f.pool, 100, Some("2024-04-01"), Some(12), &["番A", "A番"]).await;
         let client = SubAnimeSqliteClient::new(f.pool.clone());
-        let inserted = client.insert_sub_anime(9, 100).await.expect("insert sub anime");
+        let inserted = client
+            .insert_sub_anime(9, 100)
+            .await
+            .expect("insert sub anime");
 
         let row = fetch_sub_anime_row(&f.pool).await;
         let props = SubAnimeSqliteClient::row_to_sub_anime_props(&row).expect("parse row");
@@ -519,7 +522,10 @@ mod tests {
         assert_eq!(props.data.anime_id, 100);
         assert_eq!(props.data.space_id, 9);
         assert_eq!(props.data.rule_id, None);
-        assert_eq!(props.data.search_status, crate::entity::model::SubAnimeSearchStatus::Pending);
+        assert_eq!(
+            props.data.search_status,
+            crate::entity::model::SubAnimeSearchStatus::Pending
+        );
         assert_eq!(props.data.progress, 0);
         assert_eq!(props.extend.eps, 12);
         assert_eq!(props.extend.rule_name, None);
@@ -538,7 +544,10 @@ mod tests {
         // 没有 anime_title 行时 json_group_array 聚合出 '[]'
         seed_anime(&f.pool, 200, Some("2024-05-01"), Some(6), &[]).await;
         let client = SubAnimeSqliteClient::new(f.pool.clone());
-        client.insert_sub_anime(9, 200).await.expect("insert sub anime");
+        client
+            .insert_sub_anime(9, 200)
+            .await
+            .expect("insert sub anime");
 
         let row = fetch_sub_anime_row(&f.pool).await;
         let props = SubAnimeSqliteClient::row_to_sub_anime_props(&row).expect("parse row");
@@ -609,7 +618,10 @@ mod tests {
         let f = setup().await;
         seed_anime(&f.pool, 500, Some("2024-06-01"), Some(12), &["番E"]).await;
         let client = SubAnimeSqliteClient::new(f.pool.clone());
-        let inserted = client.insert_sub_anime(9, 500).await.expect("insert sub anime");
+        let inserted = client
+            .insert_sub_anime(9, 500)
+            .await
+            .expect("insert sub anime");
         let rule_client = RuleSqliteClient::new(
             f.pool.clone(),
             RegexRuleMatcher::new(Arc::new(DashMap::<String, Regex>::new())),
@@ -669,7 +681,10 @@ mod tests {
         let f = setup().await;
         seed_anime(&f.pool, 100, Some("2024-04-01"), Some(12), &["番A"]).await;
         let client = SubAnimeSqliteClient::new(f.pool.clone());
-        let sub = client.insert_sub_anime(9, 100).await.expect("insert sub anime");
+        let sub = client
+            .insert_sub_anime(9, 100)
+            .await
+            .expect("insert sub anime");
         seed_episode(
             &f,
             sub.data.id,
@@ -705,7 +720,10 @@ mod tests {
         let f = setup().await;
         seed_anime(&f.pool, 100, Some("2024-04-01"), Some(12), &["番A"]).await;
         let client = SubAnimeSqliteClient::new(f.pool.clone());
-        let sub = client.insert_sub_anime(9, 100).await.expect("insert sub anime");
+        let sub = client
+            .insert_sub_anime(9, 100)
+            .await
+            .expect("insert sub anime");
         seed_episode(
             &f,
             sub.data.id,
@@ -732,7 +750,10 @@ mod tests {
         let f = setup().await;
         seed_anime(&f.pool, 100, Some("2024-04-01"), Some(12), &["番A"]).await;
         let client = SubAnimeSqliteClient::new(f.pool.clone());
-        let sub = client.insert_sub_anime(9, 100).await.expect("insert sub anime");
+        let sub = client
+            .insert_sub_anime(9, 100)
+            .await
+            .expect("insert sub anime");
         // 非 20 字节的 resource_id：资源表本身不校验长度，解析时才发现
         seed_resource(&f.pool, &[1u8, 2, 3, 4], "坏资源", "http://bad").await;
         sqlx::query(

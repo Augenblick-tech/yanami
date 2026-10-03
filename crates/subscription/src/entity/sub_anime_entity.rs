@@ -472,10 +472,7 @@ mod tests {
         e.extend.titles = vec!["ＡＢＣ １２３".to_string(), "某番".to_string()];
 
         // 全角转半角、去空白、转小写；中文标题原样保留
-        assert_eq!(
-            e.keywords(),
-            vec!["abc123".to_string(), "某番".to_string()]
-        );
+        assert_eq!(e.keywords(), vec!["abc123".to_string(), "某番".to_string()]);
     }
 
     #[test]

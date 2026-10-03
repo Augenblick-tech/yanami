@@ -59,11 +59,23 @@ async fn get_resource_task_fetches_site_feed_and_matches_subscription() {
         vec![NYAA_URL.to_string()],
         "site feed should be fetched exactly once"
     );
-    assert_eq!(policy.noted(), vec![feed.data.id], "fetch result should be reported back to the access policy");
+    assert_eq!(
+        policy.noted(),
+        vec![feed.data.id],
+        "fetch result should be reported back to the access policy"
+    );
 
     let eps = app.list_eps(sub_anime.id()).await;
-    assert_eq!(eps.len(), 1, "only one episode should match within the time window");
-    assert_eq!(eps[0].data.ep.ep_num, Some(1.0), "episode number should come from 01 in the title");
+    assert_eq!(
+        eps.len(),
+        1,
+        "only one episode should match within the time window"
+    );
+    assert_eq!(
+        eps[0].data.ep.ep_num,
+        Some(1.0),
+        "episode number should come from 01 in the title"
+    );
     assert_eq!(
         eps[0].data.ep.resource_id, info_hash,
         "episode should point to the fetched resource"
@@ -130,7 +142,11 @@ async fn arrange_two_episodes(app: &TestApp, episode_a: &str, episode_b: &str) -
             nyaa_item_with_episode(&base, episode_b),
         ])
         .await;
-    assert_eq!(saved.len(), 2, "both resources with different episodes should be saved");
+    assert_eq!(
+        saved.len(),
+        2,
+        "both resources with different episodes should be saved"
+    );
 
     app.match_all_resources(&sub_anime).await;
     let eps = app.list_eps(sub_anime.id()).await;
@@ -154,12 +170,13 @@ async fn check_missing_episodes_enables_search_when_gap_found() {
         .await
         .expect("query subscription failed")
         .expect("subscription should exist");
-    assert_eq!(sub_anime.progress(), 2, "episode 01 and 03 should be matched");
+    assert_eq!(
+        sub_anime.progress(),
+        2,
+        "episode 01 and 03 should be matched"
+    );
     assert!(
-        matches!(
-            sub_anime.search_status(),
-            SubAnimeSearchStatus::Pending
-        ),
+        matches!(sub_anime.search_status(), SubAnimeSearchStatus::Pending),
         "gap between 01 and 03 should move to pending search, actual {:?}",
         sub_anime.search_status()
     );
@@ -180,12 +197,13 @@ async fn check_missing_episodes_keeps_not_search_when_no_gap() {
         .await
         .expect("query subscription failed")
         .expect("subscription should exist");
-    assert_eq!(sub_anime.progress(), 2, "episode 01 and 02 should be matched");
+    assert_eq!(
+        sub_anime.progress(),
+        2,
+        "episode 01 and 02 should be matched"
+    );
     assert!(
-        matches!(
-            sub_anime.search_status(),
-            SubAnimeSearchStatus::NotSearch
-        ),
+        matches!(sub_anime.search_status(), SubAnimeSearchStatus::NotSearch),
         "episodes 01 and 02 are contiguous, should not move to search, actual {:?}",
         sub_anime.search_status()
     );

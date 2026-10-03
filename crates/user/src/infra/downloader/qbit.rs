@@ -282,7 +282,10 @@ mod tests {
             .await
             .expect_err("pause_task currently always fails");
 
-        assert_eq!(err.to_string(), "operation not supported for external downloader");
+        assert_eq!(
+            err.to_string(),
+            "operation not supported for external downloader"
+        );
     }
 
     #[tokio::test]
@@ -295,7 +298,10 @@ mod tests {
             .await
             .expect_err("resume_task currently always fails");
 
-        assert_eq!(err.to_string(), "operation not supported for external downloader");
+        assert_eq!(
+            err.to_string(),
+            "operation not supported for external downloader"
+        );
     }
 
     #[tokio::test]
@@ -308,7 +314,10 @@ mod tests {
             .await
             .expect_err("delete_task currently always fails");
 
-        assert_eq!(err.to_string(), "operation not supported for external downloader");
+        assert_eq!(
+            err.to_string(),
+            "operation not supported for external downloader"
+        );
     }
 
     #[tokio::test]
@@ -321,7 +330,10 @@ mod tests {
             .await
             .expect_err("get_task currently always fails");
 
-        assert_eq!(err.to_string(), "operation not supported for external downloader");
+        assert_eq!(
+            err.to_string(),
+            "operation not supported for external downloader"
+        );
     }
 
     #[tokio::test]
@@ -329,8 +341,14 @@ mod tests {
         let qbit = offline_qbit();
 
         // 已知缺陷: 外部(qBittorrent)下载器不支持列出任务，直接 bail。
-        let err = qbit.list_task().await.expect_err("list_task currently always fails");
+        let err = qbit
+            .list_task()
+            .await
+            .expect_err("list_task currently always fails");
 
-        assert_eq!(err.to_string(), "operation not supported for external downloader");
+        assert_eq!(
+            err.to_string(),
+            "operation not supported for external downloader"
+        );
     }
 }

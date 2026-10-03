@@ -6,7 +6,9 @@ use std::sync::Arc;
 
 use anime::entity::cap::AnimeRepository;
 use cmd::task::sync_calendar_task::sync_calendar_task;
-use common::{MockDownloaderManager, MockSeasonalProvider, TestApp, bangumi_id_of, seasonal, tmdb_id_of};
+use common::{
+    MockDownloaderManager, MockSeasonalProvider, TestApp, bangumi_id_of, seasonal, tmdb_id_of,
+};
 use subscription::entity::model::SubAnimeListQuery;
 use user::entity::model::UserRole;
 
@@ -16,12 +18,20 @@ async fn sync_calendar_writes_anime_series_and_auto_subscription() {
     let app = TestApp::new().await;
     let users = app.users(Arc::new(MockDownloaderManager::new(true)));
     let user = users
-        .create("auto-sub-user", "test-password-123456", UserRole::User, true)
+        .create(
+            "auto-sub-user",
+            "test-password-123456",
+            UserRole::User,
+            true,
+        )
         .await
         .expect("create user failed");
 
     let captured = seasonal();
-    assert!(!captured.is_empty(), "captured seasonal data should not be empty");
+    assert!(
+        !captured.is_empty(),
+        "captured seasonal data should not be empty"
+    );
     let source = app.anime_sources(vec![Arc::new(MockSeasonalProvider::new(captured.clone()))]);
 
     sync_calendar_task(app.animes(), source, users.clone(), app.sub_animes())
@@ -69,7 +79,9 @@ async fn sync_calendar_writes_anime_series_and_auto_subscription() {
             .await
             .expect("get anime failed")
             .expect("subscribed anime must exist");
-        let tmdb_id = anime.series_id().expect("anime written by sync must carry a TMDB identity");
+        let tmdb_id = anime
+            .series_id()
+            .expect("anime written by sync must carry a TMDB identity");
         let series = app
             .animes()
             .series(sub.anime_id())
@@ -85,7 +97,12 @@ async fn sync_calendar_is_idempotent_for_same_source_data() {
     let app = TestApp::new().await;
     let users = app.users(Arc::new(MockDownloaderManager::new(true)));
     let user = users
-        .create("auto-sub-user", "test-password-123456", UserRole::User, true)
+        .create(
+            "auto-sub-user",
+            "test-password-123456",
+            UserRole::User,
+            true,
+        )
         .await
         .expect("create user failed");
 
@@ -129,7 +146,12 @@ async fn sync_calendar_updates_changed_series_metadata() {
     let app = TestApp::new().await;
     let users = app.users(Arc::new(MockDownloaderManager::new(true)));
     users
-        .create("auto-sub-user", "test-password-123456", UserRole::User, true)
+        .create(
+            "auto-sub-user",
+            "test-password-123456",
+            UserRole::User,
+            true,
+        )
         .await
         .expect("create user failed");
 
@@ -143,7 +165,8 @@ async fn sync_calendar_updates_changed_series_metadata() {
     let (tmdb_id, bangumi_id, changed_origin_name, changed_title) = {
         let changed = &mut captured[0];
         let tmdb_id = tmdb_id_of(changed).expect("captured item must carry a TMDB identity");
-        let bangumi_id = bangumi_id_of(changed).expect("captured item must carry a Bangumi identity");
+        let bangumi_id =
+            bangumi_id_of(changed).expect("captured item must carry a Bangumi identity");
         let changed_origin_name = "転生したら剣でした 特別編".to_string();
         changed
             .series_metadata

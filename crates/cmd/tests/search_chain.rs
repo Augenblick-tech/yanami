@@ -26,7 +26,10 @@ async fn arrange_search_mandate(app: &TestApp) -> (i64, String, u64) {
         .await;
 
     let mut sub_anime = app.subscribe(space_id, anime.data.id).await;
-    assert!(sub_anime.enable_search(), "fresh subscription should move from NotSearch to pending match");
+    assert!(
+        sub_anime.enable_search(),
+        "fresh subscription should move from NotSearch to pending match"
+    );
     app.sub_animes()
         .save(&sub_anime)
         .await
@@ -120,12 +123,16 @@ async fn search_task_saves_matched_episode_and_completes_mandate() {
         .await
         .expect("search task should not fail");
         ticks += 1;
-        assert!(ticks <= 64, "search task should consume all {mandate_count} mandates within limited ticks");
+        assert!(
+            ticks <= 64,
+            "search task should consume all {mandate_count} mandates within limited ticks"
+        );
     }
 
     let requested = fetcher.requested();
     assert_eq!(
-        requested.len() as u64, mandate_count,
+        requested.len() as u64,
+        mandate_count,
         "every mandate should be fetched exactly once"
     );
     assert!(
@@ -140,8 +147,16 @@ async fn search_task_saves_matched_episode_and_completes_mandate() {
     );
 
     let eps = app.list_eps(sub_anime_id).await;
-    assert_eq!(eps.len(), 1, "fetched real item should match exactly one episode");
-    assert_eq!(eps[0].data.ep.ep_num, Some(1.0), "episode number should come from 01 in the title");
+    assert_eq!(
+        eps.len(),
+        1,
+        "fetched real item should match exactly one episode"
+    );
+    assert_eq!(
+        eps[0].data.ep.ep_num,
+        Some(1.0),
+        "episode number should come from 01 in the title"
+    );
 
     assert_eq!(
         app.ctx

@@ -248,9 +248,9 @@ mod tests {
                 FetchOutcome::Retryable => {
                     Err(FeedFetchError::Retryable("mock retryable".to_string()))
                 }
-                FetchOutcome::InvalidData => Err(FeedFetchError::InvalidData(
-                    "mock invalid data".to_string(),
-                )),
+                FetchOutcome::InvalidData => {
+                    Err(FeedFetchError::InvalidData("mock invalid data".to_string()))
+                }
             }
         }
 
@@ -382,14 +382,10 @@ mod tests {
     #[tokio::test]
     async fn test_verify_metadata_requires_non_empty_title() {
         let fetcher = MockFetcher::new(FetchOutcome::Data(empty_data()), vec!["key"]);
-        let err = FeedEntity::verify_metadata(
-            &fetcher,
-            String::new(),
-            Some(SITE_URL.to_string()),
-            None,
-        )
-        .await
-        .expect_err("empty title should fail");
+        let err =
+            FeedEntity::verify_metadata(&fetcher, String::new(), Some(SITE_URL.to_string()), None)
+                .await
+                .expect_err("empty title should fail");
         assert!(
             err.to_string()
                 .contains("feed entity title must be not empty")
@@ -441,8 +437,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_verify_metadata_rejects_mismatched_source_key() {
-        let fetcher =
-            MockFetcher::new(FetchOutcome::Data(empty_data()), vec!["site-key", "search-key"]);
+        let fetcher = MockFetcher::new(
+            FetchOutcome::Data(empty_data()),
+            vec!["site-key", "search-key"],
+        );
         let err = FeedEntity::verify_metadata(
             &fetcher,
             "标题".to_string(),
@@ -480,7 +478,10 @@ mod tests {
         let policy = Arc::new(MockAccessPolicy::new(false));
         let entity = build_entity(base_data(42, Some(SITE_URL), None), &fetcher, &policy);
 
-        let result = entity.list().await.expect("rejected by access policy is not an error");
+        let result = entity
+            .list()
+            .await
+            .expect("rejected by access policy is not an error");
         assert!(matches!(result, FeedFetchResult::Denied));
         assert!(fetcher.fetched_urls().is_empty(), "no fetch when rejected");
         assert_eq!(policy.checked_ids(), vec![42]);
@@ -493,7 +494,10 @@ mod tests {
         let policy = Arc::new(MockAccessPolicy::new(true));
         let entity = build_entity(base_data(1, None, Some(SEARCH_URL)), &fetcher, &policy);
 
-        let err = entity.list().await.expect_err("missing site url should fail");
+        let err = entity
+            .list()
+            .await
+            .expect_err("missing site url should fail");
         assert!(err.to_string().contains("not found feed site url"));
     }
 
@@ -526,7 +530,10 @@ mod tests {
         let policy = Arc::new(MockAccessPolicy::new(true));
         let entity = build_entity(base_data(7, Some(SITE_URL), None), &fetcher, &policy);
 
-        let result = entity.list().await.expect("retryable error is not an Err branch");
+        let result = entity
+            .list()
+            .await
+            .expect("retryable error is not an Err branch");
         match result {
             FeedFetchResult::Retryable(error) => {
                 assert_eq!(error.to_string(), "conflict: mock retryable");
@@ -542,7 +549,10 @@ mod tests {
         let policy = Arc::new(MockAccessPolicy::new(true));
         let entity = build_entity(base_data(7, Some(SITE_URL), None), &fetcher, &policy);
 
-        let result = entity.list().await.expect("inaccessible error is not an Err branch");
+        let result = entity
+            .list()
+            .await
+            .expect("inaccessible error is not an Err branch");
         match result {
             FeedFetchResult::Failure(error) => {
                 assert_eq!(error.to_string(), "conflict: mock inaccessible");
@@ -580,9 +590,16 @@ mod tests {
             vec!["key"],
         );
         let policy = Arc::new(MockAccessPolicy::new(true));
-        let entity = build_entity(base_data(7, Some(SITE_URL), Some(SEARCH_URL)), &fetcher, &policy);
+        let entity = build_entity(
+            base_data(7, Some(SITE_URL), Some(SEARCH_URL)),
+            &fetcher,
+            &policy,
+        );
 
-        let result = entity.search("kurumi").await.expect("search should succeed");
+        let result = entity
+            .search("kurumi")
+            .await
+            .expect("search should succeed");
         match result {
             FeedFetchResult::Success(got) => assert_eq!(got, items),
             other => panic!("expected Success, got {other:?}"),
@@ -600,7 +617,10 @@ mod tests {
         let policy = Arc::new(MockAccessPolicy::new(true));
         let entity = build_entity(base_data(7, Some(SITE_URL), None), &fetcher, &policy);
 
-        let err = entity.search("kurumi").await.expect_err("missing search url should fail");
+        let err = entity
+            .search("kurumi")
+            .await
+            .expect_err("missing search url should fail");
         assert!(err.to_string().contains("not found feed site url"));
     }
 
@@ -610,12 +630,19 @@ mod tests {
         let policy = Arc::new(MockAccessPolicy::new(true));
         // 花括号不配对，formatx 解析模板时会失败
         let entity = build_entity(
-            base_data(7, Some(SITE_URL), Some("https://mikanani.me/RSS/Search?q={")),
+            base_data(
+                7,
+                Some(SITE_URL),
+                Some("https://mikanani.me/RSS/Search?q={"),
+            ),
             &fetcher,
             &policy,
         );
 
-        let err = entity.search("kurumi").await.expect_err("invalid template should fail");
+        let err = entity
+            .search("kurumi")
+            .await
+            .expect_err("invalid template should fail");
         assert!(err.to_string().contains("format search url failed"));
         assert!(fetcher.fetched_urls().is_empty());
     }

@@ -111,7 +111,10 @@ mod tests {
 
     #[test]
     fn test_to_safe_filename_keeps_chinese_text() {
-        assert_eq!(to_safe_filename("葬送的芙莉莲 第01话"), "葬送的芙莉莲 第01话");
+        assert_eq!(
+            to_safe_filename("葬送的芙莉莲 第01话"),
+            "葬送的芙莉莲 第01话"
+        );
         assert_eq!(
             to_safe_filename("【合集】进击的巨人: 最终季"),
             "【合集】进击的巨人 最终季"

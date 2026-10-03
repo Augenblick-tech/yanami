@@ -167,7 +167,10 @@ mod tests {
 
     impl MockUserRepository {
         fn stored_props(&self) -> Option<UserProps> {
-            self.stored.lock().expect("test lock should not be poisoned").clone()
+            self.stored
+                .lock()
+                .expect("test lock should not be poisoned")
+                .clone()
         }
     }
 
@@ -207,12 +210,19 @@ mod tests {
                     download_config: Vec::new(),
                 },
             };
-            *self.stored.lock().expect("test lock should not be poisoned") = Some(props.clone());
+            *self
+                .stored
+                .lock()
+                .expect("test lock should not be poisoned") = Some(props.clone());
             Ok(props)
         }
 
         async fn update(&self, user: &UserBaseData) -> Result<()> {
-            *self.stored.lock().expect("test lock should not be poisoned") = Some(UserProps { data: user.clone() });
+            *self
+                .stored
+                .lock()
+                .expect("test lock should not be poisoned") =
+                Some(UserProps { data: user.clone() });
             Ok(())
         }
 
@@ -250,7 +260,10 @@ mod tests {
         }
 
         async fn validate_config(&self, config: &DownloaderConfig) -> Result<()> {
-            anyhow::bail!("test should not validate downloader config: {}", config.name())
+            anyhow::bail!(
+                "test should not validate downloader config: {}",
+                config.name()
+            )
         }
     }
 
@@ -300,7 +313,8 @@ mod tests {
 
     #[test]
     fn verify_password_accepts_correct_password_and_rejects_wrong_one() {
-        let hash = UserEntity::hash_password("correct-password").expect("argon2 hashing should not fail");
+        let hash =
+            UserEntity::hash_password("correct-password").expect("argon2 hashing should not fail");
         assert_ne!(hash, "correct-password");
         assert!(hash.starts_with("$argon2"), "actual hash: {hash}");
 
@@ -319,12 +333,18 @@ mod tests {
 
     #[test]
     fn verify_password_rejects_unknown_hash_format() {
-        let entity = UserEntity::new(base_data("not-an-argon2-hash".to_string(), Vec::new()), crypto());
+        let entity = UserEntity::new(
+            base_data("not-an-argon2-hash".to_string(), Vec::new()),
+            crypto(),
+        );
 
         let err = entity
             .verify_password("whatever")
             .expect_err("invalid hash format should fail");
-        assert!(err.to_string().contains("unknown password"), "actual error: {err}");
+        assert!(
+            err.to_string().contains("unknown password"),
+            "actual error: {err}"
+        );
     }
 
     #[tokio::test]
@@ -342,10 +362,20 @@ mod tests {
         assert_eq!(entity.role(), UserRole::Admin);
         assert_eq!(entity.space_id(), 100);
         assert!(entity.auto_sub());
-        assert!(entity.verify_password("p@ssw0rd!").expect("verifying password should not fail"));
-        assert!(!entity.verify_password("p@ssw0rd").expect("verifying password should not fail"));
+        assert!(
+            entity
+                .verify_password("p@ssw0rd!")
+                .expect("verifying password should not fail")
+        );
+        assert!(
+            !entity
+                .verify_password("p@ssw0rd")
+                .expect("verifying password should not fail")
+        );
 
-        let stored = repo.stored_props().expect("mock repository should have stored the user");
+        let stored = repo
+            .stored_props()
+            .expect("mock repository should have stored the user");
         assert_ne!(stored.data.password, "p@ssw0rd!");
         assert!(
             stored.data.password.starts_with("$argon2"),
@@ -361,9 +391,14 @@ mod tests {
         let mut entity = UserEntity::new(base_data("hash".to_string(), Vec::new()), crypto());
 
         entity.enable_auto_sub_anime();
-        users.save(&entity).await.expect("saving user should not fail");
+        users
+            .save(&entity)
+            .await
+            .expect("saving user should not fail");
 
-        let stored = repo.stored_props().expect("mock repository should have stored the user");
+        let stored = repo
+            .stored_props()
+            .expect("mock repository should have stored the user");
         assert!(stored.data.auto_sub);
     }
 
@@ -397,7 +432,9 @@ mod tests {
         let provider = crypto();
         let plain_password = "qbit-明文密码-123";
         let mut config = qbit_download_config("main", true, "/data");
-        config.encrypt_secrets(provider.as_ref()).expect("encryption should not fail");
+        config
+            .encrypt_secrets(provider.as_ref())
+            .expect("encryption should not fail");
         // 落库形态必须是密文
         assert!(!stored_qbit_password(&config).contains(plain_password));
 
@@ -430,7 +467,11 @@ mod tests {
         entity
             .save_download_config(qbit_download_config("main", true, "/data-v2"))
             .expect("overwriting config should not fail");
-        assert_eq!(entity.get_download_config().len(), 1, "config with the same name should be replaced, not appended");
+        assert_eq!(
+            entity.get_download_config().len(),
+            1,
+            "config with the same name should be replaced, not appended"
+        );
         let replaced = &entity.get_download_config()[0];
         assert_eq!(replaced.name(), "main");
         assert_eq!(replaced.base_path(), "/data-v2");
@@ -510,7 +551,9 @@ mod tests {
             crypto(),
         );
 
-        entity.enable_download_config("a").expect("enabling config should not fail");
+        entity
+            .enable_download_config("a")
+            .expect("enabling config should not fail");
         assert_eq!(active_config_name(&entity), Some("a"));
         assert!(
             entity
@@ -523,7 +566,8 @@ mod tests {
             .enable_download_config("missing")
             .expect_err("enabling a missing config should fail");
         assert!(
-            err.to_string().contains("not found download config missing"),
+            err.to_string()
+                .contains("not found download config missing"),
             "actual error: {err}"
         );
     }

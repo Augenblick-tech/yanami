@@ -53,7 +53,9 @@ mod tests {
     use crate::infra::regex::RegexRuleMatcher;
 
     fn matcher() -> Arc<dyn RuleMatcher> {
-        Arc::new(RegexRuleMatcher::new(Arc::new(DashMap::<String, Regex>::new())))
+        Arc::new(RegexRuleMatcher::new(Arc::new(
+            DashMap::<String, Regex>::new(),
+        )))
     }
 
     fn rule(id: i64, order: i64, pattern: &str) -> RuleBaseData {
@@ -72,10 +74,7 @@ mod tests {
     #[test]
     fn is_match_returns_lowest_order_rule_when_both_match() {
         // 传入顺序被打乱，new 会按 order 排序，两条都命中时取 order 更小的一条
-        let rules = SpaceRules::new(
-            vec![rule(20, 2, "第0?1集"), rule(10, 1, "某番")],
-            matcher(),
-        );
+        let rules = SpaceRules::new(vec![rule(20, 2, "第0?1集"), rule(10, 1, "某番")], matcher());
         let res = SpaceRuleMatcher::is_match(&rules, "某番 第01集");
         assert!(res.matched);
         assert_eq!(res.rule_id, 10);

@@ -510,7 +510,9 @@ mod tests {
         value["sites"] = serde_json::json!([{ "site": "bangumi", "id": "abc" }]);
         let item: BangumiItem = serde_json::from_value(value).unwrap();
 
-        let err = item.parse_ex_link().expect_err("non-numeric id should fail");
+        let err = item
+            .parse_ex_link()
+            .expect_err("non-numeric id should fail");
         assert_eq!(err.to_string(), "unknown id abc");
     }
 
@@ -578,7 +580,10 @@ mod tests {
         assert_eq!(subject.id, 8);
         assert_eq!(subject.subject_type, SubjectType::Anime);
         assert_eq!(subject.name, "コードギアス 反逆のルルーシュR2");
-        assert_eq!(subject.name_cn.as_deref(), Some("Code Geass 反叛的鲁路修R2"));
+        assert_eq!(
+            subject.name_cn.as_deref(),
+            Some("Code Geass 反叛的鲁路修R2")
+        );
         assert_eq!(subject.eps, Some(25));
     }
 
@@ -589,7 +594,10 @@ mod tests {
 
         assert!(titles[0].origin);
         assert_eq!(titles[0].name, "コードギアス 反逆のルルーシュR2");
-        assert_eq!(titles[0].target, AnimeLangTarget::Other("unknown".to_string()));
+        assert_eq!(
+            titles[0].target,
+            AnimeLangTarget::Other("unknown".to_string())
+        );
         assert_eq!(titles[0].match_name, "コードギアス反逆のルルーシュr2");
 
         assert!(!titles[1].origin);

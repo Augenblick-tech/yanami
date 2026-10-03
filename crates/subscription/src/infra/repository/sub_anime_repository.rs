@@ -628,7 +628,13 @@ mod tests {
 
         let rows = f
             .client
-            .list(&query(None, None, None, Some(SubAnimeStatus::Completed), None))
+            .list(&query(
+                None,
+                None,
+                None,
+                Some(SubAnimeStatus::Completed),
+                None,
+            ))
             .await
             .expect("list completed");
 
@@ -690,7 +696,13 @@ mod tests {
 
         let completed = f
             .client
-            .list(&query(None, None, None, Some(SubAnimeStatus::Completed), None))
+            .list(&query(
+                None,
+                None,
+                None,
+                Some(SubAnimeStatus::Completed),
+                None,
+            ))
             .await
             .expect("list completed");
         assert_eq!(completed.len(), 1);

@@ -190,7 +190,10 @@ mod tests {
             .await
             .expect_err("invalid qbit url should be rejected");
 
-        assert!(!err.to_string().is_empty(), "error message should not be empty");
+        assert!(
+            !err.to_string().is_empty(),
+            "error message should not be empty"
+        );
         assert!(
             err.to_string().contains("URL"),
             "should report url parse failure, actual: {err}"
