@@ -65,7 +65,7 @@ impl Animes {
         }
     }
 
-    /// 创建一部番剧：锁状态随创建在同一个事务里落库，创建之后不需要再写一次。
+    /// 创建一部番剧：锁定状态随创建一并确定，之后不需要再单独改一次锁。
     pub async fn create(&self, metadata: AnimeMetadata, lock: bool) -> Result<AnimeEntity, Error> {
         let props = self
             .repo
@@ -139,7 +139,7 @@ mod tests {
     const TMDB_ID: i64 = 286346;
     const BANGUMI_ID: i64 = 558064;
 
-    /// 建一个真实的 SQLite 临时库并跑一遍生产建表逻辑，TempDir 由调用方持有以免被清理。
+    /// 建一个真实的临时库并接上生产实现，TempDir 由调用方持有以免被清理。
     async fn setup() -> (tempfile::TempDir, AnimeSqliteClient) {
         let dir = tempfile::tempdir().unwrap();
         let db = dir.path().join(DB_FILE);

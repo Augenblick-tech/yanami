@@ -101,7 +101,7 @@ mod tests {
     const TMDB_ID: i64 = 286346;
     const BANGUMI_ID: i64 = 558064;
 
-    /// 建一个真实的 SQLite 临时库并跑一遍生产建表逻辑，TempDir 由调用方持有以免被清理。
+    /// 建一个真实的临时库并接上生产实现，TempDir 由调用方持有以免被清理。
     async fn setup() -> (tempfile::TempDir, AnimeSqliteClient) {
         let dir = tempfile::tempdir().unwrap();
         let db = dir.path().join(DB_FILE);

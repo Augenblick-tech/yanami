@@ -1,5 +1,21 @@
 use chrono::NaiveDate;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
+
+/// TMDB 对未定档的条目会把日期返回成空字符串（同一接口也可能返回 null），
+/// 空串会让整数日期解析失败并连带整页结果解码失败，这里统一收敛成 None。
+fn empty_string_as_none_date<'de, D>(deserializer: D) -> Result<Option<NaiveDate>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Option::<String>::deserialize(deserializer)?;
+    match value {
+        None => Ok(None),
+        Some(text) if text.trim().is_empty() => Ok(None),
+        Some(text) => NaiveDate::parse_from_str(text.trim(), "%Y-%m-%d")
+            .map(Some)
+            .map_err(serde::de::Error::custom),
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Page<T> {
@@ -34,6 +50,7 @@ pub struct TvShowBase {
     /// 海报图片路径，可能为空
     pub poster_path: Option<String>,
     /// 首次开播/上映日期
+    #[serde(default, deserialize_with = "empty_string_as_none_date")]
     pub first_air_date: Option<NaiveDate>,
     /// 中文/本地化名称
     pub name: String,
@@ -56,6 +73,7 @@ pub struct EpisodeBase {
     /// 单集评分人数计数
     pub vote_count: i64,
     /// 单集开播日期
+    #[serde(default, deserialize_with = "empty_string_as_none_date")]
     pub air_date: Option<NaiveDate>,
     /// 剧集中的第几集
     pub episode_number: i64,
@@ -154,6 +172,7 @@ pub struct TvShowDetail {
     /// 支持的语言代码列表
     pub languages: Vec<String>,
     /// 最后一集开播日期
+    #[serde(default, deserialize_with = "empty_string_as_none_date")]
     pub last_air_date: Option<NaiveDate>,
     /// 最近播出的剧集信息，可能为空
     pub last_episode_to_air: Option<EpisodeInfo>,
@@ -222,6 +241,7 @@ pub struct SeasonInfo {
     #[serde(flatten)]
     pub inner: SeasonBase,
     /// 该季开播日期，可能为空
+    #[serde(default, deserialize_with = "empty_string_as_none_date")]
     pub air_date: Option<NaiveDate>,
     /// 该季总集数
     pub episode_count: i64,
@@ -232,6 +252,7 @@ pub struct TvSeasonDetail {
     #[serde(flatten)]
     pub inner: SeasonBase,
     /// 该季开播日期
+    #[serde(default, deserialize_with = "empty_string_as_none_date")]
     pub air_date: Option<NaiveDate>,
     /// 剧集详情列表
     pub episodes: Vec<EpisodeDetail>,
@@ -301,4 +322,85 @@ pub struct SpokenLanguage {
     pub iso_639_1: String,
     /// 语言本地名称
     pub name: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::NaiveDate;
+
+    use super::*;
+
+    /// 真实抓取：GET /3/search/tv?query=世界最強の魔女、始めました&language=zh-CN
+    /// 该条目尚未定档，TMDB 把 first_air_date 返回成空字符串。
+    const UNANNOUNCED_SEARCH_JSON: &str = r#"{"page":1,"results":[{"adult":false,"backdrop_path":"/bM9pGax5PQCvipy7zifscXsVJ8Z.jpg","genre_ids":[16,35,10759,10765],"id":321518,"origin_country":["JP"],"original_language":"ja","original_name":"世界最強の魔女、始めました","overview":"","popularity":1.1531,"poster_path":"/pw9Ha86plPe344JED6ij85UPZKZ.jpg","first_air_date":"","softcore":false,"name":"世界最强魔女，始动","vote_average":0.0,"vote_count":0}],"total_pages":1,"total_results":1}"#;
+
+    /// 真实抓取：GET /3/tv/321518?language=zh-CN（同一未定档条目）
+    const UNANNOUNCED_DETAIL_JSON: &str = r#"{"adult":false,"backdrop_path":"/bM9pGax5PQCvipy7zifscXsVJ8Z.jpg","created_by":[],"episode_run_time":[],"first_air_date":"","genres":[{"id":16,"name":"动画"},{"id":35,"name":"喜剧"},{"id":10759,"name":"动作冒险"},{"id":10765,"name":"Sci-Fi & Fantasy"}],"homepage":"https://sekamajo-anime.com","id":321518,"in_production":true,"languages":["ja"],"last_air_date":null,"last_episode_to_air":null,"name":"世界最强魔女，始动","next_episode_to_air":null,"networks":[],"number_of_episodes":1,"number_of_seasons":1,"origin_country":["JP"],"original_language":"ja","original_name":"世界最強の魔女、始めました","overview":"","popularity":1.2985,"poster_path":"/pw9Ha86plPe344JED6ij85UPZKZ.jpg","production_companies":[{"id":43693,"logo_path":"/aO5hWIoTnGjMnVQF7JrlnJgIEvD.png","name":"Bridge","origin_country":"JP"},{"id":279191,"logo_path":null,"name":"AISLE","origin_country":"JP"}],"production_countries":[{"iso_3166_1":"JP","name":"Japan"}],"seasons":[{"air_date":null,"episode_count":1,"id":514478,"name":"第 1 季","overview":"","poster_path":"/2Qshz88lEA1N9Ba3h8zFyu8omRJ.jpg","season_number":1,"vote_average":0.0}],"softcore":false,"spoken_languages":[{"english_name":"Japanese","iso_639_1":"ja","name":"日本語"}],"status":"In Production","tagline":"","type":"Scripted","vote_average":0.0,"vote_count":0}"#;
+
+    /// 真实抓取：GET /3/tv/321518/season/1?language=zh-CN
+    const UNANNOUNCED_SEASON_JSON: &str = r#"{"_id":"69f7d51476c0eece54326d43","air_date":null,"episodes":[{"air_date":null,"episode_number":1,"episode_type":"standard","id":7228273,"name":"第 1 集","overview":"","production_code":"","runtime":null,"season_number":1,"show_id":321518,"still_path":null,"vote_average":0.0,"vote_count":0,"crew":[],"guest_stars":[]}],"name":"第 1 季","networks":[],"overview":"","id":514478,"poster_path":"/2Qshz88lEA1N9Ba3h8zFyu8omRJ.jpg","season_number":1,"vote_average":0.0}"#;
+
+    #[test]
+    fn search_page_with_empty_first_air_date_decodes_to_none() {
+        let page: Page<SearchTVResult> = serde_json::from_str(UNANNOUNCED_SEARCH_JSON)
+            .expect("real tmdb search body must decode");
+
+        assert_eq!(page.total_results, 1);
+        assert_eq!(page.results[0].inner.id, 321518);
+        assert_eq!(page.results[0].inner.name, "世界最强魔女，始动");
+        assert_eq!(page.results[0].inner.first_air_date, None);
+    }
+
+    #[test]
+    fn tv_detail_with_empty_first_air_date_decodes_to_none() {
+        let detail: TvShowDetail = serde_json::from_str(UNANNOUNCED_DETAIL_JSON)
+            .expect("real tmdb detail body must decode");
+
+        assert_eq!(detail.inner.id, 321518);
+        assert_eq!(detail.inner.first_air_date, None);
+        assert_eq!(detail.last_air_date, None);
+        assert_eq!(detail.seasons[0].air_date, None);
+        assert_eq!(detail.seasons[0].inner.season_number, 1);
+    }
+
+    #[test]
+    fn season_detail_with_null_air_date_decodes_to_none() {
+        let season: TvSeasonDetail = serde_json::from_str(UNANNOUNCED_SEASON_JSON)
+            .expect("real tmdb season body must decode");
+
+        assert_eq!(season.air_date, None);
+        assert_eq!(season.episodes[0].inner.episode_number, 1);
+        assert_eq!(season.episodes[0].inner.air_date, None);
+    }
+
+    #[test]
+    fn season_detail_with_empty_air_date_decodes_to_none() {
+        // 同一批未定档日期，TMDB 另一种编码就是空字符串：把真实抓取体的 null 换成空串
+        let body = UNANNOUNCED_SEASON_JSON.replace("\"air_date\":null", "\"air_date\":\"\"");
+        assert!(
+            body.contains("\"air_date\":\"\""),
+            "fixture must contain empty date"
+        );
+
+        let season: TvSeasonDetail =
+            serde_json::from_str(&body).expect("empty string date must decode");
+
+        assert_eq!(season.air_date, None);
+        assert_eq!(season.episodes[0].inner.air_date, None);
+    }
+
+    #[test]
+    fn valid_first_air_date_still_decodes_to_some() {
+        let body = r#"{"adult":false,"backdrop_path":null,"id":65942,"origin_country":["JP"],
+            "original_language":"ja","original_name":"Re:ゼロから始める異世界生活","overview":"",
+            "popularity":1.0,"poster_path":null,"first_air_date":"2016-04-04",
+            "name":"Re：从零开始的异世界生活","vote_average":8.0,"vote_count":10}"#;
+
+        let base: TvShowBase = serde_json::from_str(body).expect("valid date must still decode");
+
+        assert_eq!(
+            base.first_air_date,
+            Some(NaiveDate::from_ymd_opt(2016, 4, 4).expect("date must be valid"))
+        );
+    }
 }

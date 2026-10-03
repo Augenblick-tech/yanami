@@ -435,7 +435,7 @@ mod tests {
         config
             .encrypt_secrets(provider.as_ref())
             .expect("encryption should not fail");
-        // 落库形态必须是密文
+        // 存储形态必须是密文
         assert!(!stored_qbit_password(&config).contains(plain_password));
 
         let entity = UserEntity::new(base_data("hash".to_string(), vec![config]), provider);

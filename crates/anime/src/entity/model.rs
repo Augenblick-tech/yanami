@@ -27,7 +27,7 @@ pub enum AnimeAirWeekday {
     Sunday,
 }
 
-/// 数据库存储格式：Bangumi v0 标准，1=Monday ... 7=Sunday。
+/// 取值沿用 Bangumi v0 的约定：1=Monday ... 7=Sunday。
 impl From<AnimeAirWeekday> for i64 {
     fn from(d: AnimeAirWeekday) -> i64 {
         match d {
@@ -86,7 +86,7 @@ pub enum AnimeLangTarget {
     Other(String),
 }
 
-/// 数据库存储格式：Bangumi v0 标准，1=Monday ... 7=Sunday。
+/// 与外部来源一致的取值：jp / zh_cn / zh_tw / en / kr。
 impl From<AnimeLangTarget> for String {
     fn from(d: AnimeLangTarget) -> String {
         match d {

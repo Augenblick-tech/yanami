@@ -211,7 +211,7 @@ fn tmdb_series_id(metadata: &AnimeMetadata) -> Option<i64> {
 }
 
 /// 具备 TMDB 系列身份的番剧必须带回系列信息：系列信息决定系列名与落点季号，
-/// 缺了它落库不会写 anime_series、下载解析落点必然失败，因此非法请求在入库前就拦下来。
+/// 缺了它系列信息不完整，下载时解析不出落点，因此非法请求在处理前就拦下来。
 fn require_series_metadata(metadata: &AnimeMetadata) -> Result<(), ApiError> {
     let Some(tmdb_id) = tmdb_series_id(metadata) else {
         return Ok(());

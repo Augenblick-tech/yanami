@@ -77,7 +77,7 @@ async fn init(
         .expect("failed to start web server");
 }
 
-/// 补全系列数据：库里有番剧的 TMDB 身份、但系列展示信息还没落库的，启动时补齐一次。
+/// 补全系列数据：已经有 TMDB 系列身份、却还没有系列展示信息的番剧，启动时补齐一次。
 /// 取数失败的番剧跳过（不写任何占位数据），下次启动会重新判断。
 async fn backfill_series(ctx: &AppContext) {
     let tmdb_ids = match ctx.repo.anime_repo.list_missing_series_ids().await {

@@ -306,7 +306,7 @@ mod tests {
             !cipher.contains(plain_password),
             "ciphertext should not contain plaintext password, actual: {cipher}"
         );
-        // 其余字段不参与加密
+        // 其余项不参与加密
         assert_eq!(unwrap_qbit(&config).config.username, "admin");
 
         config

@@ -31,8 +31,8 @@ pub trait AnimeRepository: Send + Sync {
 
     async fn list_by_ids(&self, anime_ids: &[i64]) -> Result<Vec<AnimeProps>>;
 
-    /// 写入一部新番剧：番剧本体、标题、外部链接、季度与系列信息在同一个事务里落库，
-    /// 锁状态随创建一起生效，避免「先建后改」的两次写入。
+    /// 新增一部番剧：番剧本体、标题、外部链接、季度与系列信息一次写入，
+    /// 锁定状态随创建一并生效，避免「先建番剧、再改锁」的两次写入。
     async fn insert(&self, entity: &AnimeMetadata, lock: bool) -> Result<AnimeProps>;
 
     async fn update(&self, entity: &AnimeBaseData) -> Result<()>;

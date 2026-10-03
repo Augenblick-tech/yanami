@@ -933,7 +933,7 @@ impl From<AnimeMetadata> for AnimeMetadataItem {
 impl From<AnimeMetadataItem> for AnimeMetadata {
     fn from(v: AnimeMetadataItem) -> Self {
         Self {
-            // 系列信息随请求体一起进来：与同步链路同构，交由 repository 在写番剧的同一次落库写 anime_series
+            // 系列信息随请求体一起进来：与同步链路同构，与番剧本体一次写入
             series_metadata: v.series_metadata.map(Into::into),
             external_link: v.external_link.into_iter().map(Into::into).collect(),
             titles: v.titles.into_iter().map(Into::into).collect(),
@@ -949,7 +949,7 @@ impl From<AnimeMetadataItem> for AnimeMetadata {
 pub struct QuarterStat {
     /// 番剧放送季度，例如 202401
     pub quarter: u32,
-    /// 该季度入库的番剧总数
+    /// 该季度已收录的番剧总数
     pub total_count: i64,
     /// 当前用户在该季度订阅的番剧总数
     pub sub_count: i64,
@@ -981,7 +981,7 @@ pub struct BackoffFeed {
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct SystemStatResponse {
-    /// 系统已入库的番剧总数
+    /// 系统已收录的番剧总数
     pub total_anime_count: i64,
     /// 当前用户总共订阅的番剧数
     pub user_subscribed_count: i64,
