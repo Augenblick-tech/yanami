@@ -66,6 +66,20 @@ impl SubAnimes {
         Ok(list)
     }
 
+    // 该番剧在搜索委托上的订阅：这次抓回来的资源只与它们匹配
+    pub async fn list_by_mandate(&self, anime_id: i64) -> Result<Vec<SubAnimeEntity>, Error> {
+        let props = self
+            .repo
+            .list_by_mandate(anime_id)
+            .await
+            .map_err(|e| Error::external("sub animes list by mandate failed", e))?;
+        let list = props
+            .into_iter()
+            .map(|prop| SubAnimeEntity::new(prop.data, prop.extend))
+            .collect::<Vec<_>>();
+        Ok(list)
+    }
+
     pub async fn find_by_sub_anime_id(&self, id: i64) -> Result<Option<SubAnimeEntity>, Error> {
         let prop = self
             .repo

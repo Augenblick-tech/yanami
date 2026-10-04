@@ -50,27 +50,29 @@ impl SearchMandates {
     }
 
     // completed
-    // 提交完成委托，并返回该委托是否为系列委托的最后一个
-    pub async fn completed(&self, entity: SearchMandateEntity) -> Result<bool, Error> {
+    // 委托完成：删掉这份委托，订阅与它的关联记录一起删掉
+    pub async fn completed(&self, entity: SearchMandateEntity) -> Result<(), Error> {
         if !entity.is_completed() {
             return Err(Error::conflict(format!(
                 "search mandate {} is not completed",
                 entity.id()
             )));
         }
-        let count = self
-            .repo
+        self.repo
             .delete_and_count(entity.id(), entity.anime_id())
             .await
             .map_err(|e| Error::external("search manadate completed manadate failed", e))?;
-        Ok(count == 0)
+        Ok(())
     }
 
+    // 没有可用搜索源时不建委托
+    // 订阅只能存到该番剧已有的委托上，该番剧没有委托时订阅不会记录
     pub async fn create_from_search_urls(
         &self,
         anime_id: i64,
+        sub_anime_id: i64,
         urls: Vec<SearchUrls>,
-    ) -> Result<Vec<SearchMandateEntity>, Error> {
+    ) -> Result<(), Error> {
         let mut mandates = vec![];
         for i in urls {
             let list = i
@@ -84,35 +86,27 @@ impl SearchMandates {
                 .collect::<Vec<_>>();
             mandates.extend(list);
         }
-        self.create(&mandates).await
-    }
-
-    // create
-    // 创建委托，委托存在时不报错
-    pub async fn create(&self, mandates: &[Mandate]) -> Result<Vec<SearchMandateEntity>, Error> {
-        let props = self
-            .repo
-            .save(mandates)
+        self.repo
+            .save(anime_id, sub_anime_id, &mandates)
             .await
             .map_err(|e| Error::external("create search mandate failed", e))?;
-        Ok(props
-            .into_iter()
-            .map(|prop| {
-                SearchMandateEntity::new(
-                    prop.data,
-                    self.fetch_cap.clone(),
-                    self.access_policy.clone(),
-                )
-            })
-            .collect())
+        Ok(())
     }
 
-    pub async fn drop(&self, entity: SearchMandateEntity) -> Result<bool, Error> {
-        let count = self
-            .repo
+    pub async fn drop(&self, entity: SearchMandateEntity) -> Result<(), Error> {
+        self.repo
             .delete_and_count(entity.id(), entity.anime_id())
             .await
             .map_err(|e| Error::external("search mandates drop failed", e))?;
-        Ok(count == 0)
+        Ok(())
+    }
+
+    // 从搜索委托里去掉订阅
+    pub async fn remove_sub_anime(&self, sub_anime_id: i64) -> Result<(), Error> {
+        self.repo
+            .remove_sub_anime(sub_anime_id)
+            .await
+            .map_err(|e| Error::external("remove search mandate sub anime failed", e))?;
+        Ok(())
     }
 }

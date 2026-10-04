@@ -114,8 +114,15 @@ impl AnimeViewQuery {
         }
 
         if let Some(search_status) = req.search_status {
-            qb.push(" AND sa.search_status = ");
-            qb.push_bind(search_status);
+            // 搜索中由搜索委托算出来，订阅表里存其余状态
+            if search_status == 3 {
+                qb.push(
+                    " AND EXISTS (SELECT 1 FROM search_mandate_sub_anime m WHERE m.sub_anime_id = sa.id) ",
+                );
+            } else {
+                qb.push(" AND NOT EXISTS (SELECT 1 FROM search_mandate_sub_anime m WHERE m.sub_anime_id = sa.id) AND sa.search_status = ");
+                qb.push_bind(search_status);
+            }
         }
 
         qb.push(" ), paginated AS ( SELECT *, COUNT(*) OVER() AS total_count FROM base ");
@@ -141,7 +148,10 @@ impl AnimeViewQuery {
                 p.air_date,
                 p.total_count,
                 sa.id AS sub_anime_id,
-                sa.search_status,
+                CASE
+                    WHEN EXISTS (SELECT 1 FROM search_mandate_sub_anime m WHERE m.sub_anime_id = sa.id) THEN 3
+                    ELSE sa.search_status
+                END AS search_status,
                 sa.progress,
                 sa.rule_id,
                 r.name AS rule_name,

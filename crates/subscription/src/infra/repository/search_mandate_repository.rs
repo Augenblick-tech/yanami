@@ -69,11 +69,24 @@ impl SearchMandateRepository for SearchMandateSqliteClient {
             delete_mandate_qb.push_bind(mandate_id);
             delete_mandate_qb.push(")");
 
-            delete_mandate_qb
+            let deleted = delete_mandate_qb
                 .build()
                 .execute(&mut *tx)
                 .await
                 .context("clean mandate record failed")?;
+
+            if deleted.rows_affected() > 0 {
+                // 委托删除时，订阅与它的关联记录一起删掉
+                let mut delete_sub_anime_qb = QueryBuilder::new(
+                    "DELETE FROM search_mandate_sub_anime WHERE search_mandate_id = ",
+                );
+                delete_sub_anime_qb.push_bind(mandate_id);
+                delete_sub_anime_qb
+                    .build()
+                    .execute(&mut *tx)
+                    .await
+                    .context("clean mandate sub anime record failed")?;
+            }
         }
 
         let mut count_qb = QueryBuilder::new(
@@ -95,80 +108,94 @@ impl SearchMandateRepository for SearchMandateSqliteClient {
         Ok(remaining as u64)
     }
 
-    async fn save(&self, data: &[Mandate]) -> Result<Vec<SearchMandateProp>> {
-        if data.is_empty() {
-            return Ok(vec![]);
-        }
-
-        let anime_id = data[0].anime_id;
+    async fn save(
+        &self,
+        anime_id: i64,
+        sub_anime_id: i64,
+        data: &[Mandate],
+    ) -> Result<Vec<SearchMandateProp>> {
         let mut tx = self
             .pool
             .begin()
             .await
             .context("begin transaction failed")?;
 
-        // 检查该 anime_id 是否已存在
-        let mut exists_qb =
-            QueryBuilder::new("SELECT EXISTS(SELECT 1 FROM search_mandate WHERE anime_id = ");
-        exists_qb.push_bind(anime_id);
-        exists_qb.push(")");
+        let mut props = vec![];
 
-        let row = exists_qb
-            .build()
-            .fetch_one(&mut *tx)
-            .await
-            .context("check anime_id existence failed")?;
-        let exists: bool = row.get(0);
+        if !data.is_empty() {
+            let mut exists_qb =
+                QueryBuilder::new("SELECT EXISTS(SELECT 1 FROM search_mandate WHERE anime_id = ");
+            exists_qb.push_bind(anime_id);
+            exists_qb.push(")");
 
-        if exists {
-            return Ok(vec![]);
+            let row = exists_qb
+                .build()
+                .fetch_one(&mut *tx)
+                .await
+                .context("check anime_id existence failed")?;
+            let exists: bool = row.get(0);
+
+            if !exists {
+                let mut insert_mandate_qb =
+                    QueryBuilder::new("INSERT INTO search_mandate (anime_id) VALUES (");
+                insert_mandate_qb.push_bind(anime_id);
+                insert_mandate_qb.push(")");
+
+                let res = insert_mandate_qb
+                    .build()
+                    .execute(&mut *tx)
+                    .await
+                    .context("insert search_mandate failed")?;
+
+                let mandate_id = res.last_insert_rowid();
+
+                props.reserve(data.len());
+                for m in data {
+                    let mut insert_pool_qb = QueryBuilder::new(
+                        "INSERT INTO search_pool (search_mandate_id, feed_id, url) VALUES (",
+                    );
+                    insert_pool_qb.push_bind(mandate_id);
+                    insert_pool_qb.push(", ");
+                    insert_pool_qb.push_bind(m.feed_id);
+                    insert_pool_qb.push(", ");
+                    insert_pool_qb.push_bind(&m.url);
+                    insert_pool_qb.push(")");
+
+                    let res = insert_pool_qb
+                        .build()
+                        .execute(&mut *tx)
+                        .await
+                        .context("insert search_pool failed")?;
+
+                    let pool_id = res.last_insert_rowid();
+
+                    props.push(SearchMandateProp {
+                        data: SearchMandateBaseData {
+                            id: pool_id,
+                            mandata: Mandate {
+                                anime_id: m.anime_id,
+                                feed_id: m.feed_id,
+                                url: m.url.clone(),
+                            },
+                        },
+                    });
+                }
+            }
         }
 
-        let mut insert_mandate_qb =
-            QueryBuilder::new("INSERT INTO search_mandate (anime_id) VALUES (");
-        insert_mandate_qb.push_bind(anime_id);
-        insert_mandate_qb.push(")");
+        // 订阅与委托同一次写入
+        let mut join_qb = QueryBuilder::new(
+            "INSERT OR IGNORE INTO search_mandate_sub_anime (search_mandate_id, sub_anime_id) SELECT id, ",
+        );
+        join_qb.push_bind(sub_anime_id);
+        join_qb.push(" FROM search_mandate WHERE anime_id = ");
+        join_qb.push_bind(anime_id);
 
-        let res = insert_mandate_qb
+        join_qb
             .build()
             .execute(&mut *tx)
             .await
-            .context("insert search_mandate failed")?;
-
-        let mandate_id = res.last_insert_rowid();
-
-        // 逐条插入 search_pool 并构造结果
-        let mut props = Vec::with_capacity(data.len());
-        for m in data {
-            let mut insert_pool_qb = QueryBuilder::new(
-                "INSERT INTO search_pool (search_mandate_id, feed_id, url) VALUES (",
-            );
-            insert_pool_qb.push_bind(mandate_id);
-            insert_pool_qb.push(", ");
-            insert_pool_qb.push_bind(m.feed_id);
-            insert_pool_qb.push(", ");
-            insert_pool_qb.push_bind(&m.url);
-            insert_pool_qb.push(")");
-
-            let res = insert_pool_qb
-                .build()
-                .execute(&mut *tx)
-                .await
-                .context("insert search_pool failed")?;
-
-            let pool_id = res.last_insert_rowid();
-
-            props.push(SearchMandateProp {
-                data: SearchMandateBaseData {
-                    id: pool_id,
-                    mandata: Mandate {
-                        anime_id: m.anime_id,
-                        feed_id: m.feed_id,
-                        url: m.url.clone(),
-                    },
-                },
-            });
-        }
+            .context("add mandate sub anime failed")?;
 
         tx.commit().await.context("commit transaction failed")?;
 
@@ -216,13 +243,39 @@ impl SearchMandateRepository for SearchMandateSqliteClient {
         delete_mandate_qb.push_bind(mandate_id);
         delete_mandate_qb.push(")");
 
-        delete_mandate_qb
+        let deleted = delete_mandate_qb
             .build()
             .execute(&mut *tx)
             .await
             .context("clean mandate record failed")?;
 
+        if deleted.rows_affected() > 0 {
+            // 委托删除时，订阅与它的关联记录一起删掉
+            let mut delete_sub_anime_qb = QueryBuilder::new(
+                "DELETE FROM search_mandate_sub_anime WHERE search_mandate_id = ",
+            );
+            delete_sub_anime_qb.push_bind(mandate_id);
+            delete_sub_anime_qb
+                .build()
+                .execute(&mut *tx)
+                .await
+                .context("clean mandate sub anime record failed")?;
+        }
+
         tx.commit().await.context("commit transaction failed")?;
+        Ok(())
+    }
+
+    async fn remove_sub_anime(&self, sub_anime_id: i64) -> Result<()> {
+        let mut qb =
+            QueryBuilder::new("DELETE FROM search_mandate_sub_anime WHERE sub_anime_id = ");
+        qb.push_bind(sub_anime_id);
+
+        qb.build()
+            .execute(&self.pool)
+            .await
+            .context("remove mandate sub anime failed")?;
+
         Ok(())
     }
 }
@@ -238,6 +291,7 @@ mod tests {
 
     struct Fixture {
         dir: tempfile::TempDir,
+        pool: SqlitePool,
         client: SearchMandateSqliteClient,
     }
 
@@ -261,7 +315,15 @@ mod tests {
             .expect("init search mandate schema failed");
         tx.commit().await.expect("commit schema failed");
 
-        Fixture { dir, client }
+        Fixture { dir, pool, client }
+    }
+
+    async fn participant_count(f: &Fixture, sub_anime_id: i64) -> i64 {
+        sqlx::query_scalar("SELECT COUNT(*) FROM search_mandate_sub_anime WHERE sub_anime_id = ?")
+            .bind(sub_anime_id)
+            .fetch_one(&f.pool)
+            .await
+            .expect("count mandate sub anime")
     }
 
     fn mandate(feed_id: i64, url: &str) -> Mandate {
@@ -284,7 +346,11 @@ mod tests {
         let f = setup().await;
         let saved = f
             .client
-            .save(&[mandate(10, "http://feed/10"), mandate(11, "http://feed/11")])
+            .save(
+                1,
+                100,
+                &[mandate(10, "http://feed/10"), mandate(11, "http://feed/11")],
+            )
             .await
             .expect("save mandates");
         assert_eq!(saved.len(), 2);
@@ -318,7 +384,7 @@ mod tests {
         // 调用方无法区分"没有待搜索条目"和"有但被屏蔽"，会误判为队列已空。本用例锁定当前行为。
         let f = setup().await;
         f.client
-            .save(&[mandate(10, "http://feed/10")])
+            .save(1, 100, &[mandate(10, "http://feed/10")])
             .await
             .expect("save mandate");
         assert_eq!(f.client.count().await.expect("count pool entries"), 1);
@@ -348,14 +414,14 @@ mod tests {
         let f = setup().await;
         let first = f
             .client
-            .save(&[mandate(10, "http://feed/10")])
+            .save(1, 100, &[mandate(10, "http://feed/10")])
             .await
             .expect("first save");
         assert_eq!(first.len(), 1);
 
         let second = f
             .client
-            .save(&[mandate(11, "http://feed/11")])
+            .save(1, 101, &[mandate(11, "http://feed/11")])
             .await
             .expect("second save is silently ignored");
         assert!(second.is_empty());
@@ -367,7 +433,11 @@ mod tests {
         let f = setup().await;
         let saved = f
             .client
-            .save(&[mandate(10, "http://feed/10"), mandate(11, "http://feed/11")])
+            .save(
+                1,
+                100,
+                &[mandate(10, "http://feed/10"), mandate(11, "http://feed/11")],
+            )
             .await
             .expect("save mandates");
 
@@ -391,5 +461,82 @@ mod tests {
                 .expect("get one after delete")
                 .is_none()
         );
+    }
+
+    #[tokio::test]
+    async fn save_joins_the_waiting_sub_anime_once() {
+        let f = setup().await;
+        f.client
+            .save(1, 100, &[mandate(10, "http://feed/10")])
+            .await
+            .expect("save mandate");
+        assert_eq!(participant_count(&f, 100).await, 1);
+
+        // 该番剧已有搜索委托时，只把订阅存到该委托上，不再建第二份委托
+        let second = f
+            .client
+            .save(1, 100, &[mandate(11, "http://feed/11")])
+            .await
+            .expect("save mandate again");
+        assert!(second.is_empty());
+        assert_eq!(participant_count(&f, 100).await, 1);
+
+        // 该番剧没有搜索委托时，订阅不会存到任何委托上
+        let orphan = f
+            .client
+            .save(999, 200, &[])
+            .await
+            .expect("save without mandate");
+        assert!(orphan.is_empty());
+        assert_eq!(participant_count(&f, 200).await, 0);
+    }
+
+    #[tokio::test]
+    async fn remove_sub_anime_takes_it_off_the_list() {
+        let f = setup().await;
+        f.client
+            .save(1, 100, &[mandate(10, "http://feed/10")])
+            .await
+            .expect("save mandate");
+
+        f.client
+            .remove_sub_anime(100)
+            .await
+            .expect("remove sub anime");
+        assert_eq!(participant_count(&f, 100).await, 0);
+    }
+
+    #[tokio::test]
+    async fn completing_mandate_clears_its_sub_anime_list() {
+        let f = setup().await;
+        let saved = f
+            .client
+            .save(1, 100, &[mandate(10, "http://feed/10")])
+            .await
+            .expect("save mandate");
+
+        let remaining = f
+            .client
+            .delete_and_count(saved[0].data.id, 1)
+            .await
+            .expect("delete and count");
+        assert_eq!(remaining, 0);
+        assert_eq!(participant_count(&f, 100).await, 0);
+    }
+
+    #[tokio::test]
+    async fn delete_clears_its_sub_anime_list() {
+        let f = setup().await;
+        let saved = f
+            .client
+            .save(1, 100, &[mandate(10, "http://feed/10")])
+            .await
+            .expect("save mandate");
+
+        f.client
+            .delete(saved[0].data.id)
+            .await
+            .expect("delete pool entry");
+        assert_eq!(participant_count(&f, 100).await, 0);
     }
 }

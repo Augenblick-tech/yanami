@@ -17,6 +17,8 @@ use axum::{
 };
 use common::{MockDownloaderManager, TestApp, nyaa_item, sword_anime};
 use serde_json::{Value, json};
+use subscription::entity::cap::SearchMandateRepository;
+use subscription::entity::model::Mandate;
 use tower::ServiceExt;
 use user::entity::model::UserRole;
 use web::model::AnimeMetadataItem;
@@ -255,6 +257,72 @@ async fn web_api_pages_subscribed_anime() {
     assert!(
         body.to_string().contains("転生したら剣でした"),
         "response should contain the real captured anime title, actual {body}"
+    );
+}
+
+#[tokio::test]
+async fn web_api_search_status_comes_from_mandate_list() {
+    let app = TestApp::new().await;
+    let (_, space_id) = create_account(&app, "search-viewer", UserRole::User).await;
+    let anime = app.seed_anime(&sword_anime()).await;
+    let sub_anime = app.subscribe(space_id, anime.data.id).await;
+
+    // 订阅在搜索委托上：搜索中由委托算出来，订阅表里存的是不搜索
+    app.ctx
+        .repo
+        .mandate_repo
+        .save(
+            anime.data.id,
+            sub_anime.id(),
+            &[Mandate {
+                anime_id: anime.data.id,
+                feed_id: 1,
+                url: "http://feed/1".to_string(),
+            }],
+        )
+        .await
+        .expect("save search mandate failed");
+
+    let token = login_token(&app, "search-viewer").await;
+    let page = json!({"page": 1, "page_size": 10}).to_string();
+    let (status, body) = request(
+        &app,
+        json_request("POST", "/api/v1/anime", &page, Some(&token)),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "anime paging query failed, body {body}"
+    );
+    assert_eq!(
+        body["data"]["data"][0]["sub_info"]["search_status"],
+        json!(3),
+        "subscription waiting on a mandate should read as searching, actual {body}"
+    );
+
+    // 订阅不再搜索：从搜索委托上去掉
+    let (status, body) = request(
+        &app,
+        json_request(
+            "POST",
+            &format!("/api/v1/subscription/{}/search_status", sub_anime.id()),
+            &json!({"enable": false}).to_string(),
+            Some(&token),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "cancel search failed, body {body}");
+
+    let (_, body) = request(
+        &app,
+        json_request("POST", "/api/v1/anime", &page, Some(&token)),
+    )
+    .await;
+    assert_eq!(
+        body["data"]["data"][0]["sub_info"]["search_status"],
+        json!(0),
+        "subscription should read back to the status it holds, actual {body}"
     );
 }
 

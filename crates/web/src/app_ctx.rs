@@ -1,7 +1,7 @@
 use std::{path::Path, sync::Arc, time::Duration};
 
 use anime::{
-    entity::{anime_source::AnimeSources, animes::Animes},
+    entity::{anime_source::AnimeSources, animes::Animes, model::AnimeSeriesMetadata},
     infra::{
         anime_source::{bgm::client::BgmClient, tmdb::client::TmdbClient},
         repository::client::AnimeSqliteClient,
@@ -22,7 +22,7 @@ use reqwest::{
 };
 use resource::{entity::resources::Resources, infra::repository::client::ResourceSqliteClient};
 use sqlx::{
-    Pool, Sqlite,
+    Pool, Sqlite, Transaction,
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous},
 };
 use subscription::{
@@ -304,6 +304,8 @@ impl AppContext {
             .await
             .expect("init mandate database failed");
 
+        self.migrate_database(&mut tx).await;
+
         tx.commit().await.expect("init database commit failed");
 
         self.roots
@@ -311,5 +313,64 @@ impl AppContext {
             .init_admin_user()
             .await
             .expect("init admin user failed")
+    }
+
+    /// 数据库迁移：与数据库初始化共用同一个事务，外部不需要区分这两件事。
+    async fn migrate_database(&self, tx: &mut Transaction<'_, Sqlite>) {
+        self.repo
+            .sub_anime_repo
+            .migrate_with_tx(tx)
+            .await
+            .expect("migrate sub_anime database failed");
+
+        self.backfill_series(tx).await;
+    }
+
+    /// 补全系列展示信息：已经有 TMDB 系列身份但没有系列展示信息的番剧，迁移时补齐。
+    /// TMDB 取不到时跳过该番剧，不写占位数据，下次启动再判断。
+    async fn backfill_series(&self, tx: &mut Transaction<'_, Sqlite>) {
+        let tmdb_ids = match self.repo.anime_repo.list_missing_series_ids(tx).await {
+            Ok(tmdb_ids) => tmdb_ids,
+            Err(e) => {
+                tracing::error!("backfill series query missing failed, {}", e);
+                return;
+            }
+        };
+
+        if tmdb_ids.is_empty() {
+            return;
+        }
+
+        tracing::info!("backfill series started, count = {}", tmdb_ids.len());
+
+        let mut series = Vec::with_capacity(tmdb_ids.len());
+        for tmdb_id in tmdb_ids {
+            let detail = match self.caps.tmdb_client.get_tv_detail(tmdb_id).await {
+                Ok(detail) => detail,
+                Err(e) => {
+                    tracing::error!("backfill series fetch failed, tmdb_id = {}, {}", tmdb_id, e);
+                    continue;
+                }
+            };
+
+            let metadata = AnimeSeriesMetadata {
+                origin_name: detail.inner.original_name,
+                cn_name: detail.inner.name,
+                desc: detail.inner.overview,
+                air_date: detail.inner.first_air_date.unwrap_or_default(),
+                genres: detail.genres.into_iter().map(|i| i.name).collect(),
+            };
+
+            if metadata.origin_name.is_empty() {
+                tracing::error!("backfill series metadata is empty, tmdb_id = {}", tmdb_id);
+                continue;
+            }
+
+            series.push((tmdb_id, metadata));
+        }
+
+        if let Err(e) = self.repo.anime_repo.save_series(tx, &series).await {
+            tracing::error!("backfill series save failed, {}", e);
+        }
     }
 }

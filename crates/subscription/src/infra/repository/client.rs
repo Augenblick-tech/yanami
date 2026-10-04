@@ -92,6 +92,32 @@ impl SubAnimeSqliteClient {
 
         Ok(())
     }
+
+    pub async fn migrate_with_tx(&self, tx: &mut Transaction<'_, Sqlite>) -> Result<()> {
+        // 老数据把搜索中存到 sub_anime.search_status 里，搜索中改由搜索委托算出来之后，这批数据要迁移。
+        // 按番剧把订阅存到已有的搜索委托上，再把 sub_anime.search_status 改成不搜索。
+        // 两条语句的顺序固定在这里：找出这批订阅依据的是 sub_anime.search_status = 3。
+        sqlx::query(
+            "INSERT OR IGNORE INTO search_mandate_sub_anime (search_mandate_id, sub_anime_id)
+             SELECT m.id, sa.id
+             FROM search_mandate m
+             JOIN sub_anime sa ON sa.anime_id = m.anime_id
+             WHERE sa.search_status = 3
+               AND sa.progress < COALESCE(
+                   (SELECT planned_ep_count FROM anime_season
+                    WHERE anime_id = sa.anime_id AND target_source = 'Bangumi'),
+                   0
+               );",
+        )
+        .execute(&mut **tx)
+        .await?;
+
+        sqlx::query("UPDATE sub_anime SET search_status = 0 WHERE search_status = 3;")
+            .execute(&mut **tx)
+            .await?;
+
+        Ok(())
+    }
 }
 
 impl SubAnimeSqliteClient {
@@ -150,12 +176,21 @@ impl SubAnimeSqliteClient {
 }
 
 impl SubAnimeSqliteClient {
+    // 订阅在搜索委托上时，读出来的搜索状态是搜索中
+    pub(super) const SEARCHING_EXISTS: &str =
+        "EXISTS (SELECT 1 FROM search_mandate_sub_anime m WHERE m.sub_anime_id = sa.id)";
+
     pub(super) const BASE_SELECT_JOIN: &str = r#"SELECT
         sa.id,
         sa.anime_id,
         sa.space_id,
         sa.rule_id,
-        sa.search_status,
+        CASE
+            WHEN EXISTS (
+                SELECT 1 FROM search_mandate_sub_anime m WHERE m.sub_anime_id = sa.id
+            ) THEN 3
+            ELSE sa.search_status
+        END AS search_status,
         sa.progress,
         COALESCE(
             (SELECT planned_ep_count FROM anime_season
@@ -339,6 +374,25 @@ impl SearchMandateSqliteClient {
             .execute(&mut **tx)
             .await?;
 
+        // 搜索委托上的订阅：搜索中由这张表读出来，不写进订阅表
+        sqlx::query(
+            "
+            CREATE TABLE IF NOT EXISTS search_mandate_sub_anime (
+                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                search_mandate_id   INTEGER NOT NULL,
+                sub_anime_id        INTEGER NOT NULL,
+                created_at          INTEGER NOT NULL DEFAULT (unixepoch()),
+                CONSTRAINT uk_search_mandate_sub_anime UNIQUE (search_mandate_id, sub_anime_id)
+            );
+        ",
+        )
+        .execute(&mut **tx)
+        .await?;
+
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_search_mandate_sub_anime_sub_anime_id ON search_mandate_sub_anime(sub_anime_id);")
+            .execute(&mut **tx)
+            .await?;
+
         Ok(())
     }
 }
@@ -490,6 +544,48 @@ mod tests {
             .expect("insert resource failed");
     }
 
+    async fn seed_search_mandate(pool: &SqlitePool, anime_id: i64) -> i64 {
+        sqlx::query("INSERT INTO search_mandate (anime_id) VALUES (?)")
+            .bind(anime_id)
+            .execute(pool)
+            .await
+            .expect("insert search mandate failed")
+            .last_insert_rowid()
+    }
+
+    async fn set_sub_anime_search_status(pool: &SqlitePool, sub_anime_id: i64, search_status: i32) {
+        sqlx::query("UPDATE sub_anime SET search_status = ? WHERE id = ?")
+            .bind(search_status)
+            .bind(sub_anime_id)
+            .execute(pool)
+            .await
+            .expect("set sub anime search_status failed");
+    }
+
+    async fn set_sub_anime_progress(pool: &SqlitePool, sub_anime_id: i64, progress: i32) {
+        sqlx::query("UPDATE sub_anime SET progress = ? WHERE id = ?")
+            .bind(progress)
+            .bind(sub_anime_id)
+            .execute(pool)
+            .await
+            .expect("set sub anime progress failed");
+    }
+
+    async fn read_sub_anime_search_status(pool: &SqlitePool, sub_anime_id: i64) -> i32 {
+        sqlx::query_scalar("SELECT search_status FROM sub_anime WHERE id = ?")
+            .bind(sub_anime_id)
+            .fetch_one(pool)
+            .await
+            .expect("read sub anime search_status failed")
+    }
+
+    async fn read_search_mandate_participants(pool: &SqlitePool) -> Vec<(i64, i64)> {
+        sqlx::query_as("SELECT search_mandate_id, sub_anime_id FROM search_mandate_sub_anime")
+            .fetch_all(pool)
+            .await
+            .expect("read search mandate participants failed")
+    }
+
     /// 走生产的 BASE_SELECT_JOIN（每个用例只造一条 sub_anime，直接 fetch_one）
     async fn fetch_sub_anime_row(pool: &SqlitePool) -> sqlx::sqlite::SqliteRow {
         sqlx::query(SubAnimeSqliteClient::BASE_SELECT_JOIN)
@@ -503,6 +599,114 @@ mod tests {
         // 夹具把 SQLite 文件放在 tempdir 下，测试结束随目录一起删除
         let f = setup().await;
         assert!(f.dir.path().join("client-test.db").exists());
+    }
+
+    #[tokio::test]
+    async fn migrate_with_tx_clears_searching_kept_in_sub_anime() {
+        let f = setup().await;
+        seed_anime(&f.pool, 100, Some("2024-04-01"), Some(12), &["番A"]).await;
+        seed_anime(&f.pool, 101, Some("2024-04-01"), Some(12), &["番B"]).await;
+        let client = SubAnimeSqliteClient::new(f.pool.clone());
+        let legacy = client
+            .insert_sub_anime(9, 100)
+            .await
+            .expect("insert sub anime");
+        let matching = client
+            .insert_sub_anime(9, 101)
+            .await
+            .expect("insert sub anime");
+
+        // 老数据里订阅表存着搜索中，值为 3
+        set_sub_anime_search_status(&f.pool, legacy.data.id, 3).await;
+        set_sub_anime_search_status(&f.pool, matching.data.id, 2).await;
+
+        let mut tx = f.pool.begin().await.expect("begin migrate tx failed");
+        client
+            .migrate_with_tx(&mut tx)
+            .await
+            .expect("migrate failed");
+        tx.commit().await.expect("commit migrate failed");
+
+        assert_eq!(
+            read_sub_anime_search_status(&f.pool, legacy.data.id).await,
+            0
+        );
+        assert_eq!(
+            read_sub_anime_search_status(&f.pool, matching.data.id).await,
+            2
+        );
+        // 该番剧没有搜索委托，订阅不会存到任何委托上
+        assert!(read_search_mandate_participants(&f.pool).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn migrate_with_tx_puts_searching_sub_anime_on_the_mandate_of_its_anime() {
+        let f = setup().await;
+        seed_anime(&f.pool, 100, Some("2024-04-01"), Some(12), &["番A"]).await;
+        seed_anime(&f.pool, 101, Some("2024-04-01"), Some(12), &["番B"]).await;
+        let mandate_id = seed_search_mandate(&f.pool, 100).await;
+        let client = SubAnimeSqliteClient::new(f.pool.clone());
+        let waiting = client
+            .insert_sub_anime(9, 100)
+            .await
+            .expect("insert sub anime");
+        let other_anime = client
+            .insert_sub_anime(9, 101)
+            .await
+            .expect("insert sub anime");
+
+        // 两条订阅在订阅表里都存着搜索中，但只有番剧 100 有搜索委托
+        set_sub_anime_search_status(&f.pool, waiting.data.id, 3).await;
+        set_sub_anime_search_status(&f.pool, other_anime.data.id, 3).await;
+
+        let mut tx = f.pool.begin().await.expect("begin migrate tx failed");
+        client
+            .migrate_with_tx(&mut tx)
+            .await
+            .expect("migrate failed");
+        tx.commit().await.expect("commit migrate failed");
+
+        assert_eq!(
+            read_search_mandate_participants(&f.pool).await,
+            vec![(mandate_id, waiting.data.id)]
+        );
+        assert_eq!(
+            read_sub_anime_search_status(&f.pool, waiting.data.id).await,
+            0
+        );
+        assert_eq!(
+            read_sub_anime_search_status(&f.pool, other_anime.data.id).await,
+            0
+        );
+    }
+
+    #[tokio::test]
+    async fn migrate_with_tx_skips_searching_sub_anime_already_completed() {
+        let f = setup().await;
+        seed_anime(&f.pool, 100, Some("2024-04-01"), Some(12), &["番A"]).await;
+        seed_search_mandate(&f.pool, 100).await;
+        let client = SubAnimeSqliteClient::new(f.pool.clone());
+        let completed = client
+            .insert_sub_anime(9, 100)
+            .await
+            .expect("insert sub anime");
+
+        // 搜索中但已经播完的订阅：老的匹配查询只取未播完的订阅，这种不参与匹配
+        set_sub_anime_search_status(&f.pool, completed.data.id, 3).await;
+        set_sub_anime_progress(&f.pool, completed.data.id, 12).await;
+
+        let mut tx = f.pool.begin().await.expect("begin migrate tx failed");
+        client
+            .migrate_with_tx(&mut tx)
+            .await
+            .expect("migrate failed");
+        tx.commit().await.expect("commit migrate failed");
+
+        assert!(read_search_mandate_participants(&f.pool).await.is_empty());
+        assert_eq!(
+            read_sub_anime_search_status(&f.pool, completed.data.id).await,
+            0
+        );
     }
 
     #[tokio::test]
@@ -838,7 +1042,7 @@ mod tests {
         .await
         .expect("insert pool entry");
 
-        // 与生产 get_one 相同的投影列
+        // 取的列和生产 get_one 一致，用来验证解析
         let row = sqlx::query(
             "SELECT p.id, m.anime_id, p.feed_id, p.url FROM search_pool p JOIN search_mandate m ON m.id = p.search_mandate_id",
         )

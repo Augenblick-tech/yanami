@@ -228,6 +228,11 @@ pub async fn set_search_status(
     if req.enable {
         entity.enable_search();
     } else {
+        // 订阅不再搜索：从搜索委托上去掉之后，读出来的状态才不是搜索中
+        ctx.roots
+            .search_mandates
+            .remove_sub_anime(entity.id())
+            .await?;
         entity.cancel_search();
     }
 

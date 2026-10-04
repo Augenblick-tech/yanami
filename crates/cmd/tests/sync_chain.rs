@@ -326,6 +326,10 @@ impl SubAnimeRepository for CountingSubAnimeRepository {
         unimplemented!("sync calendar task must not list sub animes")
     }
 
+    async fn list_by_mandate(&self, _anime_id: i64) -> anyhow::Result<Vec<SubAnimeProps>> {
+        unimplemented!("sync calendar task must not list sub animes by mandate")
+    }
+
     async fn list_eps(&self, _sub_anime_id: i64) -> anyhow::Result<Vec<EpisodeProp>> {
         unimplemented!("sync calendar task must not list episodes")
     }

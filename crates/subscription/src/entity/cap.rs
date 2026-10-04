@@ -18,6 +18,7 @@ pub trait SubAnimeRepository: Send + Sync {
     async fn update_sub_animes(&self, data: &[SubAnimeBaseData]) -> Result<()>;
     async fn find_sub_anime(&self, id: i64) -> Result<Option<SubAnimeProps>>;
     async fn list(&self, query: &SubAnimeListQuery) -> Result<Vec<SubAnimeProps>>;
+    async fn list_by_mandate(&self, anime_id: i64) -> Result<Vec<SubAnimeProps>>;
     async fn find_by_anime_ids(
         &self,
         space_id: i64,
@@ -57,7 +58,14 @@ pub trait RuleRepository: Send + Sync {
 pub trait SearchMandateRepository: Send + Sync {
     async fn get_one(&self, block_feed_ids: &[i64]) -> Result<Option<SearchMandateProp>>;
     async fn delete_and_count(&self, id: i64, anime_id: i64) -> Result<u64>;
-    async fn save(&self, data: &[Mandate]) -> Result<Vec<SearchMandateProp>>;
+    /// 保存该番剧的搜索委托与订阅：该番剧已有委托时只记录订阅，没有可用搜索源时两者都不写。
+    async fn save(
+        &self,
+        anime_id: i64,
+        sub_anime_id: i64,
+        data: &[Mandate],
+    ) -> Result<Vec<SearchMandateProp>>;
+    async fn remove_sub_anime(&self, sub_anime_id: i64) -> Result<()>;
     async fn count(&self) -> Result<u64>;
     async fn delete(&self, id: i64) -> Result<()>;
 }

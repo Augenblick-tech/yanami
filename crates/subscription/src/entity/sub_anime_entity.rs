@@ -166,6 +166,7 @@ impl SubAnimeEntityMatcher for SubAnimeEntity {
     }
 
     // 确认是否需要进行搜索
+    // 需要搜索时把订阅重置为不搜索：搜索中不存订阅表，由搜索委托上的记录算出来
     fn request_search(&mut self) -> bool {
         use SubAnimeSearchStatus::*;
         if self.is_completed() {
@@ -174,10 +175,11 @@ impl SubAnimeEntityMatcher for SubAnimeEntity {
         }
 
         if self.data.search_status == Matching || self.data.search_status == Searching {
-            self.data.search_status = Searching;
-            return true;
+            self.data.search_status = NotSearch;
+            true
+        } else {
+            false
         }
-        false
     }
 
     /// 获取本地匹配的时间范围
@@ -285,17 +287,17 @@ mod tests {
     }
 
     #[test]
-    fn request_search_from_matching_stays_searching() {
+    fn request_search_from_matching_asks_for_search() {
         let mut e = entity(SubAnimeSearchStatus::Matching, 0, 12);
         assert!(e.request_search());
-        assert_eq!(e.search_status(), SubAnimeSearchStatus::Searching);
+        assert_eq!(e.search_status(), SubAnimeSearchStatus::NotSearch);
     }
 
     #[test]
-    fn request_search_from_searching_is_true() {
+    fn request_search_from_searching_asks_for_search() {
         let mut e = entity(SubAnimeSearchStatus::Searching, 0, 12);
         assert!(e.request_search());
-        assert_eq!(e.search_status(), SubAnimeSearchStatus::Searching);
+        assert_eq!(e.search_status(), SubAnimeSearchStatus::NotSearch);
     }
 
     #[test]

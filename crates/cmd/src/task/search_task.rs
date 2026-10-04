@@ -3,7 +3,6 @@ use feed::entity::feeds::Feeds;
 use feed::entity::model::FeedFetchResult::{Failure, Success};
 use futures::StreamExt;
 use resource::entity::{model::ResourceQuery, resources::Resources};
-use subscription::entity::model::SubAnimeStatus;
 use subscription::entity::sub_anime_entity::SubAnimeEntityMatcher;
 use subscription::entity::{
     model::{SubAnimeListQuery, SubAnimeSearchStatus},
@@ -104,14 +103,13 @@ pub async fn local_match_task(
         if sub_anime_entity.request_search() {
             let search_url_provider = feeds.get_search_feeds().await?;
             let search_urls = sub_anime_entity.get_search_urls(&search_url_provider);
-            if search_mandates
-                .create_from_search_urls(sub_anime_entity.anime_id(), search_urls)
-                .await?
-                .is_empty()
-            {
-                // 如果搜索委托数量为零，则取消搜索
-                sub_anime_entity.cancel_search();
-            }
+            search_mandates
+                .create_from_search_urls(
+                    sub_anime_entity.anime_id(),
+                    sub_anime_entity.id(),
+                    search_urls,
+                )
+                .await?;
         }
         // 保存结果
         sub_animes.save(&sub_anime_entity).await?;
@@ -147,23 +145,15 @@ pub async fn search_task(
             _ => {}
         };
 
-        let sub_anime_entity_list = sub_animes
-            .list(&SubAnimeListQuery {
-                anime_id: Some(anime_id),
-                space_id: None,
-                search_status: Some(SubAnimeSearchStatus::Searching),
-                sub_status: Some(SubAnimeStatus::Enable),
-                limit: None,
-            })
-            .await?;
-        let done = match data {
+        let sub_anime_entity_list = sub_animes.list_by_mandate(anime_id).await?;
+        match data {
             Failure(error) => {
                 tracing::error!(
                     "search task fetch {} mandate failed, {}, will drop",
                     mandate_entity.id(),
                     error
                 );
-                search_mandates.drop(mandate_entity).await?
+                search_mandates.drop(mandate_entity).await?;
             }
             Success(data) => {
                 let res = resources.save(data).await?;
@@ -188,38 +178,9 @@ pub async fn search_task(
                         }
                     }
                 }
-                search_mandates.completed(mandate_entity).await?
+                search_mandates.completed(mandate_entity).await?;
             }
-            _ => false,
-        };
-
-        if done {
-            // 保存失败时，尝试有限次数重试
-            // TODO: 需要一种合理的机制，根治这种分步导致的状态不一致问题
-            for _ in 1..4 {
-                let Ok(mut pending_sub_anime_entity_list) = sub_animes
-                    .list(&SubAnimeListQuery {
-                        anime_id: Some(anime_id),
-                        space_id: None,
-                        search_status: None,
-                        sub_status: None,
-                        limit: None,
-                    })
-                    .await
-                else {
-                    continue;
-                };
-
-                pending_sub_anime_entity_list.retain_mut(|i| i.cancel_search());
-
-                if !pending_sub_anime_entity_list.is_empty()
-                    && let Err(e) = sub_animes.saves(&pending_sub_anime_entity_list).await
-                {
-                    tracing::error!("search task saves sub anime entity failed, {}", e);
-                } else {
-                    break;
-                }
-            }
+            _ => {}
         }
     }
 

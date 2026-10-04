@@ -7,7 +7,7 @@ use crate::{
         cap::SubAnimeRepository,
         model::{
             Episode, EpisodeBaseData, EpisodeProp, SubAnimeBaseData, SubAnimeListQuery,
-            SubAnimeProps, SubAnimeStatus,
+            SubAnimeProps, SubAnimeSearchStatus, SubAnimeStatus,
         },
     },
     infra::repository::client::SubAnimeSqliteClient,
@@ -58,6 +58,12 @@ impl SubAnimeRepository for SubAnimeSqliteClient {
             .execute(&mut *tx)
             .await?;
 
+        // 订阅删除时，搜索委托上属于它的记录一起删掉
+        sqlx::query("DELETE FROM search_mandate_sub_anime WHERE sub_anime_id = ?")
+            .bind(sub_anime)
+            .execute(&mut *tx)
+            .await?;
+
         sqlx::query("DELETE FROM sub_anime WHERE id = ?")
             .bind(sub_anime)
             .execute(&mut *tx)
@@ -90,7 +96,11 @@ impl SubAnimeRepository for SubAnimeSqliteClient {
 
         builder.push("search_status = CASE id");
         for item in data {
-            let status: i32 = item.search_status.into();
+            // 搜索中不存订阅表：订阅交给搜索委托之后，这里落成不搜索
+            let status: i32 = match item.search_status {
+                SubAnimeSearchStatus::Searching => SubAnimeSearchStatus::NotSearch.into(),
+                other => other.into(),
+            };
             builder
                 .push(" WHEN ")
                 .push_bind(item.id)
@@ -162,7 +172,6 @@ impl SubAnimeRepository for SubAnimeSqliteClient {
     async fn list(&self, query: &SubAnimeListQuery) -> Result<Vec<SubAnimeProps>> {
         let mut builder = QueryBuilder::new(Self::BASE_SELECT_JOIN);
         let mut has_condition = false;
-
         if let Some(space_id) = query.space_id {
             builder.push(" WHERE sa.space_id = ");
             builder.push_bind(space_id);
@@ -176,8 +185,18 @@ impl SubAnimeRepository for SubAnimeSqliteClient {
         }
         if let Some(search_status) = query.search_status {
             builder.push(if has_condition { " AND " } else { " WHERE " });
-            builder.push("sa.search_status = ");
-            builder.push_bind(i32::from(search_status));
+            // 搜索中由搜索委托算出来，订阅表里存其余状态
+            match search_status {
+                SubAnimeSearchStatus::Searching => {
+                    builder.push(Self::SEARCHING_EXISTS);
+                }
+                other => {
+                    builder.push("NOT ");
+                    builder.push(Self::SEARCHING_EXISTS);
+                    builder.push(" AND sa.search_status = ");
+                    builder.push_bind(i32::from(other));
+                }
+            }
             has_condition = true;
         }
         if let Some(sub_status) = &query.sub_status {
@@ -211,6 +230,18 @@ impl SubAnimeRepository for SubAnimeSqliteClient {
             results.push(Self::row_to_sub_anime_props(&row)?);
         }
         Ok(results)
+    }
+
+    // 该番剧在搜索委托上的订阅：这次抓回来的资源只与它们匹配
+    async fn list_by_mandate(&self, anime_id: i64) -> Result<Vec<SubAnimeProps>> {
+        self.list(&SubAnimeListQuery {
+            anime_id: Some(anime_id),
+            space_id: None,
+            search_status: Some(SubAnimeSearchStatus::Searching),
+            sub_status: Some(SubAnimeStatus::Enable),
+            limit: None,
+        })
+        .await
     }
 
     async fn list_eps(&self, sub_anime_id: i64) -> Result<Vec<EpisodeProp>> {
@@ -370,7 +401,9 @@ mod tests {
         SubAnimeStatus,
     };
     use crate::infra::regex::RegexRuleMatcher;
-    use crate::infra::repository::client::{RuleSqliteClient, SubAnimeSqliteClient};
+    use crate::infra::repository::client::{
+        RuleSqliteClient, SearchMandateSqliteClient, SubAnimeSqliteClient,
+    };
 
     struct Fixture {
         dir: tempfile::TempDir,
@@ -406,6 +439,11 @@ mod tests {
             .init_with_tx(&mut tx)
             .await
             .expect("init rule schema failed");
+        // 订阅查询要用搜索委托的表，夹具一起建
+        SearchMandateSqliteClient::new(pool.clone())
+            .init_with_tx(&mut tx)
+            .await
+            .expect("init search mandate schema failed");
         // subscription 不依赖 anime / resource crate，测试里按生产查询实际引用的列最小化建表，
         // 结构对齐 crates/anime/src/infra/repository/client.rs 与
         // crates/resource/src/infra/repository/client.rs。
@@ -521,17 +559,36 @@ mod tests {
         props.iter().map(|p| p.data.id).collect()
     }
 
+    /// 把订阅存到该番剧的搜索委托上：读出来就是搜索中
+    async fn join_search_mandate(f: &Fixture, sub_anime_id: i64, anime_id: i64) {
+        let mandate_id = sqlx::query("INSERT INTO search_mandate (anime_id) VALUES (?)")
+            .bind(anime_id)
+            .execute(&f.pool)
+            .await
+            .expect("insert search mandate failed")
+            .last_insert_rowid();
+        sqlx::query(
+            "INSERT INTO search_mandate_sub_anime (search_mandate_id, sub_anime_id) VALUES (?, ?)",
+        )
+        .bind(mandate_id)
+        .bind(sub_anime_id)
+        .execute(&f.pool)
+        .await
+        .expect("insert mandate sub anime failed");
+    }
+
     /// 三条订阅：
-    /// a = (space 9, anime 100, Searching, progress 12 / eps 12 → Completed)
-    /// b = (space 9, anime 200, Pending,   progress 0  / eps 12 → Enable)
-    /// c = (space 7, anime 100, Pending,   progress 0  / eps 12 → Enable)
+    /// a：space 9、番剧 100，在搜索委托上，进度 12/12 已播完
+    /// b：space 9、番剧 200，等待中，进度 0/12 未播完
+    /// c：space 7、番剧 100，等待中，进度 0/12 未播完
     async fn seed_three(f: &Fixture) -> (SubAnimeProps, SubAnimeProps, SubAnimeProps) {
         seed_anime(&f.pool, 100, Some("2024-04-01"), Some(12), &["番A"]).await;
         seed_anime(&f.pool, 200, Some("2024-05-01"), Some(12), &["番B"]).await;
         let a = f.client.insert_sub_anime(9, 100).await.expect("insert a");
         let b = f.client.insert_sub_anime(9, 200).await.expect("insert b");
         let c = f.client.insert_sub_anime(7, 100).await.expect("insert c");
-        set_state(&f.client, &a, SubAnimeSearchStatus::Searching, 12).await;
+        set_state(&f.client, &a, SubAnimeSearchStatus::NotSearch, 12).await;
+        join_search_mandate(f, a.data.id, 100).await;
         (a, b, c)
     }
 
@@ -604,6 +661,7 @@ mod tests {
         let f = setup().await;
         let (a, b, c) = seed_three(&f).await;
 
+        // 在搜索委托上的订阅算作搜索中
         let rows = f
             .client
             .list(&query(
@@ -615,10 +673,111 @@ mod tests {
             ))
             .await
             .expect("list by search_status");
-
         assert_eq!(ids(&rows), HashSet::from([a.data.id]));
-        assert!(!ids(&rows).contains(&b.data.id));
-        assert!(!ids(&rows).contains(&c.data.id));
+
+        // 别的状态只取不在搜索委托上的订阅
+        let rows = f
+            .client
+            .list(&query(
+                None,
+                None,
+                Some(SubAnimeSearchStatus::Pending),
+                None,
+                None,
+            ))
+            .await
+            .expect("list pending");
+        assert_eq!(ids(&rows), HashSet::from([b.data.id, c.data.id]));
+
+        for status in [
+            SubAnimeSearchStatus::NotSearch,
+            SubAnimeSearchStatus::Matching,
+        ] {
+            let rows = f
+                .client
+                .list(&query(None, None, Some(status), None, None))
+                .await
+                .expect("list status");
+            assert!(rows.is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn search_status_searching_comes_from_mandate_sub_anime() {
+        let f = setup().await;
+        seed_anime(&f.pool, 100, Some("2024-04-01"), Some(12), &["番A"]).await;
+        let a = f.client.insert_sub_anime(9, 100).await.expect("insert a");
+
+        // 搜索中不存订阅表：写进去落库是不搜索
+        set_state(&f.client, &a, SubAnimeSearchStatus::Searching, 0).await;
+        let stored: i64 = sqlx::query_scalar("SELECT search_status FROM sub_anime WHERE id = ?")
+            .bind(a.data.id)
+            .fetch_one(&f.pool)
+            .await
+            .expect("read stored search_status");
+        assert_eq!(stored, 0);
+        let row = f
+            .client
+            .find_sub_anime(a.data.id)
+            .await
+            .expect("find")
+            .expect("exists");
+        assert_eq!(row.data.search_status, SubAnimeSearchStatus::NotSearch);
+
+        // 在搜索委托上，读出来是搜索中
+        join_search_mandate(&f, a.data.id, 100).await;
+        let row = f
+            .client
+            .find_sub_anime(a.data.id)
+            .await
+            .expect("find")
+            .expect("exists");
+        assert_eq!(row.data.search_status, SubAnimeSearchStatus::Searching);
+
+        // 委托完成后，读出来是订阅表里的取值
+        sqlx::query("DELETE FROM search_mandate_sub_anime WHERE sub_anime_id = ?")
+            .bind(a.data.id)
+            .execute(&f.pool)
+            .await
+            .expect("delete mandate sub anime");
+        let row = f
+            .client
+            .find_sub_anime(a.data.id)
+            .await
+            .expect("find")
+            .expect("exists");
+        assert_eq!(row.data.search_status, SubAnimeSearchStatus::NotSearch);
+    }
+
+    #[tokio::test]
+    async fn list_by_mandate_returns_waiting_enable_subscriptions() {
+        let f = setup().await;
+        let (_a, b, _c) = seed_three(&f).await;
+        join_search_mandate(&f, b.data.id, 200).await;
+
+        // 番剧 100 的订阅也在搜索委托上，但已经播完，不再参与匹配
+        let rows = f.client.list_by_mandate(100).await.expect("list anime 100");
+        assert!(rows.is_empty());
+
+        let rows = f.client.list_by_mandate(200).await.expect("list anime 200");
+        assert_eq!(ids(&rows), HashSet::from([b.data.id]));
+    }
+
+    #[tokio::test]
+    async fn delete_removes_mandate_sub_anime_rows() {
+        let f = setup().await;
+        let (a, _b, _c) = seed_three(&f).await;
+
+        f.client.delete(a.data.id).await.expect("delete");
+
+        let left: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM search_mandate_sub_anime WHERE sub_anime_id = ?",
+        )
+        .bind(a.data.id)
+        .fetch_one(&f.pool)
+        .await
+        .expect("count mandate sub anime");
+        assert_eq!(left, 0);
     }
 
     #[tokio::test]

@@ -14,7 +14,7 @@ use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
 use chrono::NaiveDate;
 use futures::StreamExt;
-use sqlx::{QueryBuilder, Row};
+use sqlx::{QueryBuilder, Row, Sqlite, Transaction};
 
 #[async_trait]
 impl AnimeRepository for AnimeSqliteClient {
@@ -434,7 +434,10 @@ impl AnimeRepository for AnimeSqliteClient {
 
 impl AnimeSqliteClient {
     /// 取回还没有系列展示信息的 TMDB 剧集 id：归属只看番剧自己的 TMDB 外部身份，与 list_by_series 口径一致。
-    pub async fn list_missing_series_ids(&self) -> Result<Vec<i64>> {
+    pub async fn list_missing_series_ids(
+        &self,
+        tx: &mut Transaction<'_, Sqlite>,
+    ) -> Result<Vec<i64>> {
         let rows = sqlx::query(
             "SELECT DISTINCT CAST(x.ext_id AS INTEGER) AS tmdb_id
              FROM anime_external x
@@ -444,7 +447,7 @@ impl AnimeSqliteClient {
                    SELECT 1 FROM anime_series s WHERE s.tmdb_id = CAST(x.ext_id AS INTEGER)
                )",
         )
-        .fetch_all(&self.pool)
+        .fetch_all(&mut **tx)
         .await
         .context("failed to query tmdb ids missing series")?;
 
@@ -456,8 +459,12 @@ impl AnimeSqliteClient {
         Ok(tmdb_ids)
     }
 
-    /// 一次性写入系列展示信息，要么全写要么全不写。
-    pub async fn save_series(&self, series: &[(i64, AnimeSeriesMetadata)]) -> Result<()> {
+    /// 系列展示信息批量写入，随调用方的事务提交。
+    pub async fn save_series(
+        &self,
+        tx: &mut Transaction<'_, Sqlite>,
+        series: &[(i64, AnimeSeriesMetadata)],
+    ) -> Result<()> {
         if series.is_empty() {
             return Ok(());
         }
@@ -466,8 +473,6 @@ impl AnimeSqliteClient {
         for (_, metadata) in series {
             genres.push(serde_json::to_string(&metadata.genres)?);
         }
-
-        let mut tx = self.pool.begin().await?;
 
         let mut qb = QueryBuilder::new(
             "INSERT INTO anime_series (origin_name, cn_name, air_date, description, genres, tmdb_id) ",
@@ -494,11 +499,9 @@ impl AnimeSqliteClient {
         );
 
         qb.build()
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await
             .context("failed to save anime series")?;
-
-        tx.commit().await?;
 
         Ok(())
     }
