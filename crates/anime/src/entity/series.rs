@@ -54,8 +54,20 @@ impl AnimeSeries {
     }
 
     /// 系列在媒体库里的目录名。
+    ///
+    /// 目录名只能是一个普通分量：空名字、`.`、`..` 都会让落点跑出系列目录，这里报错，
+    /// 让剧集保持待下载，不猜路径。
     pub async fn folder_name(&self) -> Result<String, Error> {
-        Ok(to_safe_filename(&self.metadata().await?.origin_name))
+        let name = to_safe_filename(&self.metadata().await?.origin_name);
+        if name.is_empty() {
+            return Err(Error::invariant("anime series folder name is empty"));
+        }
+        if name == "." || name == ".." {
+            return Err(Error::invariant(
+                "anime series folder name must not be . or ..",
+            ));
+        }
+        Ok(name)
     }
 }
 
@@ -337,5 +349,55 @@ mod tests {
         let folder = series.folder_name().await.unwrap();
         assert_eq!(folder, "Fate stay night Unlimited Blade Works");
         assert_eq!(folder, to_safe_filename(origin_name));
+    }
+
+    #[tokio::test]
+    async fn location_of_keeps_a_slash_in_the_series_name_inside_one_component() {
+        let (dir, client) = setup().await;
+        assert!(dir.path().join(DB_FILE).is_file());
+
+        // 乱马1/2：斜杠属于目录名，换成空格后落点仍是两层，不会多出一层
+        let anime_id = insert(
+            &client,
+            &metadata(Some(TMDB_ID), Some(1), Some(series_metadata("乱马1/2"))),
+        )
+        .await;
+
+        let series = AnimeSeries::new(TMDB_ID, repo(&client));
+        let location = series.location_of(anime_id).await.unwrap();
+
+        assert_eq!(location, PathBuf::from("乱马1 2").join("S01"));
+        assert_eq!(
+            location.components().count(),
+            2,
+            "actual location: {}",
+            location.display()
+        );
+    }
+
+    #[tokio::test]
+    async fn location_of_refuses_series_name_that_is_not_a_directory_name() {
+        for (origin_name, expected) in [
+            ("", "anime series folder name is empty"),
+            ("///", "anime series folder name is empty"),
+            (".", "anime series folder name must not be . or .."),
+            ("..", "anime series folder name must not be . or .."),
+        ] {
+            let (dir, client) = setup().await;
+            assert!(dir.path().join(DB_FILE).is_file());
+
+            let anime_id = insert(
+                &client,
+                &metadata(Some(TMDB_ID), Some(1), Some(series_metadata(origin_name))),
+            )
+            .await;
+
+            let series = AnimeSeries::new(TMDB_ID, repo(&client));
+            let err = series.location_of(anime_id).await.unwrap_err();
+            assert!(
+                matches!(err, Error::InvariantViolation(ref m) if m == expected),
+                "origin_name {origin_name:?} actual error: {err}"
+            );
+        }
     }
 }

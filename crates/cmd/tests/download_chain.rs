@@ -86,6 +86,82 @@ async fn download_task_lands_episode_in_series_season_folder() {
     assert_eq!(eps[0].data.ep.status, EpsiodeStatus::Downloaded);
 }
 
+/// 把抓到的番剧元数据里的系列名换掉，其余（TMDB 身份、季号、标题）保持真实抓取结果。
+fn anime_with_series_name(origin_name: &str) -> AnimeMetadata {
+    let mut metadata = sword_anime();
+    metadata
+        .series_metadata
+        .as_mut()
+        .expect("captured metadata should carry series info")
+        .origin_name = origin_name.to_string();
+    metadata
+}
+
+/// 系列名里带斜杠（乱马1/2）：斜杠不能变成路径分隔符，落点仍是「系列目录 / S{季号}」两层。
+#[tokio::test]
+async fn download_task_keeps_illegal_characters_inside_the_series_folder_name() {
+    let app = TestApp::new().await;
+    let manager = Arc::new(MockDownloaderManager::new(true));
+    let users = app.users(manager.clone());
+
+    let (sub_anime_id, resource_url, info_hash) =
+        arrange_one_episode(&app, &anime_with_series_name("乱马1/2")).await;
+
+    let base_path = format!("{}/downloads", app.data_dir());
+    app.enable_default_downloader(&users, "dl-user", &base_path)
+        .await;
+
+    download_task(app.sub_animes(), users.clone(), app.animes())
+        .await
+        .expect("download_task failed");
+
+    let downloads = manager.provider().downloads();
+    assert_eq!(
+        downloads.len(),
+        1,
+        "download should be triggered exactly once"
+    );
+    assert_eq!(downloads[0].0, resource_url);
+    assert_eq!(downloads[0].1, format!("{}/乱马1 2/S02", base_path));
+    assert_eq!(downloads[0].2, info_hash);
+
+    let eps = app.list_eps(sub_anime_id).await;
+    assert_eq!(eps[0].data.ep.status, EpsiodeStatus::Downloaded);
+}
+
+/// 系列名不是目录名（空、`.`、`..`）：落点算不出来，任务返回错误、剧集保持待下载，
+/// 下载器一次都不该被调用 —— 不会落到系列目录之外。
+#[tokio::test]
+async fn download_task_refuses_series_name_that_is_not_a_directory_name() {
+    for origin_name in ["", "///", ".", ".."] {
+        let app = TestApp::new().await;
+        let manager = Arc::new(MockDownloaderManager::new(true));
+        let users = app.users(manager.clone());
+
+        let (sub_anime_id, _, _) =
+            arrange_one_episode(&app, &anime_with_series_name(origin_name)).await;
+
+        let base_path = format!("{}/downloads", app.data_dir());
+        app.enable_default_downloader(&users, "dl-user", &base_path)
+            .await;
+
+        let error = download_task(app.sub_animes(), users.clone(), app.animes())
+            .await
+            .expect_err("series name that is not a directory name should fail the task");
+        assert!(
+            error.to_string().contains("anime series folder name"),
+            "origin_name {origin_name:?} actual error: {error}"
+        );
+
+        assert!(
+            manager.provider().downloads().is_empty(),
+            "downloader must not be called for origin_name {origin_name:?}"
+        );
+        let eps = app.list_eps(sub_anime_id).await;
+        assert_eq!(eps[0].data.ep.status, EpsiodeStatus::Pending);
+    }
+}
+
 /// 系列展示信息缺失（有 TMDB 身份但没有 `anime_series` 行）：落点算不出来，任务返回错误，
 /// 剧集保持待下载，下一轮会被重新取到 —— 不会丢状态，也不会伪造落点。
 ///
