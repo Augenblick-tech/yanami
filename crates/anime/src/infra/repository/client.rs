@@ -32,7 +32,7 @@ impl AnimeSqliteClient {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS anime (
                 id              INTEGER PRIMARY KEY,                -- 对应 AnimeBaseData.id
-                air_weekday     INTEGER NOT NULL,                   -- 对应 AnimeAirWeekday (1-7)
+                air_weekday     INTEGER NOT NULL,                   -- 对应 AnimeAirWeekday (1-7)，0 表示上游没给放送星期
                 air_date        TEXT,                               -- 对应 NaiveDate, SQLite 标准格式 'YYYY-MM-DD'
                 air_quarter     INTEGER NOT NULL,                   -- 例如 202607
                 air_year        INTEGER NOT NULL,                   -- 冗余字段：从 202607 拆分，便于按年过滤
@@ -281,10 +281,9 @@ impl AnimeSqliteClient {
         // 1. 基础属性解析
         let weekday_i64: i64 = row
             .try_get("air_weekday")
-            .with_context(|| format!("Anime {} missing or invalid 'air_weekday'", anime_id))?;
-        let air_weekday: AnimeAirWeekday = weekday_i64
-            .try_into()
-            .with_context(|| format!("Anime {} failed to convert air_weekday", anime_id))?;
+            .with_context(|| format!("Anime {} missing 'air_weekday'", anime_id))?;
+        // 放送星期允许为空，0 表示没写
+        let air_weekday = AnimeAirWeekday::try_from(weekday_i64).ok();
 
         let air_date_str: String = row
             .try_get("air_date")
@@ -824,7 +823,8 @@ impl AnimeSqliteClient {
             updated_at = unixepoch()
          WHERE id = ?",
         )
-        .bind(i64::from(metadata.air_weekday.clone()))
+        // 放送星期允许为空，没写就存 0
+        .bind(metadata.air_weekday.clone().map_or(0, i64::from))
         .bind(metadata.air_date.format("%Y-%m-%d").to_string())
         .bind(metadata.air_quarter)
         .bind(air_year)

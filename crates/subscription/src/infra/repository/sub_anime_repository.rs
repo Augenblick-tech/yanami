@@ -185,15 +185,19 @@ impl SubAnimeRepository for SubAnimeSqliteClient {
         }
         if let Some(search_status) = query.search_status {
             builder.push(if has_condition { " AND " } else { " WHERE " });
-            // 搜索中由搜索委托算出来，订阅表里存其余状态
+            // 搜索中(3)、不搜索(0) 由搜索委托上的记录定；等待中(1)、匹配中(2) 按订阅表里存的状态取。
+            // 等待中(1)、匹配中(2) 也可能挂在委托上（本地匹配还没做完），不能被委托挡在本地匹配之外。
             match search_status {
                 SubAnimeSearchStatus::Searching => {
-                    builder.push(Self::SEARCHING_EXISTS);
+                    builder.push(Self::SEARCHING_CONDITION);
+                }
+                SubAnimeSearchStatus::NotSearch => {
+                    builder.push("NOT ");
+                    builder.push(Self::ON_MANDATE_EXISTS);
+                    builder.push(" AND sa.search_status = 0");
                 }
                 other => {
-                    builder.push("NOT ");
-                    builder.push(Self::SEARCHING_EXISTS);
-                    builder.push(" AND sa.search_status = ");
+                    builder.push("sa.search_status = ");
                     builder.push_bind(i32::from(other));
                 }
             }
@@ -201,18 +205,22 @@ impl SubAnimeRepository for SubAnimeSqliteClient {
         }
         if let Some(sub_status) = &query.sub_status {
             builder.push(if has_condition { " AND " } else { " WHERE " });
-            // eps 是子查询计算出来的，这里直接复用原查询中的 eps 表达式
-            // progress >= eps → Completed，否则 Enable
+            // eps 是子查询计算出来的，这里复用同一个表达式
+            // 总集数为 0 时这一季还没有可数的集数，不算完结，仍可参与匹配
             match sub_status {
                 SubAnimeStatus::Completed => {
-                    builder.push(
-                        "sa.progress >= COALESCE((SELECT planned_ep_count FROM anime_season WHERE anime_id = sa.anime_id AND target_source = 'Bangumi'), 0)"
-                    );
+                    builder.push("(");
+                    builder.push(Self::EPS_SUB_QUERY);
+                    builder.push(" > 0 AND sa.progress >= ");
+                    builder.push(Self::EPS_SUB_QUERY);
+                    builder.push(")");
                 }
                 SubAnimeStatus::Enable => {
-                    builder.push(
-                        "sa.progress < COALESCE((SELECT planned_ep_count FROM anime_season WHERE anime_id = sa.anime_id AND target_source = 'Bangumi'), 0)"
-                    );
+                    builder.push("(");
+                    builder.push(Self::EPS_SUB_QUERY);
+                    builder.push(" = 0 OR sa.progress < ");
+                    builder.push(Self::EPS_SUB_QUERY);
+                    builder.push(")");
                 }
             }
         }
@@ -232,16 +240,26 @@ impl SubAnimeRepository for SubAnimeSqliteClient {
         Ok(results)
     }
 
-    // 该番剧在搜索委托上的订阅：这次抓回来的资源只与它们匹配
+    // 该番剧在搜索委托上的订阅：这次抓回来的资源只与它们匹配。
+    // 这里不能按搜索状态取：等待中(1)、匹配中(2) 的订阅同样挂在委托上，它们也要拿到这次抓回来的资源。
     async fn list_by_mandate(&self, anime_id: i64) -> Result<Vec<SubAnimeProps>> {
-        self.list(&SubAnimeListQuery {
-            anime_id: Some(anime_id),
-            space_id: None,
-            search_status: Some(SubAnimeSearchStatus::Searching),
-            sub_status: Some(SubAnimeStatus::Enable),
-            limit: None,
-        })
-        .await
+        let mut builder = QueryBuilder::new(Self::BASE_SELECT_JOIN);
+        builder.push(" WHERE sa.anime_id = ");
+        builder.push_bind(anime_id);
+        builder.push(" AND ");
+        builder.push(Self::ON_MANDATE_EXISTS);
+        builder.push(" AND (");
+        builder.push(Self::EPS_SUB_QUERY);
+        builder.push(" = 0 OR sa.progress < ");
+        builder.push(Self::EPS_SUB_QUERY);
+        builder.push(") GROUP BY sa.id");
+
+        let rows = builder.build().fetch_all(&self.pool).await?;
+        let mut results = Vec::with_capacity(rows.len());
+        for row in rows {
+            results.push(Self::row_to_sub_anime_props(&row)?);
+        }
+        Ok(results)
     }
 
     async fn list_eps(&self, sub_anime_id: i64) -> Result<Vec<EpisodeProp>> {
@@ -764,6 +782,52 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn pending_sub_anime_on_mandate_still_waits_for_local_match() {
+        // 订阅挂在搜索委托上、本地匹配却还没做完（订阅表里存着等待中(1)）：
+        // 读出来还是等待中，本地匹配也能按等待中把它取出来
+        let f = setup().await;
+        seed_anime(&f.pool, 100, Some("2024-04-01"), Some(12), &["番A"]).await;
+        let a = f.client.insert_sub_anime(9, 100).await.expect("insert a");
+        set_state(&f.client, &a, SubAnimeSearchStatus::Pending, 0).await;
+        join_search_mandate(&f, a.data.id, 100).await;
+
+        let row = f
+            .client
+            .find_sub_anime(a.data.id)
+            .await
+            .expect("find")
+            .expect("exists");
+        assert_eq!(row.data.search_status, SubAnimeSearchStatus::Pending);
+
+        let rows = f
+            .client
+            .list(&query(
+                None,
+                None,
+                Some(SubAnimeSearchStatus::Pending),
+                None,
+                Some(1),
+            ))
+            .await
+            .expect("list pending");
+        assert_eq!(ids(&rows), HashSet::from([a.data.id]));
+
+        // 没做完本地匹配，不算搜索中(3)
+        let rows = f
+            .client
+            .list(&query(
+                None,
+                None,
+                Some(SubAnimeSearchStatus::Searching),
+                None,
+                None,
+            ))
+            .await
+            .expect("list searching");
+        assert!(rows.is_empty());
+    }
+
+    #[tokio::test]
     async fn delete_removes_mandate_sub_anime_rows() {
         let f = setup().await;
         let (a, _b, _c) = seed_three(&f).await;
@@ -835,12 +899,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn list_sub_status_enable_uses_coalesced_zero_eps_known_defect() {
-        // 已知缺陷（sub_anime_repository.rs:188-197）：
-        // anime_season 没有 Bangumi 行时 eps 被 COALESCE 成 0，
-        // Enable 条件 `progress < 0` 恒为假、Completed 条件 `progress >= 0` 恒为真。
-        // 于是明明没播完（实体层 progress 0 < eps 应为 Enable）的订阅会被归入 Completed，
-        // 并且按 Enable 过滤时彻底查不到。本用例锁定当前行为，不做修复。
+    async fn list_sub_status_enable_keeps_zero_eps_subscription_for_match() {
+        // 总集数为 0：anime_season 没有 Bangumi 行时 eps 被 COALESCE 成 0。
+        // 这一季还没有可数的集数，不算完结，按 Enable 过滤仍然查得到。
         let f = setup().await;
         seed_anime(&f.pool, 300, Some("2024-04-01"), None, &["番C"]).await;
         let c = f.client.insert_sub_anime(9, 300).await.expect("insert c");
@@ -851,7 +912,7 @@ mod tests {
             .list(&query(None, None, None, Some(SubAnimeStatus::Enable), None))
             .await
             .expect("list enable");
-        assert!(enable.is_empty());
+        assert_eq!(ids(&enable), HashSet::from([c.data.id]));
 
         let completed = f
             .client
@@ -864,9 +925,23 @@ mod tests {
             ))
             .await
             .expect("list completed");
-        assert_eq!(completed.len(), 1);
-        assert_eq!(completed[0].data.id, c.data.id);
-        assert_eq!(completed[0].extend.eps, 0);
+        assert!(completed.is_empty());
+    }
+
+    #[tokio::test]
+    async fn list_sub_status_enable_keeps_zero_eps_subscription_with_progress() {
+        // 总集数为 0 但已经记了进度：仍不算完结，继续参与匹配
+        let f = setup().await;
+        seed_anime(&f.pool, 300, Some("2024-04-01"), None, &["番C"]).await;
+        let c = f.client.insert_sub_anime(9, 300).await.expect("insert c");
+        set_state(&f.client, &c, SubAnimeSearchStatus::NotSearch, 5).await;
+
+        let enable = f
+            .client
+            .list(&query(None, None, None, Some(SubAnimeStatus::Enable), None))
+            .await
+            .expect("list enable");
+        assert_eq!(ids(&enable), HashSet::from([c.data.id]));
     }
 
     #[tokio::test]

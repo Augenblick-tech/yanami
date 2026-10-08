@@ -3,7 +3,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 
-use crate::entity::model::{AnimeEx, AnimeIdType, AnimeLangTarget, AnimeSourceTarget, AnimeTitle};
+use crate::entity::model::{
+    AnimeAirWeekday, AnimeEx, AnimeIdType, AnimeLangTarget, AnimeSourceTarget, AnimeTitle,
+};
 
 /// bangumi-data 月份数据通常是一个 JSON 数组，所以解析时你应该使用 `Vec<BangumiItem>`
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -210,6 +212,16 @@ impl BangumiSubject {
                 Some((key, value))
             })
             .collect()
+    }
+
+    /// 放送星期，没写就是 None
+    pub fn parse_air_weekday(&self) -> Option<AnimeAirWeekday> {
+        self.infobox
+            .iter()
+            .find(|i| i.key == "放送星期")
+            .and_then(|i| i.value.as_ref())
+            .and_then(|v| v.as_str())
+            .and_then(|v| AnimeAirWeekday::try_from(v).ok())
     }
 
     pub fn parse_titles(&self) -> Vec<AnimeTitle> {
@@ -637,5 +649,34 @@ mod tests {
         let infobox = subject.parse_infobox();
         assert_eq!(infobox.len(), 4);
         assert!(!infobox.contains_key("空值"));
+    }
+
+    #[test]
+    fn parse_air_weekday_is_none_when_the_subject_has_no_weekday() {
+        // 真实抓取的 subject 8 的 infobox 里没有放送星期
+        assert_eq!(subject().parse_air_weekday(), None);
+    }
+
+    #[test]
+    fn parse_air_weekday_reads_the_weekday_from_the_infobox() {
+        // 放送星期是 infobox 里的一项，取值形如「星期五」
+        let mut subject = subject();
+        subject.infobox.push(InfoboxItem {
+            key: "放送星期".to_string(),
+            value: Some(serde_json::json!("星期五")),
+        });
+
+        assert_eq!(subject.parse_air_weekday(), Some(AnimeAirWeekday::Friday));
+    }
+
+    #[test]
+    fn parse_air_weekday_is_none_when_the_infobox_value_is_not_a_weekday() {
+        let mut subject = subject();
+        subject.infobox.push(InfoboxItem {
+            key: "放送星期".to_string(),
+            value: Some(serde_json::json!("每天")),
+        });
+
+        assert_eq!(subject.parse_air_weekday(), None);
     }
 }

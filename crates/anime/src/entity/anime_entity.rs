@@ -101,7 +101,7 @@ mod tests {
                 series_metadata: None,
                 external_link,
                 titles,
-                air_weekday: AnimeAirWeekday::Wednesday,
+                air_weekday: Some(AnimeAirWeekday::Wednesday),
                 air_date: air_date(),
                 air_quarter: 202607,
                 season,

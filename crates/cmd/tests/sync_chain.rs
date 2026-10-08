@@ -97,6 +97,56 @@ async fn sync_calendar_writes_anime_series_and_auto_subscription() {
     }
 }
 
+/// 上游没给放送星期时同步仍然要写入番剧：放送星期读回来是空的，发布日期仍然必须有。
+#[tokio::test]
+async fn sync_calendar_accepts_an_item_without_air_weekday() {
+    let app = TestApp::new().await;
+    let users = app.users(Arc::new(MockDownloaderManager::new(true)));
+    let user = users
+        .create(
+            "no-weekday-user",
+            "test-password-123456",
+            UserRole::User,
+            true,
+        )
+        .await
+        .expect("create user failed");
+
+    let mut item = seasonal()
+        .into_iter()
+        .next()
+        .expect("captured seasonal data should not be empty");
+    let air_date = item.air_date;
+    item.air_weekday = None;
+
+    let source = app.anime_sources(vec![Arc::new(MockSeasonalProvider::new(vec![item]))]);
+    sync_calendar_task(app.animes(), source, users.clone(), app.sub_animes())
+        .await
+        .expect("sync_calendar_task failed");
+
+    let sub_list = app
+        .sub_animes()
+        .list(&SubAnimeListQuery {
+            anime_id: None,
+            space_id: Some(user.space_id()),
+            search_status: None,
+            sub_status: None,
+            limit: None,
+        })
+        .await
+        .expect("list sub anime failed");
+    assert_eq!(sub_list.len(), 1);
+
+    let anime = app
+        .animes()
+        .get(sub_list[0].anime_id())
+        .await
+        .expect("get anime failed")
+        .expect("sync must write the anime");
+    assert_eq!(anime.metadata().air_weekday, None);
+    assert_eq!(anime.metadata().air_date, air_date);
+}
+
 /// 条目的 Bangumi 身份用于去重：同一份数据同步两次不会产生重复番剧与重复订阅。
 #[tokio::test]
 async fn sync_calendar_is_idempotent_for_same_source_data() {

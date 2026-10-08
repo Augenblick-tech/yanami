@@ -246,7 +246,7 @@ mod tests {
                 target: AnimeLangTarget::JP,
                 origin: true,
             }],
-            air_weekday: AnimeAirWeekday::Wednesday,
+            air_weekday: Some(AnimeAirWeekday::Wednesday),
             air_date: NaiveDate::from_ymd_opt(2022, 10, 5).unwrap(),
             air_quarter: 202210,
             season: Vec::new(),

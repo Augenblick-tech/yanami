@@ -2,8 +2,8 @@ use crate::{
     entity::{
         cap::AnimeLookupProvider,
         model::{
-            AnimeAirWeekday, AnimeEx, AnimeIdType, AnimeLangTarget, AnimeMetadata,
-            AnimeSearchResult, AnimeSeriesMetadata, AnimeSourceTarget,
+            AnimeEx, AnimeIdType, AnimeLangTarget, AnimeMetadata, AnimeSearchResult,
+            AnimeSeriesMetadata, AnimeSourceTarget,
         },
     },
     infra::anime_source::bgm::client::BgmClient,
@@ -63,14 +63,8 @@ impl AnimeLookupProvider for BgmClient {
 
         let infobox = subject.parse_infobox();
 
-        let air_weekday = infobox
-            .get("放送星期")
-            .and_then(|v| v.as_str())
-            .and_then(|v| AnimeAirWeekday::try_from(v).ok())
-            .context(anyhow!(
-                "bgm lookup parse {} air weekday failed",
-                &subject.name
-            ))?;
+        // 放送星期允许为空，发布日期仍然必须有
+        let air_weekday = subject.parse_air_weekday();
 
         let air_date = subject
             .date

@@ -180,7 +180,7 @@ mod tests {
                 target: AnimeLangTarget::JP,
                 origin: true,
             }],
-            air_weekday: AnimeAirWeekday::Friday,
+            air_weekday: Some(AnimeAirWeekday::Friday),
             air_date: NaiveDate::from_ymd_opt(2026, 7, 1).unwrap(),
             air_quarter: 202607,
             season,

@@ -7,9 +7,12 @@ mod common;
 use std::sync::Arc;
 
 use cmd::task::search_task::{local_match_task, search_task};
-use common::{MockAccessPolicy, MockFeedFetcher, TestApp, nyaa_feed, sword_anime};
+use common::{
+    MockAccessPolicy, MockFeedFetcher, TestApp, nyaa_feed, nyaa_item, nyaa_item_with_episode,
+    sword_anime,
+};
 use subscription::entity::cap::SearchMandateRepository;
-use subscription::entity::model::SubAnimeSearchStatus;
+use subscription::entity::model::{Mandate, SubAnimeSearchStatus};
 use user::entity::model::UserRole;
 
 /// 站内搜索 feed 的 url 模板：生产代码用 formatx 把关键词填进 `{}`。
@@ -252,6 +255,120 @@ async fn search_task_drops_mandate_and_ends_search_when_feed_unreachable() {
     assert!(
         matches!(sub_anime.search_status(), SubAnimeSearchStatus::Searching),
         "subscription should keep searching while mandates remain, actual {:?}",
+        sub_anime.search_status()
+    );
+}
+
+#[tokio::test]
+async fn local_match_task_matches_subscription_enabled_while_mandate_exists() {
+    let app = TestApp::new().await;
+    let user = app.seed_user("search-user", UserRole::User, false).await;
+    let space_id = user.data.space_id;
+
+    let metadata = sword_anime();
+    let air_date = metadata.air_date;
+    let anime = app.seed_anime(&metadata).await;
+    app.seed_rule(space_id, "kr-rule", "전생했더니 검이었습니다")
+        .await;
+
+    // 这个订阅先变成搜索中：订阅表里存的是不搜索，搜索中由搜索委托算出来
+    let mut sub = app.subscribe(space_id, anime.data.id).await;
+    let feed = app
+        .seed_feed("mikan-search", None, Some(SEARCH_URL_TEMPLATE))
+        .await;
+    app.ctx
+        .repo
+        .mandate_repo
+        .save(
+            anime.data.id,
+            sub.id(),
+            &[Mandate {
+                anime_id: anime.data.id,
+                feed_id: feed.data.id,
+                url: "https://mikanani.me/RSS/Search?q=%E5%89%A3".to_string(),
+            }],
+        )
+        .await
+        .expect("save search mandate failed");
+    let mandate_count = app
+        .ctx
+        .repo
+        .mandate_repo
+        .count()
+        .await
+        .expect("count search mandates failed");
+    assert_eq!(mandate_count, 1, "the anime should have one mandate");
+    assert_eq!(
+        app.sub_animes()
+            .find_by_sub_anime_id(sub.id())
+            .await
+            .expect("query subscription failed")
+            .expect("subscription should exist")
+            .search_status(),
+        SubAnimeSearchStatus::Searching,
+        "the subscription should read as searching while it is on the mandate"
+    );
+
+    // 库里已经有了能匹配上的真实资源（只把发布时间对齐到这一季的放送日）
+    let mut item = nyaa_item_with_episode(&nyaa_item("전생했더니"), "01");
+    item.published_at = air_date
+        .and_hms_opt(12, 0, 0)
+        .expect("valid air time")
+        .and_utc()
+        .timestamp();
+    app.save_feed_items(vec![item]).await;
+
+    // 对搜索中的订阅再点一次搜索：订阅表变成等待中，但它还挂在搜索委托上
+    assert!(
+        sub.enable_search(),
+        "a subscription stored as not searching can be enabled again"
+    );
+    app.sub_animes()
+        .save(&sub)
+        .await
+        .expect("save subscription failed");
+
+    let fetcher = Arc::new(MockFeedFetcher::new());
+    let policy = Arc::new(MockAccessPolicy::allow());
+    local_match_task(
+        app.sub_animes(),
+        app.resources(),
+        app.feeds(fetcher.clone(), policy.clone()),
+        app.search_mandates(fetcher, policy),
+    )
+    .await
+    .expect("local match task should not fail");
+
+    let eps = app.list_eps(sub.id()).await;
+    assert_eq!(
+        eps.len(),
+        1,
+        "an existing mandate must not skip the local match"
+    );
+    assert_eq!(
+        eps[0].data.ep.ep_num,
+        Some(1.0),
+        "episode number should come from 01 in the title"
+    );
+    assert_eq!(
+        app.ctx
+            .repo
+            .mandate_repo
+            .count()
+            .await
+            .expect("count search mandates failed"),
+        mandate_count,
+        "the subscription joins the existing mandate instead of adding a new one"
+    );
+    let sub_anime = app
+        .sub_animes()
+        .find_by_sub_anime_id(sub.id())
+        .await
+        .expect("query subscription failed")
+        .expect("subscription should exist");
+    assert!(
+        matches!(sub_anime.search_status(), SubAnimeSearchStatus::Searching),
+        "subscription should keep searching on the existing mandate, actual {:?}",
         sub_anime.search_status()
     );
 }

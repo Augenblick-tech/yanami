@@ -49,6 +49,10 @@ impl SubAnimeEntity {
     }
 
     pub(super) fn update_progress(&mut self, eps: &[Episode]) {
+        // 总集数为 0 时这一季没有可数的集数，进了多少集都不算它的进度
+        if self.extend.eps == 0 {
+            return;
+        }
         let mut eps_numbers = eps.iter().filter_map(|i| i.ep_num).collect::<Vec<_>>();
         eps_numbers.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         eps_numbers.dedup();
@@ -74,15 +78,16 @@ impl SubAnimeEntity {
 
 impl SubAnimeEntity {
     pub fn sub_status(&self) -> SubAnimeStatus {
-        if self.data.progress >= self.extend.eps {
+        if self.is_completed() {
             SubAnimeStatus::Completed
         } else {
             SubAnimeStatus::Enable
         }
     }
 
+    // 总集数为 0 时这一季还没有可数的集数，不算完结，仍可参与匹配
     pub fn is_completed(&self) -> bool {
-        self.data.progress >= self.extend.eps
+        self.extend.eps > 0 && self.data.progress >= self.extend.eps
     }
 
     pub fn id(&self) -> i64 {
@@ -287,6 +292,21 @@ mod tests {
     }
 
     #[test]
+    fn try_claim_zero_eps_sub_anime_still_waits_for_local_match() {
+        let mut e = entity(SubAnimeSearchStatus::Pending, 0, 0);
+        // 总集数为 0 不算完结，照常进入本地匹配
+        assert!(matches!(e.try_claim(), ClaimResult::Matched));
+        assert_eq!(e.search_status(), SubAnimeSearchStatus::Matching);
+    }
+
+    #[test]
+    fn zero_eps_sub_anime_is_not_completed() {
+        let e = entity(SubAnimeSearchStatus::NotSearch, 0, 0);
+        assert!(!e.is_completed());
+        assert_eq!(e.sub_status(), SubAnimeStatus::Enable);
+    }
+
+    #[test]
     fn request_search_from_matching_asks_for_search() {
         let mut e = entity(SubAnimeSearchStatus::Matching, 0, 12);
         assert!(e.request_search());
@@ -354,6 +374,13 @@ mod tests {
     fn update_progress_empty_slice_is_zero() {
         let mut e = entity(SubAnimeSearchStatus::NotSearch, 7, 12);
         e.update_progress(&[]);
+        assert_eq!(e.progress(), 0);
+    }
+
+    #[test]
+    fn update_progress_does_not_count_episodes_when_eps_is_zero() {
+        let mut e = entity(SubAnimeSearchStatus::NotSearch, 0, 0);
+        e.update_progress(&[episode(Some(1.0), 1), episode(Some(2.0), 2)]);
         assert_eq!(e.progress(), 0);
     }
 

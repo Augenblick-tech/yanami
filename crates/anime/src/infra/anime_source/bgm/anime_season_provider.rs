@@ -4,8 +4,8 @@ use chrono::{Local, NaiveDate};
 
 use crate::{
     entity::model::{
-        AnimeAirWeekday, AnimeEx, AnimeIdType, AnimeLangTarget, AnimeMetadata, AnimeSeason,
-        AnimeSeriesMetadata, AnimeSourceTarget, AnimeTitle,
+        AnimeEx, AnimeIdType, AnimeLangTarget, AnimeMetadata, AnimeSeason, AnimeSeriesMetadata,
+        AnimeSourceTarget, AnimeTitle,
     },
     infra::anime_source::bgm::{client::BgmClient, model::BangumiItem},
 };
@@ -180,14 +180,8 @@ impl crate::entity::cap::AnimeSeasonalProvider for BgmClient {
                 0
             });
 
-            let Some(air_weekday) = infobox
-                .get("放送星期")
-                .and_then(|v| v.as_str())
-                .and_then(|v| AnimeAirWeekday::try_from(v).ok())
-            else {
-                tracing::error!("bgm get calendar parse {} air weekday failed", i.title);
-                continue;
-            };
+            // 放送星期允许为空，发布日期仍然必须有
+            let air_weekday = subject.parse_air_weekday();
 
             let Some(air_date) = subject
                 .date

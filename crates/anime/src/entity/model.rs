@@ -234,8 +234,8 @@ pub struct AnimeMetadata {
     pub external_link: Vec<AnimeEx>,
     /// 多语言标题集合。
     pub titles: Vec<AnimeTitle>,
-    /// 放送星期。
-    pub air_weekday: AnimeAirWeekday,
+    /// 放送星期，允许为空。
+    pub air_weekday: Option<AnimeAirWeekday>,
     /// 首播日期。
     pub air_date: NaiveDate,
     /// 放送季度 202607

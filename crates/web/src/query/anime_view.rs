@@ -114,13 +114,13 @@ impl AnimeViewQuery {
         }
 
         if let Some(search_status) = req.search_status {
-            // 搜索中由搜索委托算出来，订阅表里存其余状态
+            // 搜索中(3) 是订阅表里存着不搜索(0) 又挂在搜索委托上，订阅表里的其余状态直接读
             if search_status == 3 {
                 qb.push(
-                    " AND EXISTS (SELECT 1 FROM search_mandate_sub_anime m WHERE m.sub_anime_id = sa.id) ",
+                    " AND sa.search_status = 0 AND EXISTS (SELECT 1 FROM search_mandate_sub_anime m WHERE m.sub_anime_id = sa.id) ",
                 );
             } else {
-                qb.push(" AND NOT EXISTS (SELECT 1 FROM search_mandate_sub_anime m WHERE m.sub_anime_id = sa.id) AND sa.search_status = ");
+                qb.push(" AND sa.search_status = ");
                 qb.push_bind(search_status);
             }
         }
@@ -149,7 +149,7 @@ impl AnimeViewQuery {
                 p.total_count,
                 sa.id AS sub_anime_id,
                 CASE
-                    WHEN EXISTS (SELECT 1 FROM search_mandate_sub_anime m WHERE m.sub_anime_id = sa.id) THEN 3
+                    WHEN sa.search_status = 0 AND EXISTS (SELECT 1 FROM search_mandate_sub_anime m WHERE m.sub_anime_id = sa.id) THEN 3
                     ELSE sa.search_status
                 END AS search_status,
                 sa.progress,
@@ -201,7 +201,9 @@ impl AnimeViewQuery {
             let air_date = row
                 .get::<Option<String>, _>("air_date")
                 .ok_or_else(|| anyhow::anyhow!("anime {} missing air_date", anime_id))?;
-            let air_weekday = row.get::<i64, _>("air_weekday");
+            // 放送星期允许为空，没写时存的是 0，这里读成 null
+            let weekday = row.get::<i64, _>("air_weekday");
+            let air_weekday = (weekday != 0).then_some(weekday);
             let eps = row
                 .get::<Option<i32>, _>("eps")
                 .ok_or_else(|| anyhow::anyhow!("anime {} missing eps", anime_id))?

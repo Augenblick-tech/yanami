@@ -59,9 +59,9 @@ impl StatQuery {
                 SUM(CASE WHEN sa.id IS NOT NULL AND sa.progress > 0 AND sa.progress < COALESCE(fs.planned_ep_count, 9999) THEN 1 ELSE 0 END) AS updating_count,
                 SUM(CASE WHEN sa.progress >= COALESCE(fs.planned_ep_count, 9999) THEN 1 ELSE 0 END) AS completed_count,
                 SUM(CASE WHEN sa.search_status = 0 AND NOT EXISTS (SELECT 1 FROM search_mandate_sub_anime m WHERE m.sub_anime_id = sa.id) THEN 1 ELSE 0 END) AS not_search_count,
-                SUM(CASE WHEN sa.search_status = 1 AND NOT EXISTS (SELECT 1 FROM search_mandate_sub_anime m WHERE m.sub_anime_id = sa.id) THEN 1 ELSE 0 END) AS pending_count,
-                SUM(CASE WHEN sa.search_status = 2 AND NOT EXISTS (SELECT 1 FROM search_mandate_sub_anime m WHERE m.sub_anime_id = sa.id) THEN 1 ELSE 0 END) AS matching_count,
-                SUM(CASE WHEN EXISTS (SELECT 1 FROM search_mandate_sub_anime m WHERE m.sub_anime_id = sa.id) THEN 1 ELSE 0 END) AS searching_count
+                SUM(CASE WHEN sa.search_status = 1 THEN 1 ELSE 0 END) AS pending_count,
+                SUM(CASE WHEN sa.search_status = 2 THEN 1 ELSE 0 END) AS matching_count,
+                SUM(CASE WHEN sa.search_status = 0 AND EXISTS (SELECT 1 FROM search_mandate_sub_anime m WHERE m.sub_anime_id = sa.id) THEN 1 ELSE 0 END) AS searching_count
             FROM anime a
             LEFT JOIN sub_anime sa ON a.id = sa.anime_id AND sa.space_id = ?
             LEFT JOIN FirstSeason fs ON fs.anime_id = a.id AND fs.rn = 1

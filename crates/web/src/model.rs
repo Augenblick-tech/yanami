@@ -151,9 +151,9 @@ pub struct AnimeResponse {
     pub name_target: Option<String>,
     pub desc: String,
     pub air_date: String,
-    /// 放送星期几 (数字1-7代表周一到周日)
+    /// 放送星期几 (数字1-7代表周一到周日)，可以为空
     #[schema(example = 1)]
-    pub air_weekday: i64,
+    pub air_weekday: Option<i64>,
     pub eps: u32,
     /// 季度编号 (第几季)
     #[schema(example = 1)]
@@ -906,8 +906,8 @@ pub struct AnimeMetadataItem {
     pub external_link: Vec<AnimeExItem>,
     /// 多语言标题集合
     pub titles: Vec<AnimeTitleItem>,
-    /// 放送星期几
-    pub air_weekday: AnimeAirWeekdayItem,
+    /// 放送星期几，可以为空
+    pub air_weekday: Option<AnimeAirWeekdayItem>,
     /// 放送首播日期
     pub air_date: NaiveDate,
     /// 放送季度 (例如 2024年秋季即 20244)
@@ -922,7 +922,7 @@ impl From<AnimeMetadata> for AnimeMetadataItem {
             series_metadata: v.series_metadata.map(Into::into),
             external_link: v.external_link.into_iter().map(Into::into).collect(),
             titles: v.titles.into_iter().map(Into::into).collect(),
-            air_weekday: v.air_weekday.into(),
+            air_weekday: v.air_weekday.map(Into::into),
             air_date: v.air_date,
             air_quarter: v.air_quarter,
             season: v.season.into_iter().map(Into::into).collect(),
@@ -937,7 +937,7 @@ impl From<AnimeMetadataItem> for AnimeMetadata {
             series_metadata: v.series_metadata.map(Into::into),
             external_link: v.external_link.into_iter().map(Into::into).collect(),
             titles: v.titles.into_iter().map(Into::into).collect(),
-            air_weekday: v.air_weekday.into(),
+            air_weekday: v.air_weekday.map(Into::into),
             air_date: v.air_date,
             air_quarter: v.air_quarter,
             season: v.season.into_iter().map(Into::into).collect(),
@@ -1016,7 +1016,7 @@ mod tests {
                 target: AnimeLangTargetItem::ZhCn,
                 origin: false,
             }],
-            air_weekday: AnimeAirWeekdayItem::Saturday,
+            air_weekday: Some(AnimeAirWeekdayItem::Saturday),
             air_date: NaiveDate::from_ymd_opt(2024, 10, 2).expect("valid air date"),
             air_quarter: 202410,
             season: vec![],

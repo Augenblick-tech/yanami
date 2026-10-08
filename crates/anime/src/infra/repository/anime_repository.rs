@@ -137,7 +137,8 @@ impl AnimeRepository for AnimeSqliteClient {
 
         let air_year = (entity.air_quarter / 100) as i32;
         let air_month = (entity.air_quarter % 100) as i32;
-        let weekday_i64: i64 = entity.air_weekday.clone().into();
+        // 上游没给放送星期时存 0：这个字段允许为空
+        let weekday_i64: i64 = entity.air_weekday.clone().map_or(0, i64::from);
         let air_date_str = entity.air_date.format("%Y-%m-%d").to_string();
 
         let anime_id = sqlx::query(

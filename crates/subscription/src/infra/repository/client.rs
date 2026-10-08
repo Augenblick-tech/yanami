@@ -1,6 +1,6 @@
 use anyhow::{Context, Result, anyhow};
 use chrono::NaiveDate;
-use sqlx::{Pool, Row, Sqlite, Transaction, sqlite::SqliteRow};
+use sqlx::{Pool, QueryBuilder, Row, Sqlite, Transaction, sqlite::SqliteRow};
 
 use crate::{
     entity::model::{
@@ -97,20 +97,21 @@ impl SubAnimeSqliteClient {
         // 老数据把搜索中存到 sub_anime.search_status 里，搜索中改由搜索委托算出来之后，这批数据要迁移。
         // 按番剧把订阅存到已有的搜索委托上，再把 sub_anime.search_status 改成不搜索。
         // 两条语句的顺序固定在这里：找出这批订阅依据的是 sub_anime.search_status = 3。
-        sqlx::query(
+        // 总集数为 0 的订阅没有可数的集数，进度到不了总集数，也一并挂到委托上。
+        let mut insert_mandate_sub_anime = QueryBuilder::new(
             "INSERT OR IGNORE INTO search_mandate_sub_anime (search_mandate_id, sub_anime_id)
              SELECT m.id, sa.id
              FROM search_mandate m
              JOIN sub_anime sa ON sa.anime_id = m.anime_id
              WHERE sa.search_status = 3
-               AND sa.progress < COALESCE(
-                   (SELECT planned_ep_count FROM anime_season
-                    WHERE anime_id = sa.anime_id AND target_source = 'Bangumi'),
-                   0
-               );",
-        )
-        .execute(&mut **tx)
-        .await?;
+               AND (",
+        );
+        insert_mandate_sub_anime.push(Self::EPS_SUB_QUERY);
+        insert_mandate_sub_anime.push(" = 0 OR sa.progress < ");
+        insert_mandate_sub_anime.push(Self::EPS_SUB_QUERY);
+        insert_mandate_sub_anime.push(");");
+
+        insert_mandate_sub_anime.build().execute(&mut **tx).await?;
 
         sqlx::query("UPDATE sub_anime SET search_status = 0 WHERE search_status = 3;")
             .execute(&mut **tx)
@@ -176,9 +177,17 @@ impl SubAnimeSqliteClient {
 }
 
 impl SubAnimeSqliteClient {
-    // 订阅在搜索委托上时，读出来的搜索状态是搜索中
-    pub(super) const SEARCHING_EXISTS: &str =
+    // 订阅挂在这个番剧的搜索委托上
+    pub(super) const ON_MANDATE_EXISTS: &str =
         "EXISTS (SELECT 1 FROM search_mandate_sub_anime m WHERE m.sub_anime_id = sa.id)";
+
+    // 搜索中(3)：本地匹配已经做完（订阅表里存的是不搜索(0)）并且订阅挂在搜索委托上。
+    // 还在等本地匹配的订阅（订阅表里存着等待中(1)、匹配中(2)）不算搜索中(3)，它们还要被本地匹配取出来。
+    pub(super) const SEARCHING_CONDITION: &str = "(sa.search_status = 0 AND EXISTS (SELECT 1 FROM search_mandate_sub_anime m WHERE m.sub_anime_id = sa.id))";
+
+    // 这一季的总集数（bgm 季的计划集数），0 表示还没有可数的集数。
+    // BASE_SELECT_JOIN 里的 eps 是同一个式子，写在 SQL 字面量里没法引用这个常量。
+    pub(super) const EPS_SUB_QUERY: &str = "COALESCE((SELECT planned_ep_count FROM anime_season WHERE anime_id = sa.anime_id AND target_source = 'Bangumi'), 0)";
 
     pub(super) const BASE_SELECT_JOIN: &str = r#"SELECT
         sa.id,
@@ -186,7 +195,7 @@ impl SubAnimeSqliteClient {
         sa.space_id,
         sa.rule_id,
         CASE
-            WHEN EXISTS (
+            WHEN sa.search_status = 0 AND EXISTS (
                 SELECT 1 FROM search_mandate_sub_anime m WHERE m.sub_anime_id = sa.id
             ) THEN 3
             ELSE sa.search_status
@@ -706,6 +715,33 @@ mod tests {
         assert_eq!(
             read_sub_anime_search_status(&f.pool, completed.data.id).await,
             0
+        );
+    }
+
+    #[tokio::test]
+    async fn migrate_with_tx_puts_zero_eps_searching_sub_anime_on_the_mandate() {
+        // 总集数为 0 的订阅还没有可数的集数，不算完结，迁移时也要存到委托上
+        let f = setup().await;
+        seed_anime(&f.pool, 100, Some("2024-04-01"), None, &["番A"]).await;
+        let mandate_id = seed_search_mandate(&f.pool, 100).await;
+        let client = SubAnimeSqliteClient::new(f.pool.clone());
+        let waiting = client
+            .insert_sub_anime(9, 100)
+            .await
+            .expect("insert sub anime");
+        set_sub_anime_search_status(&f.pool, waiting.data.id, 3).await;
+        set_sub_anime_progress(&f.pool, waiting.data.id, 5).await;
+
+        let mut tx = f.pool.begin().await.expect("begin migrate tx failed");
+        client
+            .migrate_with_tx(&mut tx)
+            .await
+            .expect("migrate failed");
+        tx.commit().await.expect("commit migrate failed");
+
+        assert_eq!(
+            read_search_mandate_participants(&f.pool).await,
+            vec![(mandate_id, waiting.data.id)]
         );
     }
 
