@@ -29,7 +29,7 @@ pub fn route(ctx: Arc<AppContext>) -> Router {
         .route("/anime/search", get(anime::search))
         .route("/anime/bgm/{bgm_id}", get(anime::bgm_info))
         .route("/anime/create", post(anime::create))
-        .route("/anime/{anime_id}", put(anime::edit))
+        .route("/anime/{anime_id}", get(anime::detail).put(anime::edit))
         .route("/feed", get(feed::list))
         .route("/rule", post(rule::add).get(rule::list))
         .route("/rule/{rule_id}", put(rule::edit).delete(rule::delete))
@@ -106,6 +106,7 @@ async fn api_not_found() -> impl IntoResponse {
         anime::search,
         anime::bgm_info,
         anime::create,
+        anime::detail,
         anime::edit,
         feed::add,
         feed::list,
@@ -191,6 +192,7 @@ async fn api_not_found() -> impl IntoResponse {
             crate::model::AnimeEpisodeItem,
             crate::model::AnimeSeasonItem,
             crate::model::AnimeMetadataItem,
+            crate::model::AnimeMetadataResponse,
             crate::model::AnimeSeriesMetadataItem,
         )
     ),

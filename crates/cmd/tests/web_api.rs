@@ -139,6 +139,13 @@ async fn web_api_rejects_request_without_token() {
         StatusCode::UNAUTHORIZED,
         "invalid token should be 401"
     );
+
+    let (status, _) = request(&app, json_request("GET", "/api/v1/anime/1", "", None)).await;
+    assert_eq!(
+        status,
+        StatusCode::UNAUTHORIZED,
+        "the anime metadata route without Authorization header should be 401"
+    );
 }
 
 #[tokio::test]
@@ -465,6 +472,131 @@ async fn web_api_create_anime_writes_lock_state_in_one_write() {
         .expect("find anime failed")
         .expect("created anime should be stored");
     assert!(stored.data.lock, "lock should be persisted by the create");
+}
+
+/// 编辑前先读系统里存的元数据：读到的 `metadata` 与 `lock` 回传 `PUT`，编辑动作不能把它丢掉。
+#[tokio::test]
+async fn web_api_get_anime_metadata_returns_metadata_for_edit() {
+    let app = TestApp::new().await;
+    create_account(&app, "anime-reader", UserRole::Admin).await;
+    let token = login_token(&app, "anime-reader").await;
+
+    let metadata = sword_anime();
+    let body = json!({
+        "metadata": AnimeMetadataItem::from(metadata.clone()),
+        "lock": false,
+    })
+    .to_string();
+    let (status, created) = request(
+        &app,
+        json_request("POST", "/api/v1/anime/create", &body, Some(&token)),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "anime create failed, body {created}"
+    );
+    let anime_id = created["data"]
+        .as_i64()
+        .expect("create should return the new anime id");
+    let detail_uri = format!("/api/v1/anime/{anime_id}");
+
+    let (status, first) = request(&app, json_request("GET", &detail_uri, "", Some(&token))).await;
+    assert_eq!(status, StatusCode::OK, "anime detail failed, body {first}");
+    assert_eq!(first["data"]["id"], json!(anime_id));
+    assert_eq!(first["data"]["lock"], json!(false));
+
+    let read_metadata = &first["data"]["metadata"];
+    assert_eq!(
+        read_metadata["air_date"],
+        json!(metadata.air_date.to_string()),
+        "the detail should carry the air date of the stored anime"
+    );
+    assert_eq!(
+        read_metadata["air_quarter"],
+        json!(metadata.air_quarter),
+        "the detail should carry the quarter of the stored anime"
+    );
+    assert!(
+        read_metadata["series_metadata"].is_object(),
+        "the detail should carry the series info of the stored anime, got {read_metadata}"
+    );
+    let titles = read_metadata["titles"]
+        .as_array()
+        .expect("the detail should carry the titles of the stored anime as an array");
+    assert!(
+        !titles.is_empty(),
+        "the detail should carry the titles of the stored anime, got {read_metadata}"
+    );
+    let external_links = read_metadata["external_link"]
+        .as_array()
+        .expect("the detail should carry the external links of the stored anime as an array");
+    assert!(
+        !external_links.is_empty(),
+        "the detail should carry the external links of the stored anime, got {read_metadata}"
+    );
+    // 季度与剧集是 `PUT` 整体覆盖最容易漏写的一块，点名断言，否则往返断言在空集上空转
+    let expected_episodes: usize = metadata.season.iter().map(|season| season.eps.len()).sum();
+    assert!(
+        expected_episodes > 0,
+        "the captured anime should carry episodes to compare"
+    );
+    let read_episodes: usize = read_metadata["season"]
+        .as_array()
+        .expect("the detail should carry the seasons of the stored anime as an array")
+        .iter()
+        .map(|season| season["eps"].as_array().map_or(0, Vec::len))
+        .sum();
+    assert_eq!(
+        read_episodes, expected_episodes,
+        "the detail should carry the episodes of the stored anime, got {read_metadata}"
+    );
+
+    // 前端编辑：把读到的 metadata 回传，只把锁打开
+    let edited = json!({
+        "metadata": read_metadata.clone(),
+        "lock": true,
+    })
+    .to_string();
+    let (status, response) = request(
+        &app,
+        json_request("PUT", &detail_uri, &edited, Some(&token)),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "anime edit failed, body {response}");
+
+    let (status, second) = request(&app, json_request("GET", &detail_uri, "", Some(&token))).await;
+    assert_eq!(status, StatusCode::OK, "anime detail failed, body {second}");
+    assert_eq!(
+        second["data"]["lock"],
+        json!(true),
+        "the edit should update the lock of the stored anime"
+    );
+    assert_eq!(
+        second["data"]["metadata"], *read_metadata,
+        "editing the lock should not drop the metadata read for the edit"
+    );
+}
+
+/// 读不存在的番剧：404，不能返回一份空元数据让前端去编辑。
+#[tokio::test]
+async fn web_api_get_anime_metadata_rejects_unknown_anime() {
+    let app = TestApp::new().await;
+    create_account(&app, "anime-reader-404", UserRole::Admin).await;
+    let token = login_token(&app, "anime-reader-404").await;
+
+    let (status, body) = request(
+        &app,
+        json_request("GET", "/api/v1/anime/999999", "", Some(&token)),
+    )
+    .await;
+
+    assert_eq!(
+        status,
+        StatusCode::NOT_FOUND,
+        "unknown anime should be 404, body {body}"
+    );
 }
 
 /// 取夹具元数据里的 TMDB 系列 id。

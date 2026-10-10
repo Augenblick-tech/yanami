@@ -59,7 +59,7 @@ impl AnimeEntity {
         &self.data.metadata
     }
 
-    pub(crate) fn is_locked(&self) -> bool {
+    pub fn is_locked(&self) -> bool {
         self.data.lock
     }
 
@@ -204,5 +204,25 @@ mod tests {
         // 只有译名时没有原始标题
         let translated_only = build(vec![], vec![title("女主角", false)], vec![]);
         assert_eq!(translated_only.title(), None);
+    }
+
+    #[test]
+    fn is_locked_follows_lock_and_unlock() {
+        let mut entity = build(
+            vec![bangumi_link(558064)],
+            vec![title("転生したら剣でした", true)],
+            vec![],
+        );
+
+        assert!(
+            !entity.is_locked(),
+            "a new anime entity should not be locked"
+        );
+
+        entity.lock();
+        assert!(entity.is_locked(), "lock should lock the anime entity");
+
+        entity.unlock();
+        assert!(!entity.is_locked(), "unlock should unlock the anime entity");
     }
 }

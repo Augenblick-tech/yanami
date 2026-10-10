@@ -1001,6 +1001,15 @@ impl From<AnimeMetadataItem> for AnimeMetadata {
     }
 }
 
+/// 番剧元数据详情：前端编辑表单读它，改完把 `metadata` 与 `lock` 回传 `PUT /api/v1/anime/{anime_id}`。
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct AnimeMetadataResponse {
+    pub id: i64,
+    /// 元数据是否锁定：锁定后上游同步不会覆盖
+    pub lock: bool,
+    pub metadata: AnimeMetadataItem,
+}
+
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct QuarterStat {
     /// 番剧放送季度，例如 202401

@@ -4,8 +4,8 @@ use crate::app_ctx::AppContext;
 use crate::{
     error::ApiError,
     model::{
-        AnimeMetadataItem, AnimeResponse, ApiResponse, CreateAnimeRequest, EditAnimeRequest, Page,
-        PageAnimeRequest, SearchAnimeItem, SearchAnimeQuery,
+        AnimeMetadataItem, AnimeMetadataResponse, AnimeResponse, ApiResponse, CreateAnimeRequest,
+        EditAnimeRequest, Page, PageAnimeRequest, SearchAnimeItem, SearchAnimeQuery,
     },
 };
 use anime::entity::model::{AnimeIdType, AnimeMetadata, AnimeSourceTarget};
@@ -195,6 +195,46 @@ pub async fn edit(
     ctx.roots.animes.save(&entity).await?;
 
     Ok(Json(ApiResponse::ok(())))
+}
+
+/// 获取番剧元数据：前端编辑表单读的那一份，改完把 `metadata` 与 `lock` 回传 `PUT`。
+#[utoipa::path(
+    get,
+    path = "/api/v1/anime/{anime_id}",
+    operation_id = "anime_detail",
+    tag = "Anime",
+    summary = "获取番剧元数据",
+    description = "获取番剧在系统中存储的完整元数据。\n\n调用此接口需要在请求头中携带有效的 JWT Token。",
+    params(
+        ("anime_id" = i64, Path, description = "番剧 ID")
+    ),
+    responses(
+        (status = 200, description = "获取成功。返回数据的 `data` 字段为 `AnimeMetadataResponse` 对象。"),
+        (status = 400, description = "请求参数校验失败"),
+        (status = 401, description = "未授权：未提供 Token，或 Token 已过期/无效"),
+        (status = 404, description = "未找到该番剧"),
+        (status = 500, description = "服务器内部错误"),
+    ),
+    security(
+        ("jwt" = [])
+    )
+)]
+pub async fn detail(
+    State(ctx): State<Arc<AppContext>>,
+    Path(anime_id): Path<i64>,
+) -> Result<Json<ApiResponse<AnimeMetadataResponse>>, ApiError> {
+    let entity = ctx
+        .roots
+        .animes
+        .get(anime_id)
+        .await?
+        .ok_or_else(|| ApiError::not_found("anime not found"))?;
+
+    Ok(Json(ApiResponse::ok(AnimeMetadataResponse {
+        id: entity.id(),
+        lock: entity.is_locked(),
+        metadata: AnimeMetadataItem::from(entity.metadata().clone()),
+    })))
 }
 
 /// 取元数据里的 TMDB 系列 id：不是正数（含非数字字符串）都视为该番剧没有系列身份。
