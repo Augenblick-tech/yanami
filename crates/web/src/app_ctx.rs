@@ -101,6 +101,7 @@ pub struct Roots {
 #[derive(Clone)]
 pub struct Queries {
     pub anime_view: crate::query::anime_view::AnimeViewQuery,
+    pub resource_view: crate::query::resource_view::ResourceViewQuery,
     pub stat_view: crate::query::stat_view::StatQuery,
 }
 
@@ -160,6 +161,7 @@ impl AppContext {
         let roots = Self::init_roots(&repo, &caps);
         let queries = Queries {
             anime_view: crate::query::anime_view::AnimeViewQuery::new(base.pool.clone()),
+            resource_view: crate::query::resource_view::ResourceViewQuery::new(base.pool.clone()),
             stat_view: crate::query::stat_view::StatQuery::new(base.pool.clone()),
         };
 

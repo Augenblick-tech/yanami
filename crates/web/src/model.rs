@@ -180,6 +180,62 @@ pub struct Page<T> {
     pub data: T,
 }
 
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct PageResourceRequest {
+    /// 关键字，按用户输入原样做 LIKE 匹配
+    #[schema(example = "败犬女主")]
+    pub keyword: Option<String>,
+    /// 资源发布时间的下界，Unix 秒
+    #[schema(example = 1_723_000_000_i64)]
+    pub start_at: Option<i64>,
+    /// 资源发布时间的上界，Unix 秒
+    #[schema(example = 1_725_000_000_i64)]
+    pub end_at: Option<i64>,
+    /// 关联的订阅，传入后校验该订阅属于当前用户，并标出资源在这条订阅下匹配到的集号
+    #[schema(example = 1)]
+    pub sub_anime_id: Option<i64>,
+    pub page: Option<usize>,
+    pub page_size: Option<usize>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ResourceItem {
+    /// 资源标识，40 位 hex
+    #[schema(example = "d18e3d4491ddae3e33cc23786ea264c1eac225cc")]
+    pub info_hash: String,
+    pub title: String,
+    /// 资源发布时间，Unix 秒
+    #[schema(example = 1_790_931_226_i64)]
+    pub published_at: i64,
+    /// 该资源在关联订阅下的集数，没匹配到时为 null
+    #[schema(example = 3.0)]
+    pub ep_num: Option<f64>,
+}
+
+/// 资源列表：模糊匹配要扫表，取不出精确总数，用 has_more 表示还有没有下一页
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ResourcePage {
+    pub page: usize,
+    pub page_size: usize,
+    pub has_more: bool,
+    pub data: Vec<ResourceItem>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct AddEpsRequest {
+    /// 要添成剧集的资源标识，40 位 hex，单次最多 100 个
+    pub info_hashes: Vec<String>,
+    /// 规则 ID：订阅已经绑了规则时不传就沿用，传了必须是同一条；订阅还没绑规则时必须传
+    #[schema(example = 1)]
+    pub rule_id: Option<i64>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct DeleteEpsRequest {
+    /// 要删掉的剧集 ID，从这条订阅的剧集列表里取，单次最多 100 个
+    pub ep_ids: Vec<i64>,
+}
+
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponse<T: Serialize> {
     /// 业务码，200 表示成功

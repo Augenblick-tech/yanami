@@ -13,7 +13,7 @@ use utoipa_swagger_ui::SwaggerUi;
 
 use crate::{
     app_ctx::AppContext,
-    handler::{anime, downloader, feed, rule, stat, subscription, user},
+    handler::{anime, downloader, feed, resource, rule, stat, subscription, user},
     middleware::auth::{require_admin, require_auth},
 };
 
@@ -45,11 +45,17 @@ pub fn route(ctx: Arc<AppContext>) -> Router {
             "/subscription/{id}/bind_rule",
             post(subscription::bind_rule),
         )
-        .route("/subscription/{id}/eps", put(subscription::reset_all_eps))
+        .route(
+            "/subscription/{id}/eps",
+            put(subscription::reset_all_eps)
+                .post(subscription::add_eps)
+                .delete(subscription::delete_eps),
+        )
         .route(
             "/subscription/{id}/eps/{ep_id}",
             put(subscription::update_ep_status),
         )
+        .route("/resource/list", post(resource::list))
         .route("/stat", get(stat::get_system_stat))
         .route(
             "/user/download/config",
@@ -117,6 +123,9 @@ async fn api_not_found() -> impl IntoResponse {
         subscription::bind_rule,
         subscription::reset_all_eps,
         subscription::update_ep_status,
+        subscription::add_eps,
+        subscription::delete_eps,
+        resource::list,
         user::list_download_config,
         user::save_download_config,
         user::delete_download_config,
@@ -144,6 +153,11 @@ async fn api_not_found() -> impl IntoResponse {
             crate::model::RecentEpisodeQuery,
             crate::model::SearchStatusRequest,
             crate::model::BindRuleRequest,
+            crate::model::PageResourceRequest,
+            crate::model::ResourceItem,
+            crate::model::ResourcePage,
+            crate::model::AddEpsRequest,
+            crate::model::DeleteEpsRequest,
             crate::model::EditAnimeRequest,
             crate::model::PageAnimeRequest,
             crate::error::ErrorResponse,

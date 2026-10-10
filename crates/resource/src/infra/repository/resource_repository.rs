@@ -114,6 +114,31 @@ impl ResourceRepository for ResourceSqliteClient {
         tx.commit().await?;
         Ok(results)
     }
+
+    async fn find_by_info_hashes(&self, info_hashes: &[[u8; 20]]) -> Result<Vec<ResourceProp>> {
+        if info_hashes.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut qb = QueryBuilder::new(
+            "SELECT info_hash, title, match_title, url, published_at FROM resource WHERE info_hash IN (",
+        );
+        let mut separated = qb.separated(", ");
+        for info_hash in info_hashes {
+            separated.push_bind(info_hash.as_slice());
+        }
+        qb.push(")");
+
+        let rows = qb.build().fetch_all(&self.pool).await?;
+
+        let mut results = Vec::with_capacity(rows.len());
+        for row in rows {
+            results.push(ResourceProp {
+                data: Self::parse_resource_row(&row)?,
+            });
+        }
+        Ok(results)
+    }
 }
 
 #[async_trait]

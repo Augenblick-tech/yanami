@@ -140,6 +140,7 @@ impl ResourceSqliteClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::entity::cap::ResourceRepository;
     use sqlx::sqlite::SqliteConnectOptions;
 
     // 真实 info_hash A：取自
@@ -304,6 +305,68 @@ mod tests {
             .await
             .expect("count rows failed");
         assert_eq!(count, 2);
+
+        assert!(dir.path().join("resource_test.db").exists());
+    }
+
+    #[tokio::test]
+    async fn test_find_by_info_hashes_only_returns_stored_rows() {
+        let (dir, client) = setup().await;
+
+        let mut tx = client.pool.begin().await.expect("begin transaction failed");
+        client
+            .init_with_tx(&mut tx)
+            .await
+            .expect("create table should succeed");
+
+        let items = vec![
+            resource_data(HASH_A, "第一条资源"),
+            resource_data(HASH_B, "第二条资源"),
+        ];
+        client
+            .batch_insert_resource(&mut tx, &items, false)
+            .await
+            .expect("batch insert failed");
+        tx.commit().await.expect("commit transaction failed");
+
+        // 库里没有这个 info_hash
+        let mut missing = HASH_A;
+        missing[0] ^= 0xff;
+
+        let found = client
+            .find_by_info_hashes(&[missing, HASH_B, HASH_A])
+            .await
+            .expect("find resources failed");
+        let mut hashes: Vec<[u8; 20]> = found.iter().map(|prop| prop.data.info_hash).collect();
+        hashes.sort_unstable();
+        let mut expected = vec![HASH_A, HASH_B];
+        expected.sort_unstable();
+        assert_eq!(
+            hashes, expected,
+            "find_by_info_hashes should only return stored info_hash"
+        );
+        assert!(
+            found.iter().all(|prop| !prop.data.url.is_empty()),
+            "find_by_info_hashes should return the whole row because binding needs url"
+        );
+
+        let empty = client
+            .find_by_info_hashes(&[])
+            .await
+            .expect("empty info hashes failed");
+        assert!(
+            empty.is_empty(),
+            "find_by_info_hashes should return empty for empty input"
+        );
+
+        let none = client
+            .find_by_info_hashes(&[missing])
+            .await
+            .expect("missing info hash failed");
+        assert!(
+            none.is_empty(),
+            "find_by_info_hashes should return empty when nothing is stored"
+        );
 
         assert!(dir.path().join("resource_test.db").exists());
     }

@@ -388,6 +388,14 @@ impl SubAnimeRepository for CountingSubAnimeRepository {
         unimplemented!("sync calendar task must not find episode")
     }
 
+    async fn delete_eps(
+        &self,
+        _sub_anime_id: i64,
+        _ep_ids: &[i64],
+    ) -> anyhow::Result<Vec<EpisodeProp>> {
+        unimplemented!("sync calendar task must not delete episodes")
+    }
+
     async fn get_one_undownload_ep(&self) -> anyhow::Result<Option<EpisodeProp>> {
         unimplemented!("sync calendar task must not get one undownload episode")
     }

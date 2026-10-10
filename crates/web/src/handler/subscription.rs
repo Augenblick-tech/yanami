@@ -2,15 +2,21 @@ use crate::{
     app_ctx::AppContext,
     error::ApiError,
     model::{
-        AccessTokenClaims, ApiResponse, BindRuleRequest, CreateSubscriptionRequest, EpisodeItem,
-        RecentEpisodeQuery, RecentEpisodeResponse, SearchStatusRequest,
+        AccessTokenClaims, AddEpsRequest, ApiResponse, BindRuleRequest, CreateSubscriptionRequest,
+        DeleteEpsRequest, EpisodeItem, RecentEpisodeQuery, RecentEpisodeResponse,
+        SearchStatusRequest,
     },
 };
 use axum::{
     Extension, Json,
     extract::{Path, Query, State},
+    http::StatusCode,
 };
 use std::sync::Arc;
+use subscription::entity::model::{EpsiodeStatus, MatchedEpisode};
+
+/// 单次添加或删除的剧集条数上限，一次请求要读写的剧集行都在这个量级内
+const MAX_EPS: usize = 100;
 
 /// 创建订阅
 #[utoipa::path(
@@ -395,3 +401,211 @@ pub async fn update_ep_status(
 
     Ok(Json(ApiResponse::ok(())))
 }
+
+/// 添加匹配的剧集
+#[utoipa::path(
+    post,
+    path = "/api/v1/subscription/{id}/eps",
+    operation_id = "subscription_add_eps",
+    tag = "Subscription",
+    summary = "添加匹配的剧集",
+    description = "把选中的资源作为指定订阅下的剧集落库。\n\n订阅已经绑了规则时不传 `rule_id` 就沿用，订阅还没有绑规则时必须传，且必须是同一个 space 下的规则，没有规则就报错。\n\n调用此接口需要在请求头中携带有效的 JWT Token。",
+    params(
+        ("id" = i64, Path, description = "订阅记录的唯一 ID")
+    ),
+    request_body = AddEpsRequest,
+    responses(
+        (status = 200, description = "添加成功。返回数据的 `data` 字段为空。"),
+        (status = 400, description = "请求参数校验失败"),
+        (status = 401, description = "未授权：未提供 Token，或 Token 已过期/无效"),
+        (status = 403, description = "禁止访问：Token 鉴权通过但系统中找不到该对应的用户记录或越权操作"),
+        (status = 404, description = "资源不存在：未找到该订阅记录、规则记录或资源记录"),
+        (status = 409, description = "冲突：订阅还没有绑定规则"),
+        (status = 500, description = "服务器内部错误"),
+    ),
+    security(
+        ("jwt" = [])
+    )
+)]
+pub async fn add_eps(
+    State(ctx): State<Arc<AppContext>>,
+    Extension(user): Extension<AccessTokenClaims>,
+    Path(id): Path<i64>,
+    Json(req): Json<AddEpsRequest>,
+) -> Result<Json<ApiResponse<()>>, ApiError> {
+    let Some(user_entity) = ctx.roots.users.get(user.user_id).await? else {
+        return Err(ApiError::forbidden("not found user"));
+    };
+
+    let Some(entity) = ctx.roots.sub_animes.find_by_sub_anime_id(id).await? else {
+        return Err(ApiError::not_found("not found subscription"));
+    };
+
+    if entity.space_id() != user_entity.space_id() {
+        return Err(ApiError::forbidden("forbidden"));
+    }
+
+    // 规则只能是订阅所在空间下的，落库前先按这个口径读出来
+    if let Some(rule_id) = req.rule_id {
+        let Some(rule_entity) = ctx.roots.rules.find(rule_id).await? else {
+            return Err(ApiError::not_found("not found rule"));
+        };
+        if rule_entity.space_id() != user_entity.space_id() {
+            return Err(ApiError::forbidden("forbidden"));
+        }
+    }
+
+    // 前端给的资源标识在这里校验：数量、是不是 hex、是不是 40 位，重复的只留一个
+    if req.info_hashes.is_empty() {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            400,
+            "info_hashes must not be empty",
+        ));
+    }
+    if req.info_hashes.len() > MAX_EPS {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            400,
+            format!(
+                "info_hashes accepts at most {} items, got {}",
+                MAX_EPS,
+                req.info_hashes.len()
+            ),
+        ));
+    }
+    let mut info_hashes: Vec<[u8; 20]> = Vec::with_capacity(req.info_hashes.len());
+    for info_hash in &req.info_hashes {
+        let bytes = hex::decode(info_hash).map_err(|_| {
+            ApiError::new(
+                StatusCode::BAD_REQUEST,
+                400,
+                format!("info_hash {} is not a hex string", info_hash),
+            )
+        })?;
+        let bytes: [u8; 20] = bytes.try_into().map_err(|_| {
+            ApiError::new(
+                StatusCode::BAD_REQUEST,
+                400,
+                format!("info_hash {} is not 40 hex characters", info_hash),
+            )
+        })?;
+        if !info_hashes.contains(&bytes) {
+            info_hashes.push(bytes);
+        }
+    }
+
+    let resources = ctx.roots.resources.find_by_ids(&info_hashes).await?;
+    if resources.len() != info_hashes.len() {
+        return Err(ApiError::not_found("not found resource"));
+    }
+
+    // 资源是抓来的条目，落到订阅下就是剧集，这里只做这一层翻译
+    let eps = resources
+        .into_iter()
+        .map(|resource| MatchedEpisode {
+            sub_anime_id: entity.id(),
+            resource_id: *resource.id(),
+            status: EpsiodeStatus::Pending,
+            title: resource.title().into(),
+        })
+        .collect::<Vec<_>>();
+
+    ctx.roots
+        .sub_animes
+        .as_eps(&entity)
+        .await
+        .save_eps(req.rule_id, eps)
+        .await?;
+
+    Ok(Json(ApiResponse::ok(())))
+}
+
+/// 删除匹配的剧集
+#[utoipa::path(
+    delete,
+    path = "/api/v1/subscription/{id}/eps",
+    operation_id = "subscription_delete_eps",
+    tag = "Subscription",
+    summary = "删除匹配的剧集",
+    description = "把指定 ID 的剧集从这条订阅里删掉，并按剩下的剧集重算订阅进度。剧集 ID 从该订阅的剧集列表里取。\n\n调用此接口需要在请求头中携带有效的 JWT Token。",
+    params(
+        ("id" = i64, Path, description = "订阅记录的唯一 ID")
+    ),
+    request_body = DeleteEpsRequest,
+    responses(
+        (status = 200, description = "删除成功。返回数据的 `data` 字段为空。"),
+        (status = 400, description = "请求参数校验失败"),
+        (status = 401, description = "未授权：未提供 Token，或 Token 已过期/无效"),
+        (status = 403, description = "禁止访问：Token 鉴权通过但系统中找不到该对应的用户记录或越权操作"),
+        (status = 404, description = "资源不存在：未找到该订阅记录"),
+        (status = 500, description = "服务器内部错误"),
+    ),
+    security(
+        ("jwt" = [])
+    )
+)]
+pub async fn delete_eps(
+    State(ctx): State<Arc<AppContext>>,
+    Extension(user): Extension<AccessTokenClaims>,
+    Path(id): Path<i64>,
+    Json(req): Json<DeleteEpsRequest>,
+) -> Result<Json<ApiResponse<()>>, ApiError> {
+    let Some(user_entity) = ctx.roots.users.get(user.user_id).await? else {
+        return Err(ApiError::forbidden("not found user"));
+    };
+
+    let Some(entity) = ctx.roots.sub_animes.find_by_sub_anime_id(id).await? else {
+        return Err(ApiError::not_found("not found subscription"));
+    };
+
+    if entity.space_id() != user_entity.space_id() {
+        return Err(ApiError::forbidden("forbidden"));
+    }
+
+    // 剧集 ID 的取值在这里校验，属于哪条订阅由下面这条订阅的剧集来认
+    if req.ep_ids.is_empty() {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            400,
+            "ep_ids must not be empty",
+        ));
+    }
+    if req.ep_ids.len() > MAX_EPS {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            400,
+            format!(
+                "ep_ids accepts at most {} items, got {}",
+                MAX_EPS,
+                req.ep_ids.len()
+            ),
+        ));
+    }
+    let mut ep_ids: Vec<i64> = Vec::with_capacity(req.ep_ids.len());
+    for ep_id in &req.ep_ids {
+        if *ep_id <= 0 {
+            return Err(ApiError::new(
+                StatusCode::BAD_REQUEST,
+                400,
+                format!("episode id {} is not a positive integer", ep_id),
+            ));
+        }
+        if !ep_ids.contains(ep_id) {
+            ep_ids.push(*ep_id);
+        }
+    }
+
+    let sub_anime_eps = ctx.roots.sub_animes.as_eps(&entity).await;
+    // 剧集 ID 只在这条订阅的剧集里认，别的订阅下的剧集不会因为 ID 相同而被删掉
+    let eps = sub_anime_eps
+        .list()
+        .await?
+        .into_iter()
+        .filter(|i| ep_ids.contains(&i.id()))
+        .collect::<Vec<_>>();
+    sub_anime_eps.delete(&eps).await?;
+
+    Ok(Json(ApiResponse::ok(())))
+}
+

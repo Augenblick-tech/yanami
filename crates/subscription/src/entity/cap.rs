@@ -27,6 +27,8 @@ pub trait SubAnimeRepository: Send + Sync {
 
     async fn list_eps(&self, sub_anime_id: i64) -> Result<Vec<EpisodeProp>>;
     async fn find_epsiode(&self, ep_id: i64) -> Result<Option<EpisodeProp>>;
+    /// 删掉该订阅下指定的剧集，返回删完剩下的剧集
+    async fn delete_eps(&self, sub_anime_id: i64, ep_ids: &[i64]) -> Result<Vec<EpisodeProp>>;
     async fn get_one_undownload_ep(&self) -> Result<Option<EpisodeProp>>;
     async fn update_epsiode_status(&self, data: &EpisodeBaseData) -> Result<()>;
     async fn update_epsiodes_status(&self, data: &[EpisodeBaseData]) -> Result<()>;

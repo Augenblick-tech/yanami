@@ -38,11 +38,10 @@ impl SubAnimeEpsiodes {
             .collect())
     }
 
-    pub(super) async fn save_eps(
-        &self,
-        rule_id: i64,
-        eps: Vec<MatchedEpisode>,
-    ) -> Result<(), Error> {
+    /// 人工挑中的剧集落库：与自动匹配共用这一段，不跑规则正则、时间窗、关键字三个过滤。
+    /// 传了规则按 auto_bind_rule 的口径挂上；没传就沿用订阅已经绑定的规则，
+    /// 订阅还没有规则就认不出集数。
+    pub async fn save_eps(&self, rule: Option<i64>, eps: Vec<MatchedEpisode>) -> Result<(), Error> {
         let prop = self
             .repo
             .find_sub_anime(self.sub_anime_id)
@@ -50,8 +49,14 @@ impl SubAnimeEpsiodes {
             .map_err(|e| Error::external("sub anime eps load entity failed", e))?
             .ok_or_else(|| Error::not_found("sub anime not found"))?;
         let mut entity = SubAnimeEntity::new(prop.data, prop.extend);
-        // 尝试绑定规则
-        entity.auto_bind_rule(rule_id)?;
+        match rule {
+            Some(rule_id) => entity.auto_bind_rule(rule_id)?,
+            None => {
+                if entity.get_rule_id().is_none() {
+                    return Err(Error::conflict("sub anime eps save failed, no rule binded"));
+                }
+            }
+        }
 
         // 计算剧集编号
         let entity_eps = self.list().await?;
@@ -93,6 +98,35 @@ impl SubAnimeEpsiodes {
         entity.update_progress(&new_eps);
         self.repo
             .update_sub_anime_progress(entity.get_base_data(), &new_eps)
+            .await
+            .map_err(|e| Error::external("sub anime eps update progress failed", e))
+    }
+
+    /// 删掉这条订阅下的这些剧集：删完按剩下的剧集重算进度并写回，
+    /// 否则进度里还留着已经删掉的集数。
+    pub async fn delete(&self, eps: &[EpsiodeEntity]) -> Result<(), Error> {
+        if eps.is_empty() {
+            return Ok(());
+        }
+
+        let ep_ids = eps.iter().map(|i| i.id()).collect::<Vec<i64>>();
+        let remaining = self
+            .repo
+            .delete_eps(self.sub_anime_id, &ep_ids)
+            .await
+            .map_err(|e| Error::external("sub anime eps delete epsiode failed", e))?;
+
+        let prop = self
+            .repo
+            .find_sub_anime(self.sub_anime_id)
+            .await
+            .map_err(|e| Error::external("sub anime eps load entity failed", e))?
+            .ok_or_else(|| Error::not_found("sub anime not found"))?;
+        let mut entity = SubAnimeEntity::new(prop.data, prop.extend);
+        let eps = remaining.into_iter().map(|i| i.data.ep).collect::<Vec<_>>();
+        entity.update_progress(&eps);
+        self.repo
+            .update_sub_anime_progress(entity.get_base_data(), &[])
             .await
             .map_err(|e| Error::external("sub anime eps update progress failed", e))
     }

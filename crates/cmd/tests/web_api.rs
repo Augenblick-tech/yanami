@@ -17,7 +17,7 @@ use axum::{
 };
 use common::{MockDownloaderManager, TestApp, nyaa_item, sword_anime};
 use serde_json::{Value, json};
-use subscription::entity::cap::SearchMandateRepository;
+use subscription::entity::cap::{SearchMandateRepository, SubAnimeRepository};
 use subscription::entity::model::Mandate;
 use tower::ServiceExt;
 use user::entity::model::UserRole;
@@ -613,4 +613,619 @@ async fn web_api_edit_anime_keeps_series_metadata_from_request_body() {
         .expect("find series failed")
         .expect("edit should keep the anime_series row");
     assert_eq!(series.cn_name, updated_cn_name);
+}
+
+/// 手动挑资源：按关键字调列表接口，取出命中的 40 位 hex 资源标识。
+async fn search_resource_hashes(app: &TestApp, token: &str, keyword: &str) -> Vec<String> {
+    let (status, body) = request(
+        app,
+        json_request(
+            "POST",
+            "/api/v1/resource/list",
+            &json!({"keyword": keyword, "page": 1, "page_size": 10}).to_string(),
+            Some(token),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "resource list failed, body {body}");
+
+    body["data"]["data"]
+        .as_array()
+        .expect("resource list should be an array")
+        .iter()
+        .map(|item| {
+            item["info_hash"]
+                .as_str()
+                .expect("resource item should carry a hex info hash")
+                .to_string()
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn web_api_manual_match_routes_require_token() {
+    let app = TestApp::new().await;
+
+    for (method, uri) in [
+        ("POST", "/api/v1/resource/list"),
+        ("POST", "/api/v1/subscription/1/eps"),
+        ("DELETE", "/api/v1/subscription/1/eps"),
+    ] {
+        let (status, body) = request(&app, json_request(method, uri, "{}", None)).await;
+        assert_eq!(
+            status,
+            StatusCode::UNAUTHORIZED,
+            "{method} {uri} without token should be 401, body {body}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn web_api_resource_list_matches_keyword_and_hides_magnet() {
+    let app = TestApp::new().await;
+    create_account(&app, "res-viewer", UserRole::User).await;
+    app.save_feed_items(vec![nyaa_item("전생했더니"), nyaa_item("트릭컬")])
+        .await;
+
+    let token = login_token(&app, "res-viewer").await;
+    let (status, body) = request(
+        &app,
+        json_request(
+            "POST",
+            "/api/v1/resource/list",
+            &json!({"keyword": "전생했더니", "page": 1, "page_size": 10}).to_string(),
+            Some(&token),
+        ),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK, "resource list failed, body {body}");
+    let items = body["data"]["data"]
+        .as_array()
+        .expect("resource list should be an array");
+    assert_eq!(
+        items.len(),
+        1,
+        "resource list should only return keyword hits, actual {body}"
+    );
+    assert!(
+        items[0]["title"]
+            .as_str()
+            .expect("resource item should carry a title")
+            .contains("전생했더니"),
+        "resource list should return the matched resource, actual {body}"
+    );
+    let info_hash = items[0]["info_hash"]
+        .as_str()
+        .expect("resource item should carry a hex info hash");
+    assert_eq!(
+        info_hash.len(),
+        40,
+        "info_hash should be 40 hex characters, actual {info_hash}"
+    );
+    assert!(
+        items[0].get("url").is_none(),
+        "resource list should not carry the magnet url, actual {}",
+        items[0]
+    );
+    assert_eq!(body["data"]["has_more"], json!(false));
+}
+
+#[tokio::test]
+async fn web_api_resource_list_forbids_other_space_subscription() {
+    let app = TestApp::new().await;
+    let (_, owner_space) = create_account(&app, "res-owner", UserRole::User).await;
+    create_account(&app, "res-intruder", UserRole::User).await;
+    let anime = app.seed_anime(&sword_anime()).await;
+    let sub_anime = app.subscribe(owner_space, anime.data.id).await;
+
+    let token = login_token(&app, "res-intruder").await;
+    let (status, body) = request(
+        &app,
+        json_request(
+            "POST",
+            "/api/v1/resource/list",
+            &json!({"sub_anime_id": sub_anime.id()}).to_string(),
+            Some(&token),
+        ),
+    )
+    .await;
+
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "resource list should reject a subscription of another space, body {body}"
+    );
+}
+
+#[tokio::test]
+async fn web_api_adds_and_deletes_eps_manually() {
+    let app = TestApp::new().await;
+    let (_, space_id) = create_account(&app, "manual-matcher", UserRole::User).await;
+    let anime = app.seed_anime(&sword_anime()).await;
+    let rule_id = app
+        .seed_rule(space_id, "kr-rule", "전생했더니 검이었습니다")
+        .await;
+    let sub_anime = app.subscribe(space_id, anime.data.id).await;
+    app.save_feed_items(vec![nyaa_item("전생했더니")]).await;
+
+    let token = login_token(&app, "manual-matcher").await;
+    let info_hash = search_resource_hashes(&app, &token, "전생했더니")
+        .await
+        .into_iter()
+        .next()
+        .expect("keyword should match the captured resource");
+
+    let (status, body) = request(
+        &app,
+        json_request(
+            "POST",
+            &format!("/api/v1/subscription/{}/bind_rule", sub_anime.id()),
+            &json!({"rule_id": rule_id}).to_string(),
+            Some(&token),
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "bind rule should succeed, body {body}"
+    );
+
+    let (status, body) = request(
+        &app,
+        json_request(
+            "POST",
+            &format!("/api/v1/subscription/{}/eps", sub_anime.id()),
+            &json!({"info_hashes": [info_hash.clone()]}).to_string(),
+            Some(&token),
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "add eps should succeed, body {body}"
+    );
+
+    let eps = app.list_eps(sub_anime.id()).await;
+    assert_eq!(eps.len(), 1, "add eps should save the episode");
+    assert!(
+        eps[0].extend.title.contains("전생했더니"),
+        "add eps should save the picked resource, actual {}",
+        eps[0].extend.title
+    );
+    let ep_id = eps[0].data.id;
+    let bound = app
+        .ctx
+        .repo
+        .sub_anime_repo
+        .find_sub_anime(sub_anime.id())
+        .await
+        .expect("find sub anime failed")
+        .expect("sub anime should exist");
+    assert_eq!(
+        bound.data.rule_id,
+        Some(rule_id),
+        "add eps should bind the rule to the subscription"
+    );
+    assert_eq!(
+        bound.data.progress, 1,
+        "add eps should recompute progress from ep_num"
+    );
+
+    // 请求给的剧集 ID 要在这条订阅的剧集里认得出，否则什么都不删
+    let (status, body) = request(
+        &app,
+        json_request(
+            "DELETE",
+            &format!("/api/v1/subscription/{}/eps", sub_anime.id()),
+            &json!({"ep_ids": [ep_id + 1000]}).to_string(),
+            Some(&token),
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "delete eps with unknown ep id should succeed, body {body}"
+    );
+    assert_eq!(
+        app.list_eps(sub_anime.id()).await.len(),
+        1,
+        "delete eps should keep the episode when the ep id is not in the subscription"
+    );
+
+    let (status, body) = request(
+        &app,
+        json_request(
+            "DELETE",
+            &format!("/api/v1/subscription/{}/eps", sub_anime.id()),
+            &json!({"ep_ids": [ep_id]}).to_string(),
+            Some(&token),
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "delete eps should succeed, body {body}"
+    );
+    assert!(
+        app.list_eps(sub_anime.id()).await.is_empty(),
+        "delete eps should remove the episode"
+    );
+    let after_delete = app
+        .ctx
+        .repo
+        .sub_anime_repo
+        .find_sub_anime(sub_anime.id())
+        .await
+        .expect("find sub anime failed")
+        .expect("sub anime should exist");
+    assert_eq!(
+        after_delete.data.progress, 0,
+        "delete eps should recompute progress from the remaining episodes"
+    );
+}
+
+#[tokio::test]
+async fn web_api_add_eps_requires_binded_rule() {
+    let app = TestApp::new().await;
+    let (_, space_id) = create_account(&app, "rule-less-matcher", UserRole::User).await;
+    let anime = app.seed_anime(&sword_anime()).await;
+    let sub_anime = app.subscribe(space_id, anime.data.id).await;
+    app.save_feed_items(vec![nyaa_item("전생했더니")]).await;
+
+    let token = login_token(&app, "rule-less-matcher").await;
+    let info_hash = search_resource_hashes(&app, &token, "전생했더니")
+        .await
+        .into_iter()
+        .next()
+        .expect("keyword should match the captured resource");
+
+    let (status, body) = request(
+        &app,
+        json_request(
+            "POST",
+            &format!("/api/v1/subscription/{}/eps", sub_anime.id()),
+            &json!({"info_hashes": [info_hash]}).to_string(),
+            Some(&token),
+        ),
+    )
+    .await;
+
+    assert_eq!(
+        status,
+        StatusCode::CONFLICT,
+        "add eps should reject a subscription without rule when rule_id is missing, body {body}"
+    );
+    assert_eq!(body["code"], json!(40901));
+    assert!(
+        app.list_eps(sub_anime.id()).await.is_empty(),
+        "failed add should not leave episodes"
+    );
+}
+
+#[tokio::test]
+async fn web_api_add_eps_rejects_unknown_resource() {
+    let app = TestApp::new().await;
+    let (_, space_id) = create_account(&app, "ghost-matcher", UserRole::User).await;
+    let anime = app.seed_anime(&sword_anime()).await;
+    let rule_id = app
+        .seed_rule(space_id, "kr-rule", "전생했더니 검이었습니다")
+        .await;
+    let sub_anime = app.subscribe(space_id, anime.data.id).await;
+
+    let token = login_token(&app, "ghost-matcher").await;
+    let (status, body) = request(
+        &app,
+        json_request(
+            "POST",
+            &format!("/api/v1/subscription/{}/eps", sub_anime.id()),
+            &json!({
+                "info_hashes": ["0000000000000000000000000000000000000000"],
+                "rule_id": rule_id,
+            })
+            .to_string(),
+            Some(&token),
+        ),
+    )
+    .await;
+
+    assert_eq!(
+        status,
+        StatusCode::NOT_FOUND,
+        "add eps should reject an unknown resource, body {body}"
+    );
+    assert_eq!(body["code"], json!(404));
+    assert!(
+        app.list_eps(sub_anime.id()).await.is_empty(),
+        "failed add should not leave episodes"
+    );
+}
+
+#[tokio::test]
+async fn web_api_add_eps_rejects_rule_of_another_space() {
+    let app = TestApp::new().await;
+    let (_, space_id) = create_account(&app, "cross-rule-matcher", UserRole::User).await;
+    let (_, other_space_id) = create_account(&app, "other-rule-owner", UserRole::User).await;
+    let other_rule_id = app
+        .seed_rule(other_space_id, "other-rule", "전생했더니")
+        .await;
+    let anime = app.seed_anime(&sword_anime()).await;
+    let sub_anime = app.subscribe(space_id, anime.data.id).await;
+    app.save_feed_items(vec![nyaa_item("전생했더니")]).await;
+
+    let token = login_token(&app, "cross-rule-matcher").await;
+    let info_hash = search_resource_hashes(&app, &token, "전생했더니")
+        .await
+        .into_iter()
+        .next()
+        .expect("keyword should match the captured resource");
+
+    let (status, body) = request(
+        &app,
+        json_request(
+            "POST",
+            &format!("/api/v1/subscription/{}/eps", sub_anime.id()),
+            &json!({"info_hashes": [info_hash], "rule_id": other_rule_id}).to_string(),
+            Some(&token),
+        ),
+    )
+    .await;
+
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "add eps should reject a rule of another space, body {body}"
+    );
+    assert!(
+        app.list_eps(sub_anime.id()).await.is_empty(),
+        "failed add should not leave episodes"
+    );
+    let bound = app
+        .ctx
+        .repo
+        .sub_anime_repo
+        .find_sub_anime(sub_anime.id())
+        .await
+        .expect("find sub anime failed")
+        .expect("sub anime should exist");
+    assert_eq!(
+        bound.data.rule_id, None,
+        "failed add should not bind the rule"
+    );
+}
+
+#[tokio::test]
+async fn web_api_add_eps_rejects_unknown_rule() {
+    let app = TestApp::new().await;
+    let (_, space_id) = create_account(&app, "no-rule-matcher", UserRole::User).await;
+    let anime = app.seed_anime(&sword_anime()).await;
+    let sub_anime = app.subscribe(space_id, anime.data.id).await;
+    app.save_feed_items(vec![nyaa_item("전생했더니")]).await;
+
+    let token = login_token(&app, "no-rule-matcher").await;
+    let info_hash = search_resource_hashes(&app, &token, "전생했더니")
+        .await
+        .into_iter()
+        .next()
+        .expect("keyword should match the captured resource");
+
+    let (status, body) = request(
+        &app,
+        json_request(
+            "POST",
+            &format!("/api/v1/subscription/{}/eps", sub_anime.id()),
+            &json!({"info_hashes": [info_hash], "rule_id": 987654}).to_string(),
+            Some(&token),
+        ),
+    )
+    .await;
+
+    assert_eq!(
+        status,
+        StatusCode::NOT_FOUND,
+        "add eps should reject an unknown rule, body {body}"
+    );
+    assert_eq!(body["code"], json!(404));
+    assert!(
+        app.list_eps(sub_anime.id()).await.is_empty(),
+        "failed add should not leave episodes"
+    );
+}
+
+#[tokio::test]
+async fn web_api_add_eps_binds_rule_when_subscription_has_none() {
+    let app = TestApp::new().await;
+    let (_, space_id) = create_account(&app, "rule-adding-matcher", UserRole::User).await;
+    let rule_id = app
+        .seed_rule(space_id, "kr-rule", "전생했더니 검이었습니다")
+        .await;
+    let anime = app.seed_anime(&sword_anime()).await;
+    let sub_anime = app.subscribe(space_id, anime.data.id).await;
+    app.save_feed_items(vec![nyaa_item("전생했더니")]).await;
+
+    let token = login_token(&app, "rule-adding-matcher").await;
+    let info_hash = search_resource_hashes(&app, &token, "전생했더니")
+        .await
+        .into_iter()
+        .next()
+        .expect("keyword should match the captured resource");
+
+    let (status, body) = request(
+        &app,
+        json_request(
+            "POST",
+            &format!("/api/v1/subscription/{}/eps", sub_anime.id()),
+            &json!({"info_hashes": [info_hash], "rule_id": rule_id}).to_string(),
+            Some(&token),
+        ),
+    )
+    .await;
+
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "add eps should succeed with a rule to bind, body {body}"
+    );
+    assert_eq!(
+        app.list_eps(sub_anime.id()).await.len(),
+        1,
+        "add eps should save the episode"
+    );
+    let added = app
+        .ctx
+        .repo
+        .sub_anime_repo
+        .find_sub_anime(sub_anime.id())
+        .await
+        .expect("find sub anime failed")
+        .expect("sub anime should exist");
+    assert_eq!(
+        added.data.rule_id,
+        Some(rule_id),
+        "add eps should bind the given rule to a subscription without rule"
+    );
+}
+
+#[tokio::test]
+async fn web_api_add_eps_rejects_rule_other_than_binded() {
+    let app = TestApp::new().await;
+    let (_, space_id) = create_account(&app, "rebind-matcher", UserRole::User).await;
+    let binded_rule_id = app
+        .seed_rule(space_id, "kr-rule", "전생했더니 검이었습니다")
+        .await;
+    let other_rule_id = app.seed_rule(space_id, "kr-rule-2", "전생했더니").await;
+    let anime = app.seed_anime(&sword_anime()).await;
+    let sub_anime = app.subscribe(space_id, anime.data.id).await;
+    app.save_feed_items(vec![nyaa_item("전생했더니")]).await;
+
+    let token = login_token(&app, "rebind-matcher").await;
+    let (status, body) = request(
+        &app,
+        json_request(
+            "POST",
+            &format!("/api/v1/subscription/{}/bind_rule", sub_anime.id()),
+            &json!({"rule_id": binded_rule_id}).to_string(),
+            Some(&token),
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "bind rule should succeed, body {body}"
+    );
+
+    let info_hash = search_resource_hashes(&app, &token, "전생했더니")
+        .await
+        .into_iter()
+        .next()
+        .expect("keyword should match the captured resource");
+
+    let (status, body) = request(
+        &app,
+        json_request(
+            "POST",
+            &format!("/api/v1/subscription/{}/eps", sub_anime.id()),
+            &json!({"info_hashes": [info_hash], "rule_id": other_rule_id}).to_string(),
+            Some(&token),
+        ),
+    )
+    .await;
+
+    assert_eq!(
+        status,
+        StatusCode::CONFLICT,
+        "add eps should reject a rule other than the binded one, body {body}"
+    );
+    assert_eq!(body["code"], json!(40901));
+    assert!(
+        app.list_eps(sub_anime.id()).await.is_empty(),
+        "failed add should not leave episodes"
+    );
+    let still_binded = app
+        .ctx
+        .repo
+        .sub_anime_repo
+        .find_sub_anime(sub_anime.id())
+        .await
+        .expect("find sub anime failed")
+        .expect("sub anime should exist");
+    assert_eq!(
+        still_binded.data.rule_id,
+        Some(binded_rule_id),
+        "failed add should keep the binded rule"
+    );
+}
+
+#[tokio::test]
+async fn web_api_add_eps_rejects_invalid_info_hashes() {
+    let app = TestApp::new().await;
+    let (_, space_id) = create_account(&app, "bad-hash-matcher", UserRole::User).await;
+    let anime = app.seed_anime(&sword_anime()).await;
+    let rule_id = app
+        .seed_rule(space_id, "kr-rule", "전생했더니 검이었습니다")
+        .await;
+    let sub_anime = app.subscribe(space_id, anime.data.id).await;
+
+    let token = login_token(&app, "bad-hash-matcher").await;
+    let url = format!("/api/v1/subscription/{}/eps", sub_anime.id());
+    let bodies = [
+        json!({"info_hashes": [], "rule_id": rule_id}),
+        json!({"info_hashes": ["not a hex string"], "rule_id": rule_id}),
+        json!({"info_hashes": ["d18e3d4491ddae3e33cc23786ea264c1eac22"], "rule_id": rule_id}),
+        json!({"info_hashes": vec!["d18e3d4491ddae3e33cc23786ea264c1eac225cc"; 101], "rule_id": rule_id}),
+    ];
+
+    for body in bodies {
+        let (status, response) = request(
+            &app,
+            json_request("POST", &url, &body.to_string(), Some(&token)),
+        )
+        .await;
+
+        assert_eq!(
+            status,
+            StatusCode::BAD_REQUEST,
+            "add eps should reject {body}, body {response}"
+        );
+    }
+    assert!(
+        app.list_eps(sub_anime.id()).await.is_empty(),
+        "failed add should not leave episodes"
+    );
+}
+
+#[tokio::test]
+async fn web_api_delete_eps_rejects_invalid_ep_ids() {
+    let app = TestApp::new().await;
+    let (_, space_id) = create_account(&app, "bad-ep-id", UserRole::User).await;
+    let anime = app.seed_anime(&sword_anime()).await;
+    let sub_anime = app.subscribe(space_id, anime.data.id).await;
+
+    let token = login_token(&app, "bad-ep-id").await;
+    let url = format!("/api/v1/subscription/{}/eps", sub_anime.id());
+    let bodies = [
+        json!({"ep_ids": []}),
+        json!({"ep_ids": [0]}),
+        json!({"ep_ids": [-1]}),
+        json!({"ep_ids": vec![1_i64; 101]}),
+    ];
+
+    for body in bodies {
+        let (status, response) = request(
+            &app,
+            json_request("DELETE", &url, &body.to_string(), Some(&token)),
+        )
+        .await;
+
+        assert_eq!(
+            status,
+            StatusCode::BAD_REQUEST,
+            "delete eps should reject {body}, body {response}"
+        );
+    }
 }

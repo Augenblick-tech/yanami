@@ -79,4 +79,20 @@ impl Resources {
             .map(|i| ResourceEntity::new(i.data))
             .collect())
     }
+
+    /// 按 info_hash 读取资源，不存在的 info_hash 不会出现在结果里
+    pub async fn find_by_ids(
+        &self,
+        info_hashes: &[[u8; 20]],
+    ) -> Result<Vec<ResourceEntity>, Error> {
+        let props = self
+            .repo
+            .find_by_info_hashes(info_hashes)
+            .await
+            .map_err(|e| Error::external("resources find by info hashes failed", e))?;
+        Ok(props
+            .into_iter()
+            .map(|i| ResourceEntity::new(i.data))
+            .collect())
+    }
 }

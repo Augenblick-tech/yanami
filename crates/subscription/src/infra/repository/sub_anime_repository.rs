@@ -276,6 +276,38 @@ impl SubAnimeRepository for SubAnimeSqliteClient {
         Ok(results)
     }
 
+    async fn delete_eps(&self, sub_anime_id: i64, ep_ids: &[i64]) -> Result<Vec<EpisodeProp>> {
+        if ep_ids.is_empty() {
+            return self.list_eps(sub_anime_id).await;
+        }
+
+        let mut tx = self.pool.begin().await?;
+
+        let mut builder = QueryBuilder::new("DELETE FROM sub_anime_episode WHERE sub_anime_id = ");
+        builder.push_bind(sub_anime_id);
+        builder.push(" AND id IN (");
+        let mut separated = builder.separated(", ");
+        for ep_id in ep_ids {
+            separated.push_bind(*ep_id);
+        }
+        separated.push_unseparated(")");
+        builder.build().execute(&mut *tx).await?;
+
+        let mut builder = QueryBuilder::new(Self::EPISODE_SELECT_JOIN);
+        builder.push(" WHERE se.sub_anime_id = ");
+        builder.push_bind(sub_anime_id);
+        builder.push(" ORDER BY se.ep_num ASC");
+        let rows = builder.build().fetch_all(&mut *tx).await?;
+
+        let mut results = Vec::with_capacity(rows.len());
+        for row in rows {
+            results.push(Self::row_to_episode_prop(&row)?);
+        }
+
+        tx.commit().await?;
+        Ok(results)
+    }
+
     async fn find_epsiode(&self, ep_id: i64) -> Result<Option<EpisodeProp>> {
         let mut builder: QueryBuilder<sqlx::Sqlite> = QueryBuilder::new(Self::EPISODE_SELECT_JOIN);
         builder.push(" WHERE se.id = ");
@@ -1128,5 +1160,88 @@ mod tests {
             .await
             .expect_err("missing rule must fail");
         assert!(err.to_string().contains("binding failed"));
+    }
+
+    #[tokio::test]
+    async fn delete_eps_removes_only_the_given_episodes() {
+        let f = setup().await;
+        seed_anime(&f.pool, 100, Some("2024-04-01"), Some(12), &["番A"]).await;
+        seed_anime(&f.pool, 200, Some("2024-04-01"), Some(12), &["番B"]).await;
+        let a = f.client.insert_sub_anime(9, 100).await.expect("insert a");
+        let b = f.client.insert_sub_anime(9, 200).await.expect("insert b");
+        seed_one_episode(&f, a.data.id, [1u8; 20]).await;
+        seed_one_episode(&f, a.data.id, [2u8; 20]).await;
+        seed_one_episode(&f, b.data.id, [3u8; 20]).await;
+
+        let first_ep = f
+            .client
+            .list_eps(a.data.id)
+            .await
+            .expect("list eps of a")
+            .into_iter()
+            .find(|i| i.data.ep.resource_id == [1u8; 20])
+            .expect("episode of the first resource")
+            .data
+            .id;
+
+        let left = f
+            .client
+            .delete_eps(a.data.id, &[first_ep])
+            .await
+            .expect("delete eps failed");
+
+        assert_eq!(
+            left.len(),
+            1,
+            "delete_eps should return the remaining episodes"
+        );
+        assert_eq!(left[0].data.ep.resource_id, [2u8; 20]);
+        assert_eq!(
+            f.client
+                .list_eps(a.data.id)
+                .await
+                .expect("list eps of a")
+                .len(),
+            1,
+            "delete_eps should only delete the given episodes"
+        );
+        assert_eq!(
+            f.client
+                .list_eps(b.data.id)
+                .await
+                .expect("list eps of b")
+                .len(),
+            1,
+            "delete_eps should keep episodes of other subscriptions"
+        );
+    }
+
+    #[tokio::test]
+    async fn delete_eps_with_empty_episode_ids_deletes_nothing() {
+        let f = setup().await;
+        seed_anime(&f.pool, 100, Some("2024-04-01"), Some(12), &["番A"]).await;
+        let a = f.client.insert_sub_anime(9, 100).await.expect("insert a");
+        seed_one_episode(&f, a.data.id, [1u8; 20]).await;
+
+        let left = f
+            .client
+            .delete_eps(a.data.id, &[])
+            .await
+            .expect("delete eps with empty episode ids failed");
+
+        assert_eq!(
+            left.len(),
+            1,
+            "delete_eps should return current episodes for empty episode ids"
+        );
+        assert_eq!(
+            f.client
+                .list_eps(a.data.id)
+                .await
+                .expect("list eps of a")
+                .len(),
+            1,
+            "delete_eps should delete nothing for empty episode ids"
+        );
     }
 }

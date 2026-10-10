@@ -143,7 +143,7 @@ impl SubAnimes {
             return Ok(sub_anime_eps);
         }
 
-        sub_anime_eps.save_eps(rule_id, eps.to_vec()).await?;
+        sub_anime_eps.save_eps(Some(rule_id), eps.to_vec()).await?;
         Ok(sub_anime_eps)
     }
 

@@ -18,4 +18,7 @@ pub trait ResourceRepository: Send + Sync {
         &self,
         items: Vec<ResourceBaseData>,
     ) -> Result<Vec<ResourceProp>>;
+
+    /// 按 info_hash 读取资源，库中不存在的 info_hash 不会出现在结果里
+    async fn find_by_info_hashes(&self, info_hashes: &[[u8; 20]]) -> Result<Vec<ResourceProp>>;
 }
